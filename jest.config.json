@@ -1,0 +1,7 @@
+{
+  "moduleFileExtensions": ["ts", "js"],
+  "preset": "ts-jest",
+  "roots": ["<rootDir>"],
+  "setupFilesAfterEnv": ["jest-extended/all"],
+  "testEnvironment": "node"
+}
