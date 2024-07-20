@@ -35,10 +35,9 @@ export interface WristbandAuth {
      * - return_url: The location of where to send users after authenticating. (Optional)
      * - login_hint: A hint to Wristband about user's preferred login identifier. (Optional)
      *
-     * @param {Request} req - The request object.
+     * @param {NextRequest} req - The request object.
      * @param {LoginConfig} [config] - Additional configuration for creating an auth request to Wristband.
-     * @returns {Promise<void>} - A Promise as a result of a URL redirect to Wristband.
-     * @throws {Error} - If an error occurs during the login process.
+     * @returns {Promise<NextResponse>} - A Promise with the NextResponse that is peforming the URL redirect to Wristband.
      */
     login: (req: NextRequest, loginConfig?: LoginConfig) => Promise<NextResponse>;
 
@@ -48,11 +47,9 @@ export interface WristbandAuth {
      *
      * @param {Request} req - The request object.
      * @param {CallbackConfig} [config] - Additional configuration for handling auth callbacks from Wristband.
-     * @returns {Promise<CallbackResult>} - A Promise with all token data, userinfo, custom state, and return URL,
-     * assuming the exchange of an auth code for a token succeeds (response contents depend on what inputs were given
-     * to the login endpoint during the auth request). Otherwise, a Promise of type void is returned as a result of a
-     * URL redirect in the event of certain error scenarios.
-     * @throws {Error} - If an error occurs during the callback handling.
+     * @returns {Promise<CallbackResult>} - A Promise containing the result of what happened during callback execution
+     * as well as any accompanying data.
+     * @throws {WristbandError} - If an error occurs during the callback handling.
      */
     callback: (req: NextRequest, callbackConfig?: CallbackConfig) => Promise<CallbackResult>;
 
@@ -60,9 +57,9 @@ export interface WristbandAuth {
      * Revokes the user's refresh token and redirects them to the Wristband logout endpoint to destroy
      * their authenticated session in Wristband.
      *
-     * @param {Request} req - The request object.
+     * @param {NextRequest} req - The request object.
      * @param {LogoutConfig} [config] - Additional configuration for logging out the user.
-     * @returns {Promise<void>} - A Promise of type void as a result of a URL redirect to Wristband.
+     * @returns {Promise<NextResponse>} - A Promise with the NextResponse that is peforming the URL redirect to Wristband.
      * @throws {Error} - If an error occurs during the logout process.
      */
     logout: (req: NextRequest, logoutConfig?: LogoutConfig) => Promise<NextResponse>;
@@ -80,8 +77,7 @@ export interface WristbandAuth {
      * @param {Request} req - The request object.
      * @param {Response} res - The response object.
      * @param {LoginConfig} [config] - Additional configuration for creating an auth request to Wristband.
-     * @returns {Promise<void>} - A Promise as a result of a URL redirect to Wristband.
-     * @throws {Error} - If an error occurs during the login process.
+     * @returns {Promise<NextApiResponse>} - A Promise with the NextApiResponse that is peforming the URL redirect to Wristband.
      */
     login: (req: NextApiRequest, res: NextApiResponse, loginConfig?: LoginConfig) => Promise<NextApiResponse>;
 
@@ -90,12 +86,11 @@ export interface WristbandAuth {
      * code for an access token as well as fetch the userinfo for the user attempting to login.
      *
      * @param {Request} req - The request object.
+     * @param {Response} res - The response object.
      * @param {CallbackConfig} [config] - Additional configuration for handling auth callbacks from Wristband.
-     * @returns {Promise<CallbackResult>} - A Promise with all token data, userinfo, custom state, and return URL,
-     * assuming the exchange of an auth code for a token succeeds (response contents depend on what inputs were given
-     * to the login endpoint during the auth request). Otherwise, a Promise of type void is returned as a result of a
-     * URL redirect in the event of certain error scenarios.
-     * @throws {Error} - If an error occurs during the callback handling.
+     * @returns {Promise<CallbackResult>} - A Promise containing the result of what happened during callback execution
+     * as well as any accompanying data.
+     * @throws {WristbandError} - If an error occurs during the callback handling.
      */
     callback: (req: NextApiRequest, res: NextApiResponse, callbackConfig?: CallbackConfig) => Promise<CallbackResult>;
 
@@ -104,9 +99,9 @@ export interface WristbandAuth {
      * their authenticated session in Wristband.
      *
      * @param {Request} req - The request object.
+     * @param {Response} res - The response object.
      * @param {LogoutConfig} [config] - Additional configuration for logging out the user.
-     * @returns {Promise<void>} - A Promise of type void as a result of a URL redirect to Wristband.
-     * @throws {Error} - If an error occurs during the logout process.
+     * @returns {Promise<NextApiResponse>} - A Promise with the NextApiResponse that is peforming the URL redirect to Wristband.
      */
     logout: (req: NextApiRequest, res: NextApiResponse, logoutConfig?: LogoutConfig) => Promise<NextApiResponse>;
   };

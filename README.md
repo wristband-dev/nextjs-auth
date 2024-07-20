@@ -300,7 +300,7 @@ export default async function logoutRoute(req: NextApiRequest, res: NextApiRespo
   res.setHeader('Set-Cookie', `my-session-cookie-name=; Max-Age=0; Path=/`);
   session.destroy();
 
-  return await wristbandAuth.pageRouter.logout(req, { tenantDomainName, refreshToken });
+  return await wristbandAuth.pageRouter.logout(req, res, { tenantDomainName, refreshToken });
 });
 ```
 
@@ -489,7 +489,7 @@ For example, if you were using attempting to fetch user data from Wristband in a
 const session = await getSession();
 const { accessToken, userId } = session;
 
-const userResponse = await fetch(`https://${process.env.APPLICATION_DOMAIN}/api/v1/users/${userId}`, {
+const userResponse = await fetch(`https://yourapp-yourcompany.us.wristband.dev/api/v1/users/${userId}`, {
   method: 'GET',
   headers: {
     Authorization: `Bearer ${accessToken}`,
