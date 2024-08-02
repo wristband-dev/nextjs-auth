@@ -10,7 +10,7 @@
   <p align="center">
     <b>
       <a href="https://wristband.dev">Website</a> •
-      <a href="https://wristband.stoplight.io/docs/documentation">Documentation</a>
+      <a href="https://docs.wristband.dev/">Documentation</a>
     </b>
   </p>
 </div>
@@ -23,12 +23,11 @@
 
 # Wristband Multi-Tenant Authentication SDK for NextJS
 
-<!--
+
 [![npm package](https://img.shields.io/badge/npm%20i-nextjs--auth-brightgreen)](https://www.npmjs.com/package/@wristband/nextjs-auth)
 [![version number](https://img.shields.io/github/v/release/wristband-dev/nextjs-auth?color=green&label=version)](https://github.com/wristband-dev/nextjs-auth/releases)
-[![Actions Status](https://github.com/wristband-dev/nextjs-auth/workflows/Test/badge.svg)](https://github.com/wristband-dev/nextjs-auth/actions)
 [![License](https://img.shields.io/github/license/wristband-dev/nextjs-auth)](https://github.com/wristband-dev/nextjs-auth/blob/main/LICENSE.md)
--->
+<!-- [![Actions Status](https://github.com/wristband-dev/nextjs-auth/workflows/Test/badge.svg)](https://github.com/wristband-dev/nextjs-auth/actions) -->
 
 This module facilitates seamless interaction with Wristband for user authentication within multi-tenant [NextJS applications](https://nextjs.org/). It follows OAuth 2.1 and OpenID standards. It supports both CommonJS and ES Modules and includes TypeScript declaration files. It works for both the NextJS App Router as well as the Page Router.
 
@@ -42,8 +41,8 @@ Key functionalities encompass the following:
 
 You can learn more about how authentication works in Wristband in our documentation:
 
-- [Auth Flow Walkthrough](https://wristband.stoplight.io/docs/documentation/gw47leh3pqplp-auth-flow-walkthrough).
-- [Login Workflow In Depth](https://wristband.stoplight.io/docs/documentation/d9bqywv6a3j9k-login-workflow)
+- [Auth Flow Walkthrough](https://docs.wristband.dev/docs/auth-flows-and-diagrams)
+- [Login Workflow In Depth](https://docs.wristband.dev/docs/login-workflow)
 
 ---
 
@@ -147,9 +146,9 @@ export function middlewareGetSession(
 
 There are <ins>three core endpoints</ins> your NextJS API routes should expose to facilitate both the Login and Logout workflows in Wristband. You'll need to add them to wherever your API routes live.
 
-#### [Login Endpoint](https://wristband.stoplight.io/docs/documentation/gw47leh3pqplp-auth-flow-walkthrough#login-endpoint)
+#### [Login Endpoint](https://docs.wristband.dev/docs/auth-flows-and-diagrams#login-endpoint)
 
-The goal of the Login Endpoint is to initiate an auth request by redircting to the [Wristband Authorization Endpoint](https://wristband.stoplight.io/docs/documentation/89ebd0c37e5b4-authorize). It will store any state tied to the auth request in a Login State Cookie, which will later be used by the Callback Endpoint. The frontend of your application should redirect to this endpoint when users need to log in to your application.
+The goal of the Login Endpoint is to initiate an auth request by redircting to the [Wristband Authorization Endpoint](https://docs.wristband.dev/reference/authorizev1). It will store any state tied to the auth request in a Login State Cookie, which will later be used by the Callback Endpoint. The frontend of your application should redirect to this endpoint when users need to log in to your application.
 
 ##### App Router
 
@@ -175,9 +174,9 @@ export default async function handleLogin(req: NextApiRequest, res: NextApiRespo
 }
 ```
 
-#### [Callback Endpoint](https://wristband.stoplight.io/docs/documentation/gw47leh3pqplp-auth-flow-walkthrough#callback-endpoint)
+#### [Callback Endpoint](https://docs.wristband.dev/docs/auth-flows-and-diagrams#callback-endpoint)
 
-The goal of the Callback Endpoint is to receive incoming calls from Wristband after the user has authenticated and ensure that the Login State cookie contains all auth request state in order to complete the Login Workflow. From there, it will call the [Wristband Token Endpoint](https://wristband.stoplight.io/docs/documentation/4b10b301cb6a2-create-tokens) to fetch necessary JWTs, call the [Wristband Userinfo Endpoint](https://wristband.stoplight.io/docs/documentation/78a780487515f-get-current-user-info) to get the user's data, and create a session for the application containing the JWTs and user data.
+The goal of the Callback Endpoint is to receive incoming calls from Wristband after the user has authenticated and ensure that the Login State cookie contains all auth request state in order to complete the Login Workflow. From there, it will call the [Wristband Token Endpoint](https://docs.wristband.dev/reference/tokenv1) to fetch necessary JWTs, call the [Wristband Userinfo Endpoint](https://docs.wristband.dev/reference/userinfov1) to get the user's data, and create a session for the application containing the JWTs and user data.
 
 ##### App Router
 
@@ -259,9 +258,9 @@ export default async function handleCallback(req: NextApiRequest, res: NextApiRe
 ```
 
 
-#### [Logout Endpoint](https://wristband.stoplight.io/docs/documentation/gw47leh3pqplp-auth-flow-walkthrough#logout-endpoint-1)
+#### [Logout Endpoint](https://docs.wristband.dev/docs/auth-flows-and-diagrams#logout-endpoint-1)
 
-The goal of the Logout Endpoint is to destroy the application's session that was established during the Callback Endpoint execution. If refresh tokens were requested during the Login Workflow, then a call to the [Wristband Revoke Token Endpoint](https://wristband.stoplight.io/docs/documentation/1ccf374c99c5b-revoke-token) will occur. It then will redirect to the [Wristband Logout Endpoint](https://wristband.stoplight.io/docs/documentation/ed96d1c4e6a80-logout) in order to destroy the user's authentication session within the Wristband platform. From there, Wristband will send the user to the Tenant-Level Login Page (unless configured otherwise).
+The goal of the Logout Endpoint is to destroy the application's session that was established during the Callback Endpoint execution. If refresh tokens were requested during the Login Workflow, then a call to the [Wristband Revoke Token Endpoint](https://docs.wristband.dev/reference/revokev1) will occur. It then will redirect to the [Wristband Logout Endpoint](https://docs.wristband.dev/reference/logoutv1) in order to destroy the user's authentication session within the Wristband platform. From there, Wristband will send the user to the Tenant-Level Login Page (unless configured otherwise).
 
 ##### App Router
 
@@ -526,7 +525,7 @@ function createWristbandAuth(authConfig: AuthConfig): WristbandAuth {}
 | loginUrl | string | Yes | The URL for initiating the login request. |
 | redirectUri | string | Yes | The redirect URI for callback after authentication. |
 | rootDomain | string | Depends | The root domain for your application. This value only needs to be specified if you use tenant subdomains in your login and redirect URLs. |
-| scopes | string[] | No | The scopes required for authentication. Refer to the docs for [currently supported scopes](https://wristband.stoplight.io/docs/documentation/xynze1qjtq6ic-o-auth2-and-open-id-connect-oidc#supported-openid-scopes). The default value is `[openid, offline_access, email]`. |
+| scopes | string[] | No | The scopes required for authentication. Refer to the docs for [currently supported scopes](https://docs.wristband.dev/docs/oauth2-and-openid-connect-oidc#supported-openid-scopes). The default value is `[openid, offline_access, email]`. |
 | useCustomDomains | boolean | No | Indicates whether custom domains are used for authentication. |
 | useTenantSubdomains | boolean | No | Indicates whether tenant subdomains are used for authentication. |
 | wristbandApplicationDomain | string | Yes | The vanity domain of the Wristband application. |
@@ -694,7 +693,7 @@ When the callback returns a `COMPLETED` result, all of the token and userinfo da
 | refreshToken | string or `undefined` | The refresh token that renews expired access tokens with Wristband, maintaining continuous access to services. |
 | returnUrl | string or `undefined` | The URL to return to after authentication is completed. |
 | tenantDomainName | string | The domain name of the tenant the user belongs to. |
-| userinfo | JSON | Data for the current user retrieved from the Wristband Userinfo Endpoint. The data returned in this object follows the format laid out in the [Wristband Userinfo Entity documentation](https://wristband.stoplight.io/docs/documentation/a2ca5c62520b8-user-info). The exact fields that get returned are based on the scopes you configured in the SDK. |
+| userinfo | JSON | Data for the current user retrieved from the Wristband Userinfo Endpoint. The data returned in this object follows the format laid out in the [Wristband Userinfo Endpoint documentation](https://docs.wristband.dev/reference/userinfov1). The exact fields that get returned are based on the scopes you configured in the SDK. |
 
 <br>
 The `callback()` function can also take optional configuration if your application needs custom behavior:
@@ -781,11 +780,11 @@ If your application created a session, it should destroy it before invoking the 
 
 #### Revoking Refresh Tokens
 
-If your application requested refresh tokens during the Login Workflow (via the `offline_access` scope), it is crucial to revoke the user's access to that refresh token when logging out. Otherwise, the refresh token would still be valid and able to refresh new access tokens.  You should pass the refresh token into the LogoutConfig when invoking the `logout()` function, and the SDK will call to the [Wristband Revoke Token Endpoint](https://wristband.stoplight.io/docs/documentation/1ccf374c99c5b-revoke-token) automatically.
+If your application requested refresh tokens during the Login Workflow (via the `offline_access` scope), it is crucial to revoke the user's access to that refresh token when logging out. Otherwise, the refresh token would still be valid and able to refresh new access tokens.  You should pass the refresh token into the LogoutConfig when invoking the `logout()` function, and the SDK will call to the [Wristband Revoke Token Endpoint](https://docs.wristband.dev/reference/revokev1) automatically.
 
 #### Resolving Tenant Domains
 
-Much like the Login Endpoint, Wristband requires your application specify a Tenant-Level domain when redirecting to the [Wristband Logout Endpoint](https://wristband.stoplight.io/docs/documentation/ed96d1c4e6a80-logout). If your application does not utilize tenant subdomains, then you will need to explicitly pass it into the LogoutConfig.
+Much like the Login Endpoint, Wristband requires your application specify a Tenant-Level domain when redirecting to the [Wristband Logout Endpoint](https://docs.wristband.dev/reference/logoutv1). If your application does not utilize tenant subdomains, then you will need to explicitly pass it into the LogoutConfig.
 
 ```ts
 await wristbandAuth.pageRouter.logout(req, res, config: { refreshToken: '98yht308hf902hc90wh09', tenantDomain: 'customer01' });
