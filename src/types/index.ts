@@ -154,7 +154,6 @@ export type LogoutConfig = {
  * @property {string} redirectUri The redirect URI for callback after authentication.
  * @property {string} [returnUrl] The URL to return to after authentication.
  * @property {string} state The state of the login process.
- * @property {string} [tenantDomainName] The domain name of the tenant the user belongs to.
  */
 export type LoginState = {
   codeVerifier: string;
@@ -162,18 +161,15 @@ export type LoginState = {
   redirectUri: string;
   returnUrl?: string;
   state: string;
-  tenantDomainName?: string;
 };
 
 /**
  * Represents the configuration for the map which is stored in login state cookie.
  * @typedef {Object} LoginStateMapConfig
  * @property {Object.<string, any>} [customState] Custom state data for the login state map.
- * @property {string} [tenantDomainName] The domain name of the tenant the user belongs to.
  */
 export type LoginStateMapConfig = {
   customState?: { [key: string]: any };
-  tenantDomainName?: string;
 };
 
 /**
