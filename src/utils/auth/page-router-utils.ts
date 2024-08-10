@@ -9,14 +9,14 @@ export function parseTenantSubdomain(req: NextApiRequest, rootDomain: string): s
   return host!.substring(host!.indexOf('.') + 1) === rootDomain ? host!.substring(0, host!.indexOf('.')) : '';
 }
 
-export function resolveTenantDomain(
+export function resolveTenantDomainName(
   req: NextApiRequest,
   useTenantSubdomains: boolean,
   rootDomain: string,
-  defaultTenantDomain: string = ''
+  defaultTenantDomainName: string = ''
 ): string {
   if (useTenantSubdomains) {
-    return parseTenantSubdomain(req, rootDomain) || defaultTenantDomain;
+    return parseTenantSubdomain(req, rootDomain) || defaultTenantDomainName;
   }
 
   const { tenant_domain: tenantDomainParam } = req.query;
@@ -25,7 +25,17 @@ export function resolveTenantDomain(
     throw new TypeError('More than one [tenant_domain] query parameter was passed to the login endpoint');
   }
 
-  return tenantDomainParam || defaultTenantDomain;
+  return tenantDomainParam || defaultTenantDomainName;
+}
+
+export function resolveTenantCustomDomain(req: NextApiRequest, defaultTenantCustomDomain: string = ''): string {
+  const { tenant_custom_domain: tenantCustomDomainParam } = req.query;
+
+  if (!!tenantCustomDomainParam && typeof tenantCustomDomainParam !== 'string') {
+    throw new TypeError('More than one [tenant_custom_domain] query parameter was passed to the login endpoint');
+  }
+
+  return tenantCustomDomainParam || defaultTenantCustomDomain;
 }
 
 export function createLoginState(
@@ -43,7 +53,6 @@ export function createLoginState(
     state: generateRandomString(32),
     codeVerifier: generateRandomString(32),
     redirectUri,
-    ...(!!config.tenantDomainName && { tenantDomainName: config.tenantDomainName }),
     ...(!!returnUrl && typeof returnUrl === 'string' ? { returnUrl } : {}),
     ...(!!config.customState && !!Object.keys(config.customState).length ? { customState: config.customState } : {}),
   };
@@ -111,6 +120,7 @@ export async function getAuthorizeUrl(
     redirectUri: string;
     scopes: string[];
     state: string;
+    tenantCustomDomain?: string;
     tenantDomainName?: string;
     useCustomDomains?: boolean;
     wristbandApplicationDomain: string;
@@ -137,8 +147,9 @@ export async function getAuthorizeUrl(
   });
 
   const separator = config.useCustomDomains ? '.' : '-';
-  const authorizeUrl = `${config.tenantDomainName}${separator}${config.wristbandApplicationDomain}/api/v1/oauth2/authorize`;
-  return `https://${authorizeUrl}?${queryParams.toString()}`;
+  const tenantDomainToUse =
+    config.tenantCustomDomain || `${config.tenantDomainName}${separator}${config.wristbandApplicationDomain}`;
+  return `https://${tenantDomainToUse}/api/v1/oauth2/authorize?${queryParams.toString()}`;
 }
 
 export function getAndClearLoginStateCookie(req: NextApiRequest, res: NextApiResponse): string {

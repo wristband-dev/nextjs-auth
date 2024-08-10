@@ -1,20 +1,20 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import type { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import retry from 'async-retry';
 
 import type {
+  AppRouterCallbackResult,
   AuthConfig,
   LoginConfig,
-  CallbackConfig,
   LogoutConfig,
+  PageRouterCallbackResult,
   TokenData,
   TokenResponse,
-  CallbackResult,
 } from '../types';
 import { AppRouterAuthHandler } from './app-router/app-router-auth-handler';
 import { PageRouterAuthHandler } from './page-router/page-router-auth-handler';
 import { WristbandService } from '../services/wristband-service';
-import { TENANT_DOMAIN_TOKEN } from '../utils/constants';
+import { NO_CACHE_HEADERS, TENANT_DOMAIN_TOKEN } from '../utils/constants';
 
 /**
  * WristbandAuth is a utility interface providing methods for seamless interaction with Wristband for authenticating
@@ -32,12 +32,17 @@ export interface WristbandAuth {
      * for the user attempting to login in order to start the Authorization Code flow.
      *
      * Your request can contain Wristband-specific query parameters:
-     * - return_url: The location of where to send users after authenticating. (Optional)
-     * - login_hint: A hint to Wristband about user's preferred login identifier. (Optional)
+     * - login_hint: A hint to Wristband about user's preferred login identifier. This can be appended as a query
+     * parameter in the redirect request to the Authorize URL.
+     * - return_url: The location of where to send users after authenticating.
+     * - tenant_custom_domain: The tenant custom domain for the tenant that the user belongs to, if applicable. Should be
+     * used as the domain of the authorize URL when present.
+     * - tenant_domain: The domain name of the tenant the user belongs to. Should be used in the tenant vanity domain of
+     * the authorize URL when not utilizing tenant subdomains nor tenant custom domains.
      *
-     * @param {NextRequest} req - The request object.
-     * @param {LoginConfig} [config] - Additional configuration for creating an auth request to Wristband.
-     * @returns {Promise<NextResponse>} - A Promise with the NextResponse that is peforming the URL redirect to Wristband.
+     * @param {NextRequest} req The request object.
+     * @param {LoginConfig} [config] Additional configuration for creating an auth request to Wristband.
+     * @returns {Promise<NextResponse>} A Promise with the NextResponse that is peforming the URL redirect to Wristband.
      */
     login: (req: NextRequest, loginConfig?: LoginConfig) => Promise<NextResponse>;
 
@@ -45,24 +50,44 @@ export interface WristbandAuth {
      * Receives incoming requests from Wristband with an authorization code. It will then proceed to exchange the auth
      * code for an access token as well as fetch the userinfo for the user attempting to login.
      *
-     * @param {Request} req - The request object.
-     * @param {CallbackConfig} [config] - Additional configuration for handling auth callbacks from Wristband.
-     * @returns {Promise<CallbackResult>} - A Promise containing the result of what happened during callback execution
+     * Your request can contain Wristband-specific query parameters:
+     * - code: The authorization code to use for exchanging for an access token.
+     * - error: An error code indicating that some an issue occurred during the login process.
+     * - error_description: A plaintext description giving more detail around the issue that occurred during the login
+     * process.
+     * - state: The state value that was originally sent to the Authorize URL.
+     * - tenant_custom_domain: If the tenant has a tenant custom domain defined, then this query parameter will be part
+     * of the incoming request to the Callback Endpoint. n the event a redirect to the Login Endpoint is required, then
+     * this should be appended as a query parameter when redirecting to the Login Endpoint.
+     * - tenant_domain: The domain name of the tenant the user belongs to. In the event a redirect to the Login Endpoint
+     * is required and neither tenant subdomains nor tenant custom domains are not being utilized, then this should be
+     * appended as a query parameter when redirecting to the Login Endpoint.
+     *
+     * @param {Request} req The request object.
+     * @returns {Promise<AppRouterCallbackResult>} A Promise containing the result of what happened during callback execution
      * as well as any accompanying data.
-     * @throws {WristbandError} - If an error occurs during the callback handling.
+     * @throws {WristbandError} If an error occurs during the callback handling.
      */
-    callback: (req: NextRequest, callbackConfig?: CallbackConfig) => Promise<CallbackResult>;
+    callback: (req: NextRequest) => Promise<AppRouterCallbackResult>;
 
     /**
      * Revokes the user's refresh token and redirects them to the Wristband logout endpoint to destroy
      * their authenticated session in Wristband.
      *
-     * @param {NextRequest} req - The request object.
-     * @param {LogoutConfig} [config] - Additional configuration for logging out the user.
-     * @returns {Promise<NextResponse>} - A Promise with the NextResponse that is peforming the URL redirect to Wristband.
-     * @throws {Error} - If an error occurs during the logout process.
+     * @param {NextRequest} req The request object.
+     * @param {LogoutConfig} [config] Additional configuration for logging out the user.
+     * @returns {Promise<NextResponse>} A Promise with the NextResponse that is peforming the URL redirect to Wristband.
+     * @throws {Error} If an error occurs during the logout process.
      */
     logout: (req: NextRequest, logoutConfig?: LogoutConfig) => Promise<NextResponse>;
+
+    /**
+     * A convenience function that constructs the redirect response to your application.
+     *
+     * @param {string} redirectUrl The location for your application that you want to send users to.
+     * @returns {NextResponse} The NextResponse that is peforming the URL redirect to your desired application URL.
+     */
+    createCallbackResponse: (redirectUrl: string) => NextResponse;
   };
 
   pageRouter: {
@@ -71,13 +96,18 @@ export interface WristbandAuth {
      * for the user attempting to login in order to start the Authorization Code flow.
      *
      * Your request can contain Wristband-specific query parameters:
-     * - return_url: The location of where to send users after authenticating. (Optional)
-     * - login_hint: A hint to Wristband about user's preferred login identifier. (Optional)
+     * - login_hint: A hint to Wristband about user's preferred login identifier. This can be appended as a query
+     * parameter in the redirect request to the Authorize URL.
+     * - return_url: The location of where to send users after authenticating.
+     * - tenant_custom_domain: The tenant custom domain for the tenant that the user belongs to, if applicable. Should be
+     * used as the domain of the authorize URL when present.
+     * - tenant_domain: The domain name of the tenant the user belongs to. Should be used in the tenant vanity domain of
+     * the authorize URL when not utilizing tenant subdomains nor tenant custom domains.
      *
-     * @param {Request} req - The request object.
-     * @param {Response} res - The response object.
-     * @param {LoginConfig} [config] - Additional configuration for creating an auth request to Wristband.
-     * @returns {Promise<NextApiResponse>} - A Promise with the NextApiResponse that is peforming the URL redirect to Wristband.
+     * @param {Request} req The request object.
+     * @param {Response} res The response object.
+     * @param {LoginConfig} [config] Additional configuration for creating an auth request to Wristband.
+     * @returns {Promise<NextApiResponse>} A Promise with the NextApiResponse that is peforming the URL redirect to Wristband.
      */
     login: (req: NextApiRequest, res: NextApiResponse, loginConfig?: LoginConfig) => Promise<NextApiResponse>;
 
@@ -85,23 +115,36 @@ export interface WristbandAuth {
      * Receives incoming requests from Wristband with an authorization code. It will then proceed to exchange the auth
      * code for an access token as well as fetch the userinfo for the user attempting to login.
      *
-     * @param {Request} req - The request object.
-     * @param {Response} res - The response object.
-     * @param {CallbackConfig} [config] - Additional configuration for handling auth callbacks from Wristband.
-     * @returns {Promise<CallbackResult>} - A Promise containing the result of what happened during callback execution
+     * Your request can contain Wristband-specific query parameters:
+     * - code: The authorization code to use for exchanging for an access token.
+     * - error: An error code indicating that some an issue occurred during the login process.
+     * - error_description: A plaintext description giving more detail around the issue that occurred during the login
+     * process.
+     * - state: The state value that was originally sent to the Authorize URL.
+     * - tenant_custom_domain: If the tenant has a tenant custom domain defined, then this query parameter will be part
+     * of the incoming request to the Callback Endpoint. n the event a redirect to the Login Endpoint is required, then
+     * this should be appended as a query parameter when redirecting to the Login Endpoint.
+     * - tenant_domain: The domain name of the tenant the user belongs to. In the event a redirect to the Login Endpoint
+     * is required and neither tenant subdomains nor tenant custom domains are not being utilized, then this should be
+     * appended as a query parameter when redirecting to the Login Endpoint.
+     *
+     * @param {Request} req The request object.
+     * @param {Response} res The response object.
+     * @param {CallbackConfig} [config] Additional configuration for handling auth callbacks from Wristband.
+     * @returns {Promise<PageRouterCallbackResult>} A Promise containing the result of what happened during callback execution
      * as well as any accompanying data.
-     * @throws {WristbandError} - If an error occurs during the callback handling.
+     * @throws {WristbandError} If an error occurs during the callback handling.
      */
-    callback: (req: NextApiRequest, res: NextApiResponse, callbackConfig?: CallbackConfig) => Promise<CallbackResult>;
+    callback: (req: NextApiRequest, res: NextApiResponse) => Promise<PageRouterCallbackResult>;
 
     /**
      * Revokes the user's refresh token and redirects them to the Wristband logout endpoint to destroy
      * their authenticated session in Wristband.
      *
-     * @param {Request} req - The request object.
-     * @param {Response} res - The response object.
-     * @param {LogoutConfig} [config] - Additional configuration for logging out the user.
-     * @returns {Promise<NextApiResponse>} - A Promise with the NextApiResponse that is peforming the URL redirect to Wristband.
+     * @param {Request} req The request object.
+     * @param {Response} res The response object.
+     * @param {LogoutConfig} [config] Additional configuration for logging out the user.
+     * @returns {Promise<NextApiResponse>} A Promise with the NextApiResponse that is peforming the URL redirect to Wristband.
      */
     logout: (req: NextApiRequest, res: NextApiResponse, logoutConfig?: LogoutConfig) => Promise<NextApiResponse>;
   };
@@ -109,11 +152,11 @@ export interface WristbandAuth {
   /**
    * Checks if the user's access token is expired and refreshed the token, if necessary.
    *
-   * @param {string} refreshToken - The refresh token.
-   * @param {number} expiresAt - Unix timestamp in milliseconds at which the token expires.
-   * @returns {Promise<TokenData | null>} - A Promise with the data from the token endpoint if the token was refreshed.
+   * @param {string} refreshToken The refresh token.
+   * @param {number} expiresAt Unix timestamp in milliseconds at which the token expires.
+   * @returns {Promise<TokenData | null>} A Promise with the data from the token endpoint if the token was refreshed.
    * Otherwise, a Promise with null value is returned.
-   * @throws {Error} - If an error occurs during the token refresh process.
+   * @throws {Error} If an error occurs during the token refresh process.
    */
   refreshTokenIfExpired: (refreshToken: string, expiresAt: number) => Promise<TokenData | null>;
 }
@@ -130,7 +173,7 @@ export class WristbandAuthImpl implements WristbandAuth {
   /**
    * Creates an instance of WristbandAuth.
    *
-   * @param {AuthConfig} authConfig - The configuration for Wristband authentication.
+   * @param {AuthConfig} authConfig The configuration for Wristband authentication.
    */
   constructor(authConfig: AuthConfig) {
     if (!authConfig.clientId) {
@@ -184,11 +227,17 @@ export class WristbandAuthImpl implements WristbandAuth {
     login: (req: NextRequest, loginConfig?: LoginConfig): Promise<NextResponse> => {
       return this.appRouterAuthHandler.login(req, loginConfig);
     },
-    callback: (req: NextRequest, callbackConfig?: CallbackConfig): Promise<CallbackResult> => {
-      return this.appRouterAuthHandler.callback(req, callbackConfig);
+    callback: (req: NextRequest): Promise<AppRouterCallbackResult> => {
+      return this.appRouterAuthHandler.callback(req);
     },
     logout: (req: NextRequest, logoutConfig?: LogoutConfig): Promise<NextResponse> => {
       return this.appRouterAuthHandler.logout(req, logoutConfig);
+    },
+    createCallbackResponse: (redirectUrl: string): NextResponse => {
+      if (!redirectUrl) {
+        throw new TypeError('redirectUrl cannot be null or empty');
+      }
+      return NextResponse.redirect(redirectUrl, { status: 302, headers: NO_CACHE_HEADERS });
     },
   };
 
@@ -196,8 +245,8 @@ export class WristbandAuthImpl implements WristbandAuth {
     login: (req: NextApiRequest, res: NextApiResponse, loginConfig?: LoginConfig): Promise<NextApiResponse> => {
       return this.pageRouterAuthHandler.login(req, res, loginConfig);
     },
-    callback: (req: NextApiRequest, res: NextApiResponse, callbackConfig?: CallbackConfig): Promise<CallbackResult> => {
-      return this.pageRouterAuthHandler.callback(req, res, callbackConfig);
+    callback: (req: NextApiRequest, res: NextApiResponse): Promise<PageRouterCallbackResult> => {
+      return this.pageRouterAuthHandler.callback(req, res);
     },
     logout: (req: NextApiRequest, res: NextApiResponse, logoutConfig?: LogoutConfig): Promise<NextApiResponse> => {
       return this.pageRouterAuthHandler.logout(req, res, logoutConfig);

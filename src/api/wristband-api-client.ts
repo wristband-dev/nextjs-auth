@@ -20,7 +20,12 @@ export class WristbandApiClient {
     const config: RequestInit = { ...options, headers };
     const response = await fetch(url, config);
 
-    return (await response.json()) as T;
+    if (response.status === 204 || response.headers.get('content-length') === '0') {
+      return undefined as T;
+    }
+
+    const responseBody = await response.text();
+    return responseBody ? (JSON.parse(responseBody) as T) : (undefined as T);
   }
 
   public async get<T>(endpoint: string, headers: HeadersInit = {}): Promise<T> {
