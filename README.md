@@ -668,12 +668,16 @@ The return URL is stored in the Login State Cookie, and you can choose to send u
 /* *** App Router *** */
 // Definition
 callback: (req: NextRequest) => Promise<AppRouterCallbackResult>;
+createCallbackResponse: (redirectUrl: string) => NextResponse;
+
 // Usage
 const callbackResult = await wristbandAuth.appRouter.callback(req);
+return wristbandAuth.appRouter.createCallbackResponse(appUrl);
 
 /* *** Page Router *** */
 // Definition
 callback: (req: NextApiRequest, res: NextApiResponse) => Promise<PageRouterCallbackResult>;
+
 // Usage
 const callbackResult = await wristbandAuth.pageRouter.callback(req, res);
 ```
@@ -726,6 +730,14 @@ When the callback returns a `COMPLETED` result, all of the token and userinfo da
 
 <br>
 
+When using the App Router, there is a convenience function called `createCallbackResponse()` you can use to create the appropriate redirect response to your application's destination URL while ensuring the proper headers are set.
+
+```
+const appUrl = callbackData.returnUrl || `https://yourapp.io/home`;
+return wristbandAuth.appRouter.createCallbackResponse(appUrl);
+```
+
+
 #### Redirect Responses
 
 There are certain scenarios where instead of callback data being returned by the SDK, a redirect response occurs during execution instead.  The following are edge cases where this occurs:
@@ -734,10 +746,7 @@ There are certain scenarios where instead of callback data being returned by the
 - The `state` query parameter sent from Wristband to your Callback Endpoint does not match the Login State Cookie.
 - Wristband sends an `error` query parameter to your Callback Endpoint, and it is an expected error type that the SDK knows how to resolve.
 
-The location of where the user gets redirected to in these scenarios depends on if the application is using tenant subdomains and if the SDK is able to determine which tenant the user is currently attempting to log in to. The resolution happens in the following order:
-
-1. If the tenant domain can be determined, then the user will get redirected back to your NextJS Login Endpoint.
-2. Otherwise, the user will be sent to the Wristband-hosted Application-Level Login Page URL.
+In these events, the user will get redirected back to your NextJS Login Endpoint.
 
 #### Error Parameters
 
