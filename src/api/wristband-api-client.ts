@@ -1,3 +1,4 @@
+import { FetchError } from '../error';
 import { FORM_URLENCODED_MEDIA_TYPE, JSON_MEDIA_TYPE } from '../utils/constants';
 
 interface RequestOptions extends RequestInit {
@@ -20,12 +21,18 @@ export class WristbandApiClient {
     const config: RequestInit = { ...options, headers };
     const response = await fetch(url, config);
 
-    if (response.status === 204 || response.headers.get('content-length') === '0') {
+    if (response.status === 204) {
       return undefined as T;
     }
 
-    const responseBody = await response.text();
-    return responseBody ? (JSON.parse(responseBody) as T) : (undefined as T);
+    const responseBodyText = await response.text();
+    const responseBody = responseBodyText ? (JSON.parse(responseBodyText) as T) : (undefined as T);
+
+    if (response.status >= 400) {
+      throw new FetchError(response, responseBody);
+    }
+
+    return responseBody;
   }
 
   public async get<T>(endpoint: string, headers: HeadersInit = {}): Promise<T> {

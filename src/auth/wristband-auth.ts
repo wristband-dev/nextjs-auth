@@ -15,6 +15,7 @@ import { AppRouterAuthHandler } from './app-router/app-router-auth-handler';
 import { PageRouterAuthHandler } from './page-router/page-router-auth-handler';
 import { WristbandService } from '../services/wristband-service';
 import { NO_CACHE_HEADERS, TENANT_DOMAIN_TOKEN } from '../utils/constants';
+import { FetchError, WristbandError } from '../error';
 
 /**
  * WristbandAuth is a utility interface providing methods for seamless interaction with Wristband for authenticating
@@ -269,8 +270,24 @@ export class WristbandAuthImpl implements WristbandAuth {
     // Try up to 3 times to perform a token refresh.
     let tokenResponse: TokenResponse | null = null;
     await retry(
-      async () => {
-        tokenResponse = await this.wristbandService.refreshToken(refreshToken);
+      async (bail) => {
+        try {
+          tokenResponse = await this.wristbandService.refreshToken(refreshToken);
+        } catch (error: any) {
+          if (
+            error instanceof FetchError &&
+            error.response &&
+            error.response.status >= 400 &&
+            error.response.status < 500
+          ) {
+            const errorDescription =
+              error.body && error.body.error_description ? error.body.error_description : 'Invalid Refresh Token';
+            bail(new WristbandError('invalid_refresh_token', errorDescription));
+            return;
+          }
+
+          bail(new WristbandError('unexpected_error', 'Unexpected Error'));
+        }
       },
       { retries: 2, minTimeout: 100, maxTimeout: 100 }
     );
