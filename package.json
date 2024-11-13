@@ -2,7 +2,7 @@
   "name": "@wristband/nextjs-auth",
   "description": "SDK for integrating your NextJS application with Wristband. Handles user authentication and token management.",
   "author": "Wristband",
-  "version": "1.0.0-rc1",
+  "version": "1.0.0-rc2",
   "license": "MIT",
   "private": false,
   "homepage": "https://wristband.dev",
@@ -98,7 +98,7 @@
   "dependencies": {
     "async-retry": "^1.3.3",
     "iron-webcrypto": "^1.2.1",
-    "next": "^14.2.5",
+    "next": "^14.2.17",
     "uncrypto": "^0.1.3"
   }
 }
