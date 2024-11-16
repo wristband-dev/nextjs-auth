@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 
-import { LOGIN_STATE_COOKIE_PREFIX } from '../constants';
+import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
 import { LoginState, LoginStateMapConfig } from '../../types';
 import { base64ToURLSafe, generateRandomString, sha256Base64 } from './common-utils';
 
@@ -80,14 +80,14 @@ export function createLoginStateCookie(
   if (allLoginCookieNames.length >= 3) {
     const mostRecentTimestamps: string[] = allLoginCookieNames
       .map((cookieName: string) => {
-        return cookieName.split(':')[2];
+        return cookieName.split(LOGIN_STATE_COOKIE_SEPARATOR)[2];
       })
       .sort()
       .reverse()
       .slice(0, 2);
 
     allLoginCookieNames.forEach((cookieName: string) => {
-      const timestamp = cookieName.split(':')[2];
+      const timestamp = cookieName.split(LOGIN_STATE_COOKIE_SEPARATOR)[2];
       // If 3 cookies exist, then we delete the oldest one to make room for the new one.
       if (!mostRecentTimestamps.includes(timestamp)) {
         const staleCookieHeaderValue = [`${cookieName}=; Path=/; Max-Age=0`];
@@ -98,7 +98,7 @@ export function createLoginStateCookie(
 
   // Now add the new login state cookie with a 1-hour expiration time.
   // NOTE: If deploying your own app to production, do not disable secure cookies.
-  const newCookieName: string = `${LOGIN_STATE_COOKIE_PREFIX}${state}:${Date.now().valueOf()}`;
+  const newCookieName: string = `${LOGIN_STATE_COOKIE_PREFIX}${state}${LOGIN_STATE_COOKIE_SEPARATOR}${Date.now().valueOf()}`;
   const newCookieHeaderValue: string = [
     `${newCookieName}=${encryptedLoginState};`,
     'HTTPOnly;',
@@ -160,7 +160,7 @@ export function getAndClearLoginStateCookie(req: NextApiRequest, res: NextApiRes
   // This should always resolve to a single cookie with this prefix, or possibly no cookie at all
   // if it got cleared or expired before the callback was triggered.
   const matchingLoginCookieNames: string[] = Object.keys(cookies).filter((cookieName) => {
-    return cookieName.startsWith(`${LOGIN_STATE_COOKIE_PREFIX}${paramState}:`);
+    return cookieName.startsWith(`${LOGIN_STATE_COOKIE_PREFIX}${paramState}${LOGIN_STATE_COOKIE_SEPARATOR}`);
   });
 
   let loginStateCookie: string = '';
