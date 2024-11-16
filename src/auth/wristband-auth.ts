@@ -282,11 +282,13 @@ export class WristbandAuthImpl implements WristbandAuth {
           ) {
             const errorDescription =
               error.body && error.body.error_description ? error.body.error_description : 'Invalid Refresh Token';
+            // Only 4xx errors should short-circuit the retry loop early.
             bail(new WristbandError('invalid_refresh_token', errorDescription));
             return;
           }
 
-          bail(new WristbandError('unexpected_error', 'Unexpected Error'));
+          // Retry any 5xx errors.
+          throw new WristbandError('unexpected_error', 'Unexpected Error');
         }
       },
       { retries: 2, minTimeout: 100, maxTimeout: 100 }
@@ -302,7 +304,7 @@ export class WristbandAuthImpl implements WristbandAuth {
       return { accessToken, idToken, refreshToken: responseRefreshToken, expiresIn };
     }
 
-    // [Safety check] Errors during the refresh API call should bubble up, so this should never happen.
-    throw new Error('Token response was null');
+    // This is merely a safety check, but this should never happen.
+    throw new WristbandError('unexpected_error', 'Unexpected Error');
   }
 }
