@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 
-import { LOGIN_STATE_COOKIE_PREFIX } from '../constants';
+import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
 import { LoginState, LoginStateMapConfig } from '../../types';
 import { base64ToURLSafe, generateRandomString, sha256Base64 } from './common-utils';
 
@@ -73,14 +73,14 @@ export function createLoginStateCookie(
   if (allLoginCookieNames.length >= 3) {
     const mostRecentTimestamps: string[] = allLoginCookieNames
       .map((cookieName: string) => {
-        return cookieName.split(':')[2];
+        return cookieName.split(LOGIN_STATE_COOKIE_SEPARATOR)[2];
       })
       .sort()
       .reverse()
       .slice(0, 2);
 
     allLoginCookieNames.forEach((cookieName: string) => {
-      const timestamp = cookieName.split(':')[2];
+      const timestamp = cookieName.split(LOGIN_STATE_COOKIE_SEPARATOR)[2];
       // If 3 cookies exist, then we delete the oldest one to make room for the new one.
       if (!mostRecentTimestamps.includes(timestamp)) {
         cookiesList.delete(cookieName);
@@ -90,7 +90,7 @@ export function createLoginStateCookie(
 
   // Now add the new login state cookie with a 1-hour expiration time.
   // NOTE: If deploying your own app to production, do not disable secure cookies.
-  const newCookieName: string = `${LOGIN_STATE_COOKIE_PREFIX}${state}:${Date.now().valueOf()}`;
+  const newCookieName: string = `${LOGIN_STATE_COOKIE_PREFIX}${state}${LOGIN_STATE_COOKIE_SEPARATOR}${Date.now().valueOf()}`;
   cookiesList.set(newCookieName, encryptedLoginState, {
     httpOnly: true,
     maxAge: 3600,
@@ -150,7 +150,7 @@ export function getAndClearLoginStateCookie(req: NextRequest): string {
   const matchingLoginCookieNames: string[] = cookieList
     .getAll()
     .filter((cookie) => {
-      return cookie.name.startsWith(`${LOGIN_STATE_COOKIE_PREFIX}${paramState}:`);
+      return cookie.name.startsWith(`${LOGIN_STATE_COOKIE_PREFIX}${paramState}${LOGIN_STATE_COOKIE_SEPARATOR}`);
     })
     .map((cookie) => {
       return cookie.name;
