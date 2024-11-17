@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
 import { LoginState, LoginStateMapConfig } from '../../types';
@@ -57,47 +57,54 @@ export function createLoginState(req: NextRequest, redirectUri: string, config: 
   return config.customState ? { ...loginStateData, customState: config.customState } : loginStateData;
 }
 
+function parseCookies(cookieHeader: string | null): Record<string, string> {
+  if (!cookieHeader) return {};
+  return Object.fromEntries(
+    cookieHeader.split(';').map((cookie) => {
+      const [name, ...rest] = cookie.trim().split('=');
+      return [name, decodeURIComponent(rest.join('='))];
+    })
+  );
+}
 export function createLoginStateCookie(
+  req: NextRequest,
+  res: NextResponse,
   state: string,
   encryptedLoginState: string,
   dangerouslyDisableSecureCookies: boolean
-) {
-  const cookiesList = cookies();
+): void {
+  // Parse existing cookies from the request
+  const existingCookies = parseCookies(req.headers.get('cookie'));
+
+  // Filter for login state cookies
+  const allLoginCookies = Object.entries(existingCookies)
+    .filter(([name]) => {
+      return name.startsWith(LOGIN_STATE_COOKIE_PREFIX);
+    })
+    .map(([name]) => {
+      return { name, timestamp: parseInt(name.split(LOGIN_STATE_COOKIE_SEPARATOR)[2], 10) };
+    });
+
   // The max amount of concurrent login state cookies we allow is 3.  If there are already 3 cookies,
   // then we clear the one with the oldest creation timestamp to make room for the new one.
-  const allLoginCookieNames = Object.keys(cookiesList).filter((cookieName) => {
-    return cookieName.startsWith(`${LOGIN_STATE_COOKIE_PREFIX}`);
-  });
+  if (allLoginCookies.length >= 3) {
+    const oldestCookie = allLoginCookies.sort((a, b) => {
+      return a.timestamp - b.timestamp;
+    })[0];
 
-  // Retain only the 2 cookies with the most recent timestamps.
-  if (allLoginCookieNames.length >= 3) {
-    const mostRecentTimestamps: string[] = allLoginCookieNames
-      .map((cookieName: string) => {
-        return cookieName.split(LOGIN_STATE_COOKIE_SEPARATOR)[2];
-      })
-      .sort()
-      .reverse()
-      .slice(0, 2);
-
-    allLoginCookieNames.forEach((cookieName: string) => {
-      const timestamp = cookieName.split(LOGIN_STATE_COOKIE_SEPARATOR)[2];
-      // If 3 cookies exist, then we delete the oldest one to make room for the new one.
-      if (!mostRecentTimestamps.includes(timestamp)) {
-        cookiesList.delete(cookieName);
-      }
-    });
+    // Delete the cookie
+    res.headers.append(
+      'Set-Cookie',
+      `${oldestCookie.name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`
+    );
   }
 
-  // Now add the new login state cookie with a 1-hour expiration time.
-  // NOTE: If deploying your own app to production, do not disable secure cookies.
+  // 1 hour expiration for new cookie
   const newCookieName: string = `${LOGIN_STATE_COOKIE_PREFIX}${state}${LOGIN_STATE_COOKIE_SEPARATOR}${Date.now().valueOf()}`;
-  cookiesList.set(newCookieName, encryptedLoginState, {
-    httpOnly: true,
-    maxAge: 3600,
-    path: '/',
-    sameSite: 'lax',
-    secure: !dangerouslyDisableSecureCookies,
-  });
+  res.headers.append(
+    'Set-Cookie',
+    `${newCookieName}=${encryptedLoginState}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`
+  );
 }
 
 export async function getAuthorizeUrl(
@@ -140,8 +147,8 @@ export async function getAuthorizeUrl(
   return `https://${tenantDomainToUse}/api/v1/oauth2/authorize?${queryParams.toString()}`;
 }
 
-export function getAndClearLoginStateCookie(req: NextRequest): string {
-  const cookieList = cookies();
+export async function getAndClearLoginStateCookie(req: NextRequest): Promise<string> {
+  const cookieList = await cookies();
   const state = req.nextUrl.searchParams.get('state');
   const paramState = state ? state.toString() : '';
 
