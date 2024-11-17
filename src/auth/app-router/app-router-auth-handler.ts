@@ -83,10 +83,6 @@ export class AppRouterAuthHandler {
       !!loginConfig.customState && !!Object.keys(loginConfig.customState).length ? loginConfig.customState : undefined;
     const loginState: LoginState = createLoginState(req, this.redirectUri, { customState });
 
-    // Clear any stale login state cookies and add a new one for the current request.
-    const encryptedLoginState: string = await encryptLoginState(loginState, this.loginStateSecret);
-    createLoginStateCookie(loginState.state, encryptedLoginState, this.dangerouslyDisableSecureCookies);
-
     // Create the Wristband Authorize Endpoint URL which the user will get redirectd to.
     const authorizeUrl: string = await getAuthorizeUrl(req, {
       wristbandApplicationDomain: this.wristbandApplicationDomain,
@@ -100,8 +96,15 @@ export class AppRouterAuthHandler {
       tenantCustomDomain,
     });
 
+    // Prepare a response object for cookies and redirect
+    const res = NextResponse.redirect(authorizeUrl, { status: 302, headers: NO_CACHE_HEADERS });
+
+    // Clear any stale login state cookies and add a new one for the current request.
+    const encryptedLoginState: string = await encryptLoginState(loginState, this.loginStateSecret);
+    createLoginStateCookie(req, res, loginState.state, encryptedLoginState, this.dangerouslyDisableSecureCookies);
+
     // Perform the redirect to Wristband's Authorize Endpoint.
-    return NextResponse.redirect(authorizeUrl, { status: 302, headers: NO_CACHE_HEADERS });
+    return res;
   }
 
   async callback(req: NextRequest): Promise<AppRouterCallbackResult> {
@@ -159,7 +162,7 @@ export class AppRouterAuthHandler {
     const redirectResponse = NextResponse.redirect(tenantLoginUrl, { status: 302, headers: NO_CACHE_HEADERS });
 
     // Make sure the login state cookie exists, extract it, and set it to be cleared by the server.
-    const loginStateCookie: string = getAndClearLoginStateCookie(req);
+    const loginStateCookie: string = await getAndClearLoginStateCookie(req);
     if (!loginStateCookie) {
       return { redirectResponse, result: CallbackResultType.REDIRECT_REQUIRED };
     }
