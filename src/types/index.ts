@@ -198,3 +198,8 @@ export type TokenResponse = {
 export type Userinfo = {
   [key: string]: any;
 };
+
+export type AppRouterLoginStateCookie = {
+  name: string;
+  value: string;
+};

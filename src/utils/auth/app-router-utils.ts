@@ -1,61 +1,8 @@
-import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
-import { LoginState, LoginStateMapConfig } from '../../types';
+import { AppRouterLoginStateCookie, LoginState, LoginStateMapConfig } from '../../types';
 import { base64ToURLSafe, generateRandomString, sha256Base64 } from './common-utils';
-
-export function parseTenantSubdomain(req: NextRequest, rootDomain: string): string {
-  const host = req.headers.get('host');
-  return host!.substring(host!.indexOf('.') + 1) === rootDomain ? host!.substring(0, host!.indexOf('.')) : '';
-}
-
-export function resolveTenantDomainName(
-  req: NextRequest,
-  useTenantSubdomains: boolean,
-  rootDomain: string,
-  defaultTenantDomainName: string = ''
-): string {
-  if (useTenantSubdomains) {
-    return parseTenantSubdomain(req, rootDomain) || defaultTenantDomainName;
-  }
-
-  const tenantDomainParam = req.nextUrl.searchParams.get('tenant_domain');
-
-  if (!!tenantDomainParam && typeof tenantDomainParam !== 'string') {
-    throw new TypeError('More than one [tenant_domain] query parameter was passed to the login endpoint');
-  }
-
-  return tenantDomainParam || defaultTenantDomainName;
-}
-
-export function resolveTenantCustomDomain(req: NextRequest, defaultTenantCustomDomain: string = ''): string {
-  const tenantCustomDomainParam = req.nextUrl.searchParams.get('tenant_custom_domain');
-
-  if (!!tenantCustomDomainParam && typeof tenantCustomDomainParam !== 'string') {
-    throw new TypeError('More than one [tenant_custom_domain] query parameter was passed to the login endpoint');
-  }
-
-  return tenantCustomDomainParam || defaultTenantCustomDomain;
-}
-
-export function createLoginState(req: NextRequest, redirectUri: string, config: LoginStateMapConfig = {}): LoginState {
-  const returnUrl = req.nextUrl.searchParams.get('return_url');
-
-  if (!!returnUrl && typeof returnUrl !== 'string') {
-    throw new TypeError('More than one [return_url] query parameter was passed to the login endpoint');
-  }
-
-  const loginStateData = {
-    state: generateRandomString(32),
-    codeVerifier: generateRandomString(32),
-    redirectUri,
-    ...(!!returnUrl && typeof returnUrl === 'string' ? { returnUrl } : {}),
-    ...(!!config.customState && !!Object.keys(config.customState).length ? { customState: config.customState } : {}),
-  };
-
-  return config.customState ? { ...loginStateData, customState: config.customState } : loginStateData;
-}
 
 function parseCookies(cookieHeader: string | null): Record<string, string> {
   if (!cookieHeader) return {};
@@ -66,6 +13,54 @@ function parseCookies(cookieHeader: string | null): Record<string, string> {
     })
   );
 }
+
+export function parseTenantSubdomain(req: NextRequest, rootDomain: string): string {
+  const host = req.headers.get('host');
+  return host!.substring(host!.indexOf('.') + 1) === rootDomain ? host!.substring(0, host!.indexOf('.')) : '';
+}
+
+export function resolveTenantDomainName(req: NextRequest, useTenantSubdomains: boolean, rootDomain: string): string {
+  if (useTenantSubdomains) {
+    return parseTenantSubdomain(req, rootDomain) || '';
+  }
+
+  const tenantDomainParam = req.nextUrl.searchParams.getAll('tenant_domain');
+
+  if (tenantDomainParam.length > 1) {
+    throw new TypeError('More than one [tenant_domain] query parameter was encountered');
+  }
+
+  return tenantDomainParam[0] || '';
+}
+
+export function resolveTenantCustomDomainParam(req: NextRequest): string {
+  const tenantCustomDomainParam = req.nextUrl.searchParams.getAll('tenant_custom_domain');
+
+  if (tenantCustomDomainParam.length > 1) {
+    throw new TypeError('More than one [tenant_custom_domain] query parameter was encountered');
+  }
+
+  return tenantCustomDomainParam[0] || '';
+}
+
+export function createLoginState(req: NextRequest, redirectUri: string, config: LoginStateMapConfig = {}): LoginState {
+  const returnUrl = req.nextUrl.searchParams.getAll('return_url');
+
+  if (returnUrl.length > 1) {
+    throw new TypeError('More than one [return_url] query parameter was encountered');
+  }
+
+  const loginStateData = {
+    state: generateRandomString(32),
+    codeVerifier: generateRandomString(32),
+    redirectUri,
+    ...(returnUrl.length > 0 ? { returnUrl: returnUrl[0] } : {}),
+    ...(!!config.customState && !!Object.keys(config.customState).length ? { customState: config.customState } : {}),
+  };
+
+  return config.customState ? { ...loginStateData, customState: config.customState } : loginStateData;
+}
+
 export function createLoginStateCookie(
   req: NextRequest,
   res: NextResponse,
@@ -74,10 +69,10 @@ export function createLoginStateCookie(
   dangerouslyDisableSecureCookies: boolean
 ): void {
   // Parse existing cookies from the request
-  const existingCookies = parseCookies(req.headers.get('cookie'));
+  const cookies = parseCookies(req.headers.get('cookie'));
 
   // Filter for login state cookies
-  const allLoginCookies = Object.entries(existingCookies)
+  const allLoginCookies = Object.entries(cookies)
     .filter(([name]) => {
       return name.startsWith(LOGIN_STATE_COOKIE_PREFIX);
     })
@@ -112,6 +107,8 @@ export async function getAuthorizeUrl(
   config: {
     clientId: string;
     codeVerifier: string;
+    defaultTenantCustomDomain?: string;
+    defaultTenantDomainName?: string;
     redirectUri: string;
     scopes: string[];
     state: string;
@@ -121,10 +118,10 @@ export async function getAuthorizeUrl(
     wristbandApplicationDomain: string;
   }
 ): Promise<string> {
-  const loginHint = req.nextUrl.searchParams.get('login_hint');
+  const loginHint = req.nextUrl.searchParams.getAll('login_hint');
 
-  if (!!loginHint && typeof loginHint !== 'string') {
-    throw new TypeError('More than one [login_hint] query parameter was passed to the login endpoint');
+  if (loginHint.length > 1) {
+    throw new TypeError('More than one [login_hint] query parameter was encountered');
   }
 
   const digest = await sha256Base64(config.codeVerifier);
@@ -138,39 +135,56 @@ export async function getAuthorizeUrl(
     code_challenge: base64ToURLSafe(digest),
     code_challenge_method: 'S256',
     nonce: generateRandomString(32),
-    ...(!!loginHint && typeof loginHint === 'string' ? { login_hint: loginHint } : {}),
+    ...(loginHint.length > 0 ? { login_hint: loginHint[0] } : {}),
   });
 
   const separator = config.useCustomDomains ? '.' : '-';
-  const tenantDomainToUse =
-    config.tenantCustomDomain || `${config.tenantDomainName}${separator}${config.wristbandApplicationDomain}`;
-  return `https://${tenantDomainToUse}/api/v1/oauth2/authorize?${queryParams.toString()}`;
+
+  // Domain priority order resolution:
+  // 1)  tenant_custom_domain query param
+  // 2a) tenant subdomain
+  // 2b) tenant_domain query param
+  // 3)  defaultTenantCustomDomain login config
+  // 4)  defaultTenantDomainName login config
+  if (config.tenantCustomDomain) {
+    return `https://${config.tenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
+  }
+  if (config.tenantDomainName) {
+    return `https://${config.tenantDomainName}${separator}${config.wristbandApplicationDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
+  }
+  if (config.defaultTenantCustomDomain) {
+    return `https://${config.defaultTenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
+  }
+  return `https://${config.defaultTenantDomainName}${separator}${config.wristbandApplicationDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
 }
 
-export async function getAndClearLoginStateCookie(req: NextRequest): Promise<string> {
-  const cookieList = await cookies();
+export function getLoginStateCookie(req: NextRequest): AppRouterLoginStateCookie | null {
+  // Parse existing cookies from the request
+  const cookies = parseCookies(req.headers.get('cookie'));
   const state = req.nextUrl.searchParams.get('state');
   const paramState = state ? state.toString() : '';
 
   // This should always resolve to a single cookie with this prefix, or possibly no cookie at all
   // if it got cleared or expired before the callback was triggered.
-  const matchingLoginCookieNames: string[] = cookieList
-    .getAll()
-    .filter((cookie) => {
-      return cookie.name.startsWith(`${LOGIN_STATE_COOKIE_PREFIX}${paramState}${LOGIN_STATE_COOKIE_SEPARATOR}`);
-    })
-    .map((cookie) => {
-      return cookie.name;
-    });
-
-  let loginStateCookie: string | undefined = '';
+  const matchingLoginCookieNames: string[] = Object.keys(cookies).filter((cookieName) => {
+    return cookieName.startsWith(`${LOGIN_STATE_COOKIE_PREFIX}${paramState}${LOGIN_STATE_COOKIE_SEPARATOR}`);
+  });
 
   if (matchingLoginCookieNames.length > 0) {
     const cookieName = matchingLoginCookieNames[0];
-    loginStateCookie = cookieList.get(cookieName)?.value;
-    // Delete the login state cookie.
-    cookieList.delete(cookieName);
+    return { name: cookieName, value: cookies[cookieName] };
   }
 
-  return loginStateCookie || '';
+  return null;
+}
+
+export function clearLoginStateCookie(
+  res: NextResponse,
+  cookieName: string,
+  dangerouslyDisableSecureCookies: boolean
+): void {
+  res.headers.append(
+    'Set-Cookie',
+    `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`
+  );
 }

@@ -14,7 +14,7 @@ import type {
 import { AppRouterAuthHandler } from './app-router/app-router-auth-handler';
 import { PageRouterAuthHandler } from './page-router/page-router-auth-handler';
 import { WristbandService } from '../services/wristband-service';
-import { NO_CACHE_HEADERS, TENANT_DOMAIN_TOKEN } from '../utils/constants';
+import { TENANT_DOMAIN_TOKEN } from '../utils/constants';
 import { FetchError, WristbandError } from '../error';
 
 /**
@@ -83,12 +83,13 @@ export interface WristbandAuth {
     logout: (req: NextRequest, logoutConfig?: LogoutConfig) => Promise<NextResponse>;
 
     /**
-     * A convenience function that constructs the redirect response to your application.
+     * Constructs the redirect response to your application.
      *
+     * @param {NextRequest} req The request object.
      * @param {string} redirectUrl The location for your application that you want to send users to.
      * @returns {NextResponse} The NextResponse that is peforming the URL redirect to your desired application URL.
      */
-    createCallbackResponse: (redirectUrl: string) => NextResponse;
+    createCallbackResponse: (req: NextRequest, redirectUrl: string) => Promise<NextResponse>;
   };
 
   pageRouter: {
@@ -234,11 +235,8 @@ export class WristbandAuthImpl implements WristbandAuth {
     logout: (req: NextRequest, logoutConfig?: LogoutConfig): Promise<NextResponse> => {
       return this.appRouterAuthHandler.logout(req, logoutConfig);
     },
-    createCallbackResponse: (redirectUrl: string): NextResponse => {
-      if (!redirectUrl) {
-        throw new TypeError('redirectUrl cannot be null or empty');
-      }
-      return NextResponse.redirect(redirectUrl, { status: 302, headers: NO_CACHE_HEADERS });
+    createCallbackResponse: (req: NextRequest, redirectUrl: string): Promise<NextResponse> => {
+      return this.appRouterAuthHandler.createCallbackResponse(req, redirectUrl);
     },
   };
 
