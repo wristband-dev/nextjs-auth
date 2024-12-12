@@ -11,16 +11,18 @@ import {
   TokenResponse,
   Userinfo,
   CallbackData,
+  AppRouterLoginStateCookie,
 } from '../../types';
 import { WristbandService } from '../../services/wristband-service';
 import { decryptLoginState, encryptLoginState } from '../../utils/auth/common-utils';
 import {
   createLoginState,
   createLoginStateCookie,
-  getAndClearLoginStateCookie,
+  getLoginStateCookie,
   getAuthorizeUrl,
-  resolveTenantCustomDomain,
+  resolveTenantCustomDomainParam,
   resolveTenantDomainName,
+  clearLoginStateCookie,
 } from '../../utils/auth/app-router-utils';
 import { LOGIN_REQUIRED_ERROR, NO_CACHE_HEADERS, TENANT_DOMAIN_TOKEN } from '../../utils/constants';
 import { WristbandError } from '../../error';
@@ -61,16 +63,13 @@ export class AppRouterAuthHandler {
 
   async login(req: NextRequest, loginConfig: LoginConfig = {}): Promise<NextResponse> {
     // Determine if a tenant custom domain is present as it will be needed for the authorize URL, if provided.
-    const tenantCustomDomain: string = resolveTenantCustomDomain(req, loginConfig.defaultTenantCustomDomain);
+    const tenantCustomDomain: string = resolveTenantCustomDomainParam(req);
+    const tenantDomainName: string = resolveTenantDomainName(req, this.useTenantSubdomains, this.rootDomain);
+    const defaultTenantCustomDomain: string = loginConfig.defaultTenantCustomDomain || '';
+    const defaultTenantDomainName: string = loginConfig.defaultTenantDomainName || '';
 
     // In the event we cannot determine either a tenant custom domain or subdomain, send the user to app-level login.
-    const tenantDomainName: string = resolveTenantDomainName(
-      req,
-      this.useTenantSubdomains,
-      this.rootDomain,
-      loginConfig.defaultTenantDomainName
-    );
-    if (!tenantDomainName && !tenantCustomDomain) {
+    if (!tenantCustomDomain && !tenantDomainName && !defaultTenantCustomDomain && !defaultTenantDomainName) {
       const apploginUrl = this.customApplicationLoginPageUrl || `https://${this.wristbandApplicationDomain}/login`;
       return NextResponse.redirect(`${apploginUrl}?client_id=${this.clientId}`, {
         status: 302,
@@ -92,8 +91,10 @@ export class AppRouterAuthHandler {
       state: loginState.state,
       codeVerifier: loginState.codeVerifier,
       scopes: this.scopes,
-      tenantDomainName,
       tenantCustomDomain,
+      tenantDomainName,
+      defaultTenantDomainName,
+      defaultTenantCustomDomain,
     });
 
     // Prepare a response object for cookies and redirect
@@ -108,40 +109,37 @@ export class AppRouterAuthHandler {
   }
 
   async callback(req: NextRequest): Promise<AppRouterCallbackResult> {
-    const code = req.nextUrl.searchParams.get('code');
-    const paramState = req.nextUrl.searchParams.get('state');
-    const error = req.nextUrl.searchParams.get('error');
-    const errorDescription = req.nextUrl.searchParams.get('error_description');
-    const tenantDomainName = req.nextUrl.searchParams.get('tenant_domain');
-    const tenantCustomDomain = req.nextUrl.searchParams.get('tenant_custom_domain');
+    const codeArray = req.nextUrl.searchParams.getAll('code');
+    const paramStateArray = req.nextUrl.searchParams.getAll('state');
+    const errorArray = req.nextUrl.searchParams.getAll('error');
+    const errorDescriptionArray = req.nextUrl.searchParams.getAll('error_description');
+    const tenantCustomDomainParamArray = req.nextUrl.searchParams.getAll('tenant_custom_domain');
 
     // Safety checks -- Wristband backend should never send bad query params
-    if (!paramState || typeof paramState !== 'string') {
+    if (paramStateArray.length !== 1) {
       throw new TypeError('Invalid query parameter [state] passed from Wristband during callback');
     }
-    if (!!code && typeof code !== 'string') {
+    if (codeArray.length > 1) {
       throw new TypeError('Invalid query parameter [code] passed from Wristband during callback');
     }
-    if (!!error && typeof error !== 'string') {
+    if (errorArray.length > 1) {
       throw new TypeError('Invalid query parameter [error] passed from Wristband during callback');
     }
-    if (!!errorDescription && typeof errorDescription !== 'string') {
+    if (errorDescriptionArray.length > 1) {
       throw new TypeError('Invalid query parameter [error_description] passed from Wristband during callback');
     }
-    if (!!tenantDomainName && typeof tenantDomainName !== 'string') {
-      throw new TypeError('Invalid query parameter [tenant_domain] passed from Wristband during callback');
-    }
-    if (!!tenantCustomDomain && typeof tenantCustomDomain !== 'string') {
+    if (tenantCustomDomainParamArray.length > 1) {
       throw new TypeError('Invalid query parameter [tenant_custom_domain] passed from Wristband during callback');
     }
 
+    const code = codeArray[0] || '';
+    const paramState = paramStateArray[0] || '';
+    const error = errorArray[0] || '';
+    const errorDescription = errorDescriptionArray[0] || '';
+    const tenantCustomDomainParam = tenantCustomDomainParamArray[0] || '';
+
     // Resolve and validate the tenant domain name
-    const resolvedTenantDomainName: string = resolveTenantDomainName(
-      req,
-      this.useTenantSubdomains,
-      this.rootDomain,
-      tenantDomainName || ''
-    );
+    const resolvedTenantDomainName: string = resolveTenantDomainName(req, this.useTenantSubdomains, this.rootDomain);
     if (!resolvedTenantDomainName) {
       throw new WristbandError(
         this.useTenantSubdomains ? 'missing_tenant_subdomain' : 'missing_tenant_domain',
@@ -155,19 +153,20 @@ export class AppRouterAuthHandler {
     let tenantLoginUrl: string = this.useTenantSubdomains
       ? this.loginUrl.replace(TENANT_DOMAIN_TOKEN, resolvedTenantDomainName)
       : `${this.loginUrl}?tenant_domain=${resolvedTenantDomainName}`;
-    if (tenantCustomDomain) {
-      tenantLoginUrl = `${tenantLoginUrl}${this.useTenantSubdomains ? '?' : '&'}tenant_custom_domain=${tenantCustomDomain}`;
+    if (tenantCustomDomainParam) {
+      tenantLoginUrl = `${tenantLoginUrl}${this.useTenantSubdomains ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
     }
 
     const redirectResponse = NextResponse.redirect(tenantLoginUrl, { status: 302, headers: NO_CACHE_HEADERS });
 
     // Make sure the login state cookie exists, extract it, and set it to be cleared by the server.
-    const loginStateCookie: string = await getAndClearLoginStateCookie(req);
+    const loginStateCookie: AppRouterLoginStateCookie | null = getLoginStateCookie(req);
     if (!loginStateCookie) {
       return { redirectResponse, result: CallbackResultType.REDIRECT_REQUIRED };
     }
+    clearLoginStateCookie(redirectResponse, loginStateCookie.name, this.dangerouslyDisableSecureCookies);
 
-    const loginState: LoginState = await decryptLoginState(loginStateCookie, this.loginStateSecret);
+    const loginState: LoginState = await decryptLoginState(loginStateCookie.value, this.loginStateSecret);
     const { codeVerifier, customState, redirectUri, returnUrl, state: cookieState } = loginState;
 
     // Check for any potential error conditions
@@ -203,7 +202,7 @@ export class AppRouterAuthHandler {
       idToken,
       ...(!!refreshToken && { refreshToken }),
       ...(!!returnUrl && { returnUrl }),
-      ...(!!tenantCustomDomain && { tenantCustomDomain }),
+      ...(!!tenantCustomDomainParam && { tenantCustomDomain: tenantCustomDomainParam }),
       tenantDomainName: resolvedTenantDomainName,
       userinfo,
     };
@@ -225,17 +224,19 @@ export class AppRouterAuthHandler {
 
     const appLoginUrl: string =
       this.customApplicationLoginPageUrl || `https://${this.wristbandApplicationDomain}/login`;
-    if (this.useTenantSubdomains && host!.substring(host!.indexOf('.') + 1) !== this.rootDomain) {
-      return NextResponse.redirect(`${appLoginUrl}?client_id=${this.clientId}`, {
-        status: 302,
-        headers: NO_CACHE_HEADERS,
-      });
-    }
-    if (!this.useTenantSubdomains && !logoutConfig.tenantDomainName) {
-      return NextResponse.redirect(`${appLoginUrl}?client_id=${this.clientId}`, {
-        status: 302,
-        headers: NO_CACHE_HEADERS,
-      });
+    if (!logoutConfig.tenantCustomDomain) {
+      if (this.useTenantSubdomains && host!.substring(host!.indexOf('.') + 1) !== this.rootDomain) {
+        return NextResponse.redirect(logoutConfig.redirectUrl || `${appLoginUrl}?client_id=${this.clientId}`, {
+          status: 302,
+          headers: NO_CACHE_HEADERS,
+        });
+      }
+      if (!this.useTenantSubdomains && !logoutConfig.tenantDomainName) {
+        return NextResponse.redirect(logoutConfig.redirectUrl || `${appLoginUrl}?client_id=${this.clientId}`, {
+          status: 302,
+          headers: NO_CACHE_HEADERS,
+        });
+      }
     }
 
     // The client ID is always required by the Wristband Logout Endpoint.
@@ -256,10 +257,18 @@ export class AppRouterAuthHandler {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  createCallbackResponse(redirectUrl: string): NextResponse {
+  async createCallbackResponse(req: NextRequest, redirectUrl: string): Promise<NextResponse> {
     if (!redirectUrl) {
       throw new TypeError('redirectUrl cannot be null or empty');
     }
-    return NextResponse.redirect(redirectUrl, { status: 302, headers: NO_CACHE_HEADERS });
+
+    const redirectResponse = NextResponse.redirect(redirectUrl, { status: 302, headers: NO_CACHE_HEADERS });
+
+    const loginStateCookie: AppRouterLoginStateCookie | null = getLoginStateCookie(req);
+    if (loginStateCookie) {
+      clearLoginStateCookie(redirectResponse, loginStateCookie.name, this.dangerouslyDisableSecureCookies);
+    }
+
+    return redirectResponse;
   }
 }
