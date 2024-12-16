@@ -157,25 +157,26 @@ export class AppRouterAuthHandler {
       tenantLoginUrl = `${tenantLoginUrl}${this.useTenantSubdomains ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
     }
 
-    const redirectResponse = NextResponse.redirect(tenantLoginUrl, { status: 302, headers: NO_CACHE_HEADERS });
+    const loginRedirectResponse = NextResponse.redirect(tenantLoginUrl, { status: 302, headers: NO_CACHE_HEADERS });
 
     // Make sure the login state cookie exists, extract it, and set it to be cleared by the server.
     const loginStateCookie: AppRouterLoginStateCookie | null = getLoginStateCookie(req);
     if (!loginStateCookie) {
-      return { redirectResponse, result: CallbackResultType.REDIRECT_REQUIRED };
+      return { redirectResponse: loginRedirectResponse, result: CallbackResultType.REDIRECT_REQUIRED };
     }
-    clearLoginStateCookie(redirectResponse, loginStateCookie.name, this.dangerouslyDisableSecureCookies);
 
     const loginState: LoginState = await decryptLoginState(loginStateCookie.value, this.loginStateSecret);
     const { codeVerifier, customState, redirectUri, returnUrl, state: cookieState } = loginState;
 
     // Check for any potential error conditions
     if (paramState !== cookieState) {
-      return { redirectResponse, result: CallbackResultType.REDIRECT_REQUIRED };
+      await clearLoginStateCookie(loginRedirectResponse, loginStateCookie.name, this.dangerouslyDisableSecureCookies);
+      return { redirectResponse: loginRedirectResponse, result: CallbackResultType.REDIRECT_REQUIRED };
     }
     if (error) {
       if (error.toLowerCase() === LOGIN_REQUIRED_ERROR) {
-        return { redirectResponse, result: CallbackResultType.REDIRECT_REQUIRED };
+        await clearLoginStateCookie(loginRedirectResponse, loginStateCookie.name, this.dangerouslyDisableSecureCookies);
+        return { redirectResponse: loginRedirectResponse, result: CallbackResultType.REDIRECT_REQUIRED };
       }
       throw new WristbandError(error, errorDescription || '');
     }
@@ -256,7 +257,6 @@ export class AppRouterAuthHandler {
     });
   }
 
-  // eslint-disable-next-line class-methods-use-this
   async createCallbackResponse(req: NextRequest, redirectUrl: string): Promise<NextResponse> {
     if (!redirectUrl) {
       throw new TypeError('redirectUrl cannot be null or empty');
@@ -266,7 +266,7 @@ export class AppRouterAuthHandler {
 
     const loginStateCookie: AppRouterLoginStateCookie | null = getLoginStateCookie(req);
     if (loginStateCookie) {
-      clearLoginStateCookie(redirectResponse, loginStateCookie.name, this.dangerouslyDisableSecureCookies);
+      await clearLoginStateCookie(redirectResponse, loginStateCookie.name, this.dangerouslyDisableSecureCookies);
     }
 
     return redirectResponse;
