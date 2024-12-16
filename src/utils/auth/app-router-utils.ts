@@ -183,8 +183,10 @@ export function clearLoginStateCookie(
   cookieName: string,
   dangerouslyDisableSecureCookies: boolean
 ): void {
-  res.headers.append(
-    'Set-Cookie',
-    `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`
-  );
+  // NOTE: Due to a bug in iron-session, we set both maxAge and Expires
+  const cookieAttributes = [
+    `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`,
+    !dangerouslyDisableSecureCookies ? 'Secure' : '',
+  ].join('; ');
+  res.headers.append('Set-Cookie', cookieAttributes);
 }

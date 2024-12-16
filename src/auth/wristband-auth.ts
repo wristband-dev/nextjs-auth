@@ -83,7 +83,7 @@ export interface WristbandAuth {
     logout: (req: NextRequest, logoutConfig?: LogoutConfig) => Promise<NextResponse>;
 
     /**
-     * Constructs the redirect response to your application.
+     * Constructs the redirect response to your application and cleans up the login state.
      *
      * @param {NextRequest} req The request object.
      * @param {string} redirectUrl The location for your application that you want to send users to.
