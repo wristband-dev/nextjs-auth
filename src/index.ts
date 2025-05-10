@@ -1,11 +1,10 @@
 import {
-  AppRouterCallbackResult,
   AuthConfig,
   CallbackData,
+  CallbackResult,
   CallbackResultType,
   LoginConfig,
   LogoutConfig,
-  PageRouterCallbackResult,
   TokenData,
 } from './types';
 import { WristbandAuth, WristbandAuthImpl } from './auth/wristband-auth';
@@ -23,14 +22,5 @@ function createWristbandAuth(authConfig: AuthConfig): WristbandAuth {
 /**
  * Exports
  */
-export type {
-  AppRouterCallbackResult,
-  AuthConfig,
-  CallbackData,
-  LoginConfig,
-  LogoutConfig,
-  PageRouterCallbackResult,
-  TokenData,
-  WristbandAuth,
-};
+export type { AuthConfig, CallbackData, CallbackResult, LoginConfig, LogoutConfig, TokenData, WristbandAuth };
 export { createWristbandAuth, CallbackResultType, WristbandError };

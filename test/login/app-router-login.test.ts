@@ -17,13 +17,13 @@ describe('appRouter.login()', () => {
   let rootDomain: string;
   let loginUrl: string;
   let redirectUri: string;
-  let wristbandApplicationDomain: string;
+  let wristbandApplicationVanityDomain: string;
 
   beforeEach(() => {
     rootDomain = 'localhost:6001';
     loginUrl = `https://${rootDomain}/api/auth/login`;
     redirectUri = `https://${rootDomain}/api/auth/callback`;
-    wristbandApplicationDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
+    wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
   });
 
   describe('Successful Redirect to Authorize Endpoint', () => {
@@ -34,7 +34,7 @@ describe('appRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        wristbandApplicationDomain,
+        wristbandApplicationVanityDomain,
       });
 
       // Create mock request
@@ -54,7 +54,7 @@ describe('appRouter.login()', () => {
       const { pathname, origin, searchParams } = locationUrl;
 
       expect(status).toBe(302);
-      expect(origin).toEqual(`https://devs4you-${wristbandApplicationDomain}`);
+      expect(origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
       expect(pathname).toEqual('/api/v1/oauth2/authorize');
 
       // Validate no-cache headers
@@ -111,7 +111,7 @@ describe('appRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        wristbandApplicationDomain,
+        wristbandApplicationVanityDomain,
       });
 
       // Create mock request
@@ -130,7 +130,7 @@ describe('appRouter.login()', () => {
       const { pathname, origin, searchParams } = locationUrl;
 
       expect(status).toBe(302);
-      expect(origin).toEqual(`https://devs4you-${wristbandApplicationDomain}`);
+      expect(origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
       expect(pathname).toEqual('/api/v1/oauth2/authorize');
 
       // Validate no-cache headers

@@ -25,7 +25,7 @@ describe('Callback Errors', () => {
       loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
       loginUrl: LOGIN_URL,
       redirectUri: REDIRECT_URI,
-      wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+      wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
     });
     // Reset fetch mock before each test
     global.fetch = jest.fn();
@@ -240,7 +240,7 @@ describe('Callback Errors', () => {
       const rootDomain = 'business.invotastic.com';
       const loginUrl = `https://${rootDomain}/api/auth/login`;
       const redirectUri = `https://${rootDomain}/api/auth/callback`;
-      const wristbandApplicationDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
+      const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
         clientSecret: CLIENT_SECRET,
@@ -248,7 +248,7 @@ describe('Callback Errors', () => {
         loginUrl,
         redirectUri,
         useTenantSubdomains: false,
-        wristbandApplicationDomain,
+        wristbandApplicationVanityDomain,
       });
 
       // Create mock request and response
@@ -277,7 +277,7 @@ describe('Callback Errors', () => {
       const rootDomain = 'business.invotastic.com';
       const loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
       const redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
-      const wristbandApplicationDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
+      const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
         clientSecret: CLIENT_SECRET,
@@ -287,7 +287,7 @@ describe('Callback Errors', () => {
         redirectUri,
         rootDomain,
         useTenantSubdomains: true,
-        wristbandApplicationDomain,
+        wristbandApplicationVanityDomain,
       });
 
       // Create mock request and response

@@ -1,5 +1,3 @@
-import { NextResponse } from 'next/server';
-
 /** *****************************
  * Externally available types
  ***************************** */
@@ -18,7 +16,7 @@ import { NextResponse } from 'next/server';
  * @property {string[]} [scopes] The scopes required for authentication.
  * @property {boolean} [useCustomDomains] Indicates whether custom domains are used for authentication.
  * @property {boolean} [useTenantSubdomains] Indicates whether tenant subdomains are used for authentication.
- * @property {string} wristbandApplicationDomain The vanity domain of the Wristband application.
+ * @property {string} wristbandApplicationVanityDomain The vanity domain of the Wristband application.
  */
 export type AuthConfig = {
   clientId: string;
@@ -32,7 +30,7 @@ export type AuthConfig = {
   scopes?: string[];
   useCustomDomains?: boolean;
   useTenantSubdomains?: boolean;
-  wristbandApplicationDomain: string;
+  wristbandApplicationVanityDomain: string;
 };
 
 /**
@@ -70,28 +68,13 @@ export enum CallbackResultType {
  * data necessary for creating an authenticated session.
  * @typedef {Object} CallbackResult
  * @property {CallbackData} [callbackData] The callback data received after authentication (COMPLETED only).
- * @property {CallbackResultType} [result] Enum representing the end result of callback execution.
+ * @property {string} [redirectUrl] The URL to redirect to (REDIRECT_REQUIRED only).
+ * @property {CallbackResultType} [type] Enum representing the end result of callback execution.
  */
-interface CallbackResult {
+export interface CallbackResult {
   callbackData?: CallbackData;
-  result: CallbackResultType;
-}
-
-/**
- * Represents the result of the callback execution after authentication when using the Page Router. This result object
- * does not return a redirect URL or a response for the REDIRECT_REQUIRED CallbackResultType.
- * @typedef {Object} PageRouterCallbackResult
- */
-export interface PageRouterCallbackResult extends CallbackResult {}
-
-/**
- * Represents the result of the callback execution after authentication when using the App Router. This result object
- * can return a NextResponse with a redirect status that should be returned for the REDIRECT_REQUIRED CallbackResultType.
- * @typedef {Object} AppRouterCallbackResult
- * @property {NextResponse} [redirectResponse] The NextResponse that the user should be redirected with (REDIRECT_REQUIRED only).
- */
-export interface AppRouterCallbackResult extends CallbackResult {
-  redirectResponse?: NextResponse;
+  redirectUrl?: string;
+  type: CallbackResultType;
 }
 
 /**

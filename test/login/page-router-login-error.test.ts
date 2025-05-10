@@ -23,7 +23,7 @@ describe('Login Errors', () => {
       loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
       loginUrl,
       redirectUri,
-      wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+      wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
     });
   });
 

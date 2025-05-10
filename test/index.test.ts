@@ -19,7 +19,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl: LOGIN_URL,
         redirectUri: REDIRECT_URI,
-        wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
       });
     }).toThrow(TypeError);
   });
@@ -32,7 +32,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl: LOGIN_URL,
         redirectUri: REDIRECT_URI,
-        wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
       });
     }).toThrow(TypeError);
   });
@@ -45,7 +45,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginStateSecret: '',
         loginUrl: LOGIN_URL,
         redirectUri: REDIRECT_URI,
-        wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
       });
     }).toThrow(TypeError);
   });
@@ -58,7 +58,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl: '',
         redirectUri: REDIRECT_URI,
-        wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
       });
     }).toThrow(TypeError);
   });
@@ -71,12 +71,12 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl: LOGIN_URL,
         redirectUri: '',
-        wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
       });
     }).toThrow(TypeError);
   });
 
-  test('Empty wristbandApplicationDomain', async () => {
+  test('Empty wristbandApplicationVanityDomain', async () => {
     expect(() => {
       return createWristbandAuth({
         clientId: CLIENT_ID,
@@ -84,7 +84,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl: LOGIN_URL,
         redirectUri: REDIRECT_URI,
-        wristbandApplicationDomain: '',
+        wristbandApplicationVanityDomain: '',
       });
     }).toThrow(TypeError);
   });
@@ -97,7 +97,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl: LOGIN_URL,
         redirectUri: REDIRECT_URI,
-        wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
         useTenantSubdomains: true,
         rootDomain: '',
       });
@@ -112,7 +112,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl: LOGIN_URL,
         redirectUri: REDIRECT_URI_WITH_SUBDOMAIN,
-        wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
         useTenantSubdomains: true,
         rootDomain: ROOT_DOMAIN,
       });
@@ -127,7 +127,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl: LOGIN_URL_WITH_SUBDOMAIN,
         redirectUri: REDIRECT_URI,
-        wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
         useTenantSubdomains: true,
         rootDomain: ROOT_DOMAIN,
       });
@@ -142,7 +142,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl: LOGIN_URL_WITH_SUBDOMAIN,
         redirectUri: REDIRECT_URI,
-        wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
         useTenantSubdomains: false,
         rootDomain: ROOT_DOMAIN,
       });
@@ -157,7 +157,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl: LOGIN_URL,
         redirectUri: REDIRECT_URI_WITH_SUBDOMAIN,
-        wristbandApplicationDomain: WRISTBAND_APPLICATION_DOMAIN,
+        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
         useTenantSubdomains: false,
         rootDomain: ROOT_DOMAIN,
       });
