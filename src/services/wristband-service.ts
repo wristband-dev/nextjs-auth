@@ -8,8 +8,8 @@ export class WristbandService {
   private wristbandApiClient: WristbandApiClient;
   private basicAuthHeaders: HeadersInit;
 
-  constructor(wristbandApplicationDomain: string, clientId: string, clientSecret: string) {
-    this.wristbandApiClient = new WristbandApiClient(wristbandApplicationDomain);
+  constructor(wristbandApplicationVanityDomain: string, clientId: string, clientSecret: string) {
+    this.wristbandApiClient = new WristbandApiClient(wristbandApplicationVanityDomain);
     this.basicAuthHeaders = {
       'Content-Type': FORM_URLENCODED_MEDIA_TYPE,
       Accept: JSON_MEDIA_TYPE,

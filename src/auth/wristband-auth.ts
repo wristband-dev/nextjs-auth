@@ -2,15 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { NextRequest, NextResponse } from 'next/server';
 import retry from 'async-retry';
 
-import type {
-  AppRouterCallbackResult,
-  AuthConfig,
-  LoginConfig,
-  LogoutConfig,
-  PageRouterCallbackResult,
-  TokenData,
-  TokenResponse,
-} from '../types';
+import type { AuthConfig, CallbackResult, LoginConfig, LogoutConfig, TokenData, TokenResponse } from '../types';
 import { AppRouterAuthHandler } from './app-router/app-router-auth-handler';
 import { PageRouterAuthHandler } from './page-router/page-router-auth-handler';
 import { WristbandService } from '../services/wristband-service';
@@ -65,11 +57,11 @@ export interface WristbandAuth {
      * appended as a query parameter when redirecting to the Login Endpoint.
      *
      * @param {Request} req The request object.
-     * @returns {Promise<AppRouterCallbackResult>} A Promise containing the result of what happened during callback execution
+     * @returns {Promise<CallbackResult>} A Promise containing the result of what happened during callback execution
      * as well as any accompanying data.
      * @throws {WristbandError} If an error occurs during the callback handling.
      */
-    callback: (req: NextRequest) => Promise<AppRouterCallbackResult>;
+    callback: (req: NextRequest) => Promise<CallbackResult>;
 
     /**
      * Revokes the user's refresh token and redirects them to the Wristband logout endpoint to destroy
@@ -109,9 +101,9 @@ export interface WristbandAuth {
      * @param {Request} req The request object.
      * @param {Response} res The response object.
      * @param {LoginConfig} [config] Additional configuration for creating an auth request to Wristband.
-     * @returns {Promise<NextApiResponse>} A Promise with the NextApiResponse that is peforming the URL redirect to Wristband.
+     * @returns {Promise<string>} A Promise with the Wristband authorize URL that your app should redirect to.
      */
-    login: (req: NextApiRequest, res: NextApiResponse, loginConfig?: LoginConfig) => Promise<NextApiResponse>;
+    login: (req: NextApiRequest, res: NextApiResponse, loginConfig?: LoginConfig) => Promise<string>;
 
     /**
      * Receives incoming requests from Wristband with an authorization code. It will then proceed to exchange the auth
@@ -133,22 +125,22 @@ export interface WristbandAuth {
      * @param {Request} req The request object.
      * @param {Response} res The response object.
      * @param {CallbackConfig} [config] Additional configuration for handling auth callbacks from Wristband.
-     * @returns {Promise<PageRouterCallbackResult>} A Promise containing the result of what happened during callback execution
+     * @returns {Promise<CallbackResult>} A Promise containing the result of what happened during callback execution
      * as well as any accompanying data.
      * @throws {WristbandError} If an error occurs during the callback handling.
      */
-    callback: (req: NextApiRequest, res: NextApiResponse) => Promise<PageRouterCallbackResult>;
+    callback: (req: NextApiRequest, res: NextApiResponse) => Promise<CallbackResult>;
 
     /**
-     * Revokes the user's refresh token and redirects them to the Wristband logout endpoint to destroy
-     * their authenticated session in Wristband.
+     * Revokes the user's refresh token and returns a redirect URL to the Wristband logout endpoint, where
+     * their authenticated session in Wristband gets destroy.
      *
      * @param {Request} req The request object.
      * @param {Response} res The response object.
      * @param {LogoutConfig} [config] Additional configuration for logging out the user.
-     * @returns {Promise<NextApiResponse>} A Promise with the NextApiResponse that is peforming the URL redirect to Wristband.
+     * @returns {Promise<string>} A Promise with the Wristband logout URL that your app should redirect to.
      */
-    logout: (req: NextApiRequest, res: NextApiResponse, logoutConfig?: LogoutConfig) => Promise<NextApiResponse>;
+    logout: (req: NextApiRequest, res: NextApiResponse, logoutConfig?: LogoutConfig) => Promise<string>;
   };
 
   /**
@@ -193,8 +185,8 @@ export class WristbandAuthImpl implements WristbandAuth {
     if (!authConfig.redirectUri) {
       throw new TypeError('The [redirectUri] config must have a value.');
     }
-    if (!authConfig.wristbandApplicationDomain) {
-      throw new TypeError('The [wristbandApplicationDomain] config must have a value.');
+    if (!authConfig.wristbandApplicationVanityDomain) {
+      throw new TypeError('The [wristbandApplicationVanityDomain] config must have a value.');
     }
     if (authConfig.useTenantSubdomains) {
       if (!authConfig.rootDomain) {
@@ -216,7 +208,7 @@ export class WristbandAuthImpl implements WristbandAuth {
     }
 
     const wristbandServiceImpl = new WristbandService(
-      authConfig.wristbandApplicationDomain,
+      authConfig.wristbandApplicationVanityDomain,
       authConfig.clientId,
       authConfig.clientSecret
     );
@@ -229,7 +221,7 @@ export class WristbandAuthImpl implements WristbandAuth {
     login: (req: NextRequest, loginConfig?: LoginConfig): Promise<NextResponse> => {
       return this.appRouterAuthHandler.login(req, loginConfig);
     },
-    callback: (req: NextRequest): Promise<AppRouterCallbackResult> => {
+    callback: (req: NextRequest): Promise<CallbackResult> => {
       return this.appRouterAuthHandler.callback(req);
     },
     logout: (req: NextRequest, logoutConfig?: LogoutConfig): Promise<NextResponse> => {
@@ -241,13 +233,13 @@ export class WristbandAuthImpl implements WristbandAuth {
   };
 
   pageRouter = {
-    login: (req: NextApiRequest, res: NextApiResponse, loginConfig?: LoginConfig): Promise<NextApiResponse> => {
+    login: (req: NextApiRequest, res: NextApiResponse, loginConfig?: LoginConfig): Promise<string> => {
       return this.pageRouterAuthHandler.login(req, res, loginConfig);
     },
-    callback: (req: NextApiRequest, res: NextApiResponse): Promise<PageRouterCallbackResult> => {
+    callback: (req: NextApiRequest, res: NextApiResponse): Promise<CallbackResult> => {
       return this.pageRouterAuthHandler.callback(req, res);
     },
-    logout: (req: NextApiRequest, res: NextApiResponse, logoutConfig?: LogoutConfig): Promise<NextApiResponse> => {
+    logout: (req: NextApiRequest, res: NextApiResponse, logoutConfig?: LogoutConfig): Promise<string> => {
       return this.pageRouterAuthHandler.logout(req, res, logoutConfig);
     },
   };

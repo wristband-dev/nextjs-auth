@@ -2,8 +2,8 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import {
-  AppRouterCallbackResult,
   AuthConfig,
+  CallbackResult,
   LoginConfig,
   LogoutConfig,
   CallbackResultType,
@@ -39,7 +39,7 @@ export class AppRouterAuthHandler {
   private scopes: string[];
   private useCustomDomains: boolean;
   private useTenantSubdomains: boolean;
-  private wristbandApplicationDomain: string;
+  private wristbandApplicationVanityDomain: string;
 
   constructor(authConfig: AuthConfig, wristbandService: WristbandService) {
     this.wristbandService = wristbandService;
@@ -58,7 +58,7 @@ export class AppRouterAuthHandler {
     this.useCustomDomains = typeof authConfig.useCustomDomains !== 'undefined' ? authConfig.useCustomDomains : false;
     this.useTenantSubdomains =
       typeof authConfig.useTenantSubdomains !== 'undefined' ? authConfig.useTenantSubdomains : false;
-    this.wristbandApplicationDomain = authConfig.wristbandApplicationDomain;
+    this.wristbandApplicationVanityDomain = authConfig.wristbandApplicationVanityDomain;
   }
 
   async login(req: NextRequest, loginConfig: LoginConfig = {}): Promise<NextResponse> {
@@ -70,7 +70,8 @@ export class AppRouterAuthHandler {
 
     // In the event we cannot determine either a tenant custom domain or subdomain, send the user to app-level login.
     if (!tenantCustomDomain && !tenantDomainName && !defaultTenantCustomDomain && !defaultTenantDomainName) {
-      const apploginUrl = this.customApplicationLoginPageUrl || `https://${this.wristbandApplicationDomain}/login`;
+      const apploginUrl =
+        this.customApplicationLoginPageUrl || `https://${this.wristbandApplicationVanityDomain}/login`;
       return NextResponse.redirect(`${apploginUrl}?client_id=${this.clientId}`, {
         status: 302,
         headers: NO_CACHE_HEADERS,
@@ -84,7 +85,7 @@ export class AppRouterAuthHandler {
 
     // Create the Wristband Authorize Endpoint URL which the user will get redirectd to.
     const authorizeUrl: string = await getAuthorizeUrl(req, {
-      wristbandApplicationDomain: this.wristbandApplicationDomain,
+      wristbandApplicationVanityDomain: this.wristbandApplicationVanityDomain,
       useCustomDomains: this.useCustomDomains,
       clientId: this.clientId,
       redirectUri: this.redirectUri,
@@ -108,7 +109,7 @@ export class AppRouterAuthHandler {
     return res;
   }
 
-  async callback(req: NextRequest): Promise<AppRouterCallbackResult> {
+  async callback(req: NextRequest): Promise<CallbackResult> {
     const codeArray = req.nextUrl.searchParams.getAll('code');
     const paramStateArray = req.nextUrl.searchParams.getAll('state');
     const errorArray = req.nextUrl.searchParams.getAll('error');
@@ -157,12 +158,10 @@ export class AppRouterAuthHandler {
       tenantLoginUrl = `${tenantLoginUrl}${this.useTenantSubdomains ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
     }
 
-    const loginRedirectResponse = NextResponse.redirect(tenantLoginUrl, { status: 302, headers: NO_CACHE_HEADERS });
-
     // Make sure the login state cookie exists, extract it, and set it to be cleared by the server.
     const loginStateCookie: AppRouterLoginStateCookie | null = getLoginStateCookie(req);
     if (!loginStateCookie) {
-      return { redirectResponse: loginRedirectResponse, result: CallbackResultType.REDIRECT_REQUIRED };
+      return { type: CallbackResultType.REDIRECT_REQUIRED, redirectUrl: tenantLoginUrl };
     }
 
     const loginState: LoginState = await decryptLoginState(loginStateCookie.value, this.loginStateSecret);
@@ -170,13 +169,11 @@ export class AppRouterAuthHandler {
 
     // Check for any potential error conditions
     if (paramState !== cookieState) {
-      await clearLoginStateCookie(loginRedirectResponse, loginStateCookie.name, this.dangerouslyDisableSecureCookies);
-      return { redirectResponse: loginRedirectResponse, result: CallbackResultType.REDIRECT_REQUIRED };
+      return { type: CallbackResultType.REDIRECT_REQUIRED, redirectUrl: tenantLoginUrl };
     }
     if (error) {
       if (error.toLowerCase() === LOGIN_REQUIRED_ERROR) {
-        await clearLoginStateCookie(loginRedirectResponse, loginStateCookie.name, this.dangerouslyDisableSecureCookies);
-        return { redirectResponse: loginRedirectResponse, result: CallbackResultType.REDIRECT_REQUIRED };
+        return { type: CallbackResultType.REDIRECT_REQUIRED, redirectUrl: tenantLoginUrl };
       }
       throw new WristbandError(error, errorDescription || '');
     }
@@ -207,7 +204,7 @@ export class AppRouterAuthHandler {
       tenantDomainName: resolvedTenantDomainName,
       userinfo,
     };
-    return { result: CallbackResultType.COMPLETED, callbackData };
+    return { type: CallbackResultType.COMPLETED, callbackData };
   }
 
   async logout(req: NextRequest, logoutConfig: LogoutConfig = {}): Promise<NextResponse> {
@@ -224,7 +221,7 @@ export class AppRouterAuthHandler {
     }
 
     const appLoginUrl: string =
-      this.customApplicationLoginPageUrl || `https://${this.wristbandApplicationDomain}/login`;
+      this.customApplicationLoginPageUrl || `https://${this.wristbandApplicationVanityDomain}/login`;
     if (!logoutConfig.tenantCustomDomain) {
       if (this.useTenantSubdomains && host!.substring(host!.indexOf('.') + 1) !== this.rootDomain) {
         return NextResponse.redirect(logoutConfig.redirectUrl || `${appLoginUrl}?client_id=${this.clientId}`, {
@@ -250,7 +247,7 @@ export class AppRouterAuthHandler {
       : logoutConfig.tenantDomainName;
     const separator = this.useCustomDomains ? '.' : '-';
     const tenantDomainToUse =
-      logoutConfig.tenantCustomDomain || `${tenantDomainName}${separator}${this.wristbandApplicationDomain}`;
+      logoutConfig.tenantCustomDomain || `${tenantDomainName}${separator}${this.wristbandApplicationVanityDomain}`;
     return NextResponse.redirect(`https://${tenantDomainToUse}/api/v1/logout?${query}`, {
       status: 302,
       headers: NO_CACHE_HEADERS,

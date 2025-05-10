@@ -46,6 +46,40 @@ You can learn more about how authentication works in Wristband in our documentat
 
 ---
 
+## Table of Contents
+
+- [Migrating From Older SDK Versions](#migrating-from-older-sdk-versions)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [1) Initialize the SDK](#1-initialize-the-sdk)
+  - [2) Choose Your Session Storage](#2-choose-your-session-storage)
+  - [3) Add Auth Endpoints](#3-add-auth-endpoints)
+    - [Login Endpoint](#login-endpoint)
+    - [Callback Endpoint](#callback-endpoint)
+    - [Logout Endpoint](#logout-endpoint)
+  - [4) Guard Your Pages, Actions, and APIs / Handle Token Refresh](#4-guard-your-pages-actions-and-apis--handle-token-refresh)
+    - [Middleware](#middleware)
+    - [API Routes](#api-routes)
+    - [Page Router: getServerSideProps() and getStaticProps()](#page-router-getserversideprops-and-getstaticprops)
+    - [App Router: Server Components and Actions](#app-router-server-components-and-actions)
+  - [5) Pass Your Access Token to Downstream APIs](#5-pass-your-access-token-to-downstream-apis)
+  - [Wristband Auth Configuration Options](#wristband-auth-configuration-options)
+  - [API](#api)
+    - [login()](#login)
+    - [callback()](#callback)
+    - [logout()](#logout)
+    - [refreshTokenIfExpired()](#refreshtokenifexpired)
+  - [Wristband Multi-Tenant NextJS Demo Apps](#wristband-multi-tenant-nextjs-demo-apps)
+  - [Questions](#questions)
+
+## Migrating From Older SDK Versions
+
+On an older version of our SDK? Check out our migration guide:
+
+- [Instructions for migrating to Version 2.x](migration/v2/README.md)
+
+<br>
+
 ## Installation
 
 ```sh
@@ -66,6 +100,7 @@ First, create an instance of `WristbandAuth` in your NextJS directory structure 
 ```typescript
 import { createWristbandAuth } from '@wristband/nextjs-auth';
 
+// Your config will vary here depending on your use cases.
 const wristbandAuth = createWristbandAuth({
   clientId: "ic6saso5hzdvbnof3bwgccejxy",
   clientSecret: "30e9977124b13037d035be10d727806f",
@@ -75,7 +110,7 @@ const wristbandAuth = createWristbandAuth({
   rootDomain: "yourapp.io",
   useCustomDomains: true,
   useTenantSubdomains: true,
-  wristbandApplicationDomain: "auth.yourapp.io",
+  wristbandApplicationVanityDomain: "auth.yourapp.io",
 });
 
 export default wristbandAuth;
@@ -91,7 +126,7 @@ First, add your session framework to your project:
 // @/src/session/iron-session.ts
 import { getIronSession, IronSession, SessionOptions } from 'iron-session';
 
-// Example: Define the type for the data you plan to store in your session
+// Example: Define the type for the data you wish to store in your session
 type SessionData = {
   accessToken: string;
   expiresAt: number;
@@ -145,9 +180,9 @@ export function middlewareGetSession(
 
 ### 3) Add Auth Endpoints
 
-There are <ins>three core endpoints</ins> your NextJS API routes should expose to facilitate both the Login and Logout workflows in Wristband. You'll need to add them to wherever your API routes live.
+There are [three core endpoints](https://docs.wristband.dev/docs/auth-flows-and-diagrams) your NextJS API routes should expose to facilitate both the Login and Logout workflows in Wristband. You'll need to add them to wherever your API routes live.
 
-#### [Login Endpoint](https://docs.wristband.dev/docs/auth-flows-and-diagrams#login-endpoint)
+#### Login Endpoint
 
 The goal of the Login Endpoint is to initiate an auth request by redircting to the [Wristband Authorization Endpoint](https://docs.wristband.dev/reference/authorizev1). It will store any state tied to the auth request in a Login State Cookie, which will later be used by the Callback Endpoint. The frontend of your application should redirect to this endpoint when users need to log in to your application.
 
@@ -171,11 +206,12 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import wristbandAuth from '@/wristband-auth.ts';
 
 export default async function handleLogin(req: NextApiRequest, res: NextApiResponse) {
-    await wristbandAuth.pageRouter.login(req, res);
+  const authorizeUrl = await wristbandAuth.pageRouter.login(req, res);
+  res.redirect(authorizeUrl);
 }
 ```
 
-#### [Callback Endpoint](https://docs.wristband.dev/docs/auth-flows-and-diagrams#callback-endpoint)
+#### Callback Endpoint
 
 The goal of the Callback Endpoint is to receive incoming calls from Wristband after the user has authenticated and ensure that the Login State cookie contains all auth request state in order to complete the Login Workflow. From there, it will call the [Wristband Token Endpoint](https://docs.wristband.dev/reference/tokenv1) to fetch necessary JWTs, call the [Wristband Userinfo Endpoint](https://docs.wristband.dev/reference/userinfov1) to get the user's data, and create a session for the application containing the JWTs and user data.
 
@@ -190,10 +226,10 @@ import { getSessionAppRouter } from '@/session/iron-session';
 
 export async function GET(req: NextRequest) {
   const callbackResult = await wristbandAuth.appRouter.callback(req);
-  const { callbackData, redirectResponse, result } = callbackResult;
+  const { callbackData, redirectUrl, type } = callbackResult;
 
-  if (result === CallbackResultType.REDIRECT_REQUIRED) {
-    return redirectResponse;
+  if (type === CallbackResultType.REDIRECT_REQUIRED) {
+    return await wristbandAuth.appRouter.createCallbackResponse(req, redirectUrl);
   }
   
   const session = await getSessionAppRouter();
@@ -214,7 +250,7 @@ export async function GET(req: NextRequest) {
 
   // Send the user back to the application.
   const appUrl = callbackData.returnUrl || `https://${callbackData.tenantDomainName}.yourapp.io/`;
-  return wristbandAuth.appRouter.createCallbackResponse(req, appUrl);
+  return await wristbandAuth.appRouter.createCallbackResponse(req, appUrl);
 }
 ```
 
@@ -229,12 +265,12 @@ import { getSession } from '@/session/iron-session';
 
 export default async function handleCallback(req: NextApiRequest, res: NextApiResponse) {
   const callbackResult = await wristbandAuth.pageRouter.callback(req, res);
-  const { callbackData, result } = callbackResult;
+  const { callbackData, redirectUrl, type } = callbackResult;
 
-  if (result === CallbackResultType.REDIRECT_REQUIRED) {
-    return;
+  if (type === CallbackResultType.REDIRECT_REQUIRED) {
+    return res.redirect(redirectUrl);
   }
-  
+
   const session = await getSession(req, res);
 
   // Save any necessary fields for your app session into the session cookie.
@@ -253,12 +289,11 @@ export default async function handleCallback(req: NextApiRequest, res: NextApiRe
 
   // Send the user back to the application.
   const appUrl = callbackData.returnUrl || `https://${callbackData.tenantDomainName}.yourapp.io/`;
-  res.redirect(appUrl);
+  return res.redirect(appUrl);
 }
 ```
 
-
-#### [Logout Endpoint](https://docs.wristband.dev/docs/auth-flows-and-diagrams#logout-endpoint-1)
+#### Logout Endpoint
 
 The goal of the Logout Endpoint is to destroy the application's session that was established during the Callback Endpoint execution. If refresh tokens were requested during the Login Workflow, then a call to the [Wristband Revoke Token Endpoint](https://docs.wristband.dev/reference/revokev1) will occur. It then will redirect to the [Wristband Logout Endpoint](https://docs.wristband.dev/reference/logoutv1) in order to destroy the user's authentication session within the Wristband platform. From there, Wristband will send the user to the Tenant-Level Login Page (unless configured otherwise).
 
@@ -299,7 +334,8 @@ export default async function logoutRoute(req: NextApiRequest, res: NextApiRespo
   res.setHeader('Set-Cookie', `my-session-cookie-name=; Max-Age=0; Path=/`);
   session.destroy();
 
-  await wristbandAuth.pageRouter.logout(req, res, { refreshToken, tenantCustomDomain, tenantDomainName });
+  const logoutUrl = await wristbandAuth.pageRouter.logout(req, res, { refreshToken, tenantCustomDomain, tenantDomainName });
+  res.redirect(logoutUrl);
 });
 ```
 
@@ -515,20 +551,20 @@ The `createWristbandAuth()` function is used to instatiate the Wristband SDK.  I
 function createWristbandAuth(authConfig: AuthConfig): WristbandAuth {}
 ```
 
-| AuthConfig Field | Type | Required | Description                                                                                                                                                                                                                                                                                                                                                                                    |
-| ---------- | ---- | -------- |------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| clientId | string | Yes | The ID of the Wristband client.                                                                                                                                                                                                                                                                                                                                                                |
-| clientSecret | string | Yes | The client's secret.                                                                                                                                                                                                                                                                                                                                                                           |
+| AuthConfig Field | Type | Required | Description |
+| ---------------- | ---- | -------- | ----------- |
+| clientId | string | Yes | The ID of the Wristband client. |
+| clientSecret | string | Yes | The client's secret. |
 | customApplicationLoginPageUrl | string | No | Custom Application-Level Login Page URL (i.e. Tenant Discovery Page URL). This value only needs to be provided if you are self-hosting the application login page. By default, the SDK will use your Wristband-hosted Application-Level Login page URL. If this value is provided, the SDK will redirect to this URL in certain cases where it cannot resolve a proper Tenant-Level Login URL. |
-| dangerouslyDisableSecureCookies | boolean | No | USE WITH CAUTION: If set to `true`, the "Secure" attribute will not be included in any cookie settings. This should only be done when testing in local development environments that don't have HTTPS enabed.  If not provided, this value defaults to `false`.                                                                                                                                |
-| loginStateSecret | string | Yes | A 32 byte (or longer) secret used for encryption and decryption of login state cookies. You can run `openssl rand -base64 32` to create a secret from your CLI.                                                                                                                                                                                                                                |
-| loginUrl | string | Yes | The URL of your application's login endpoint.  This is the endpoint within your application that redirects to Wristband to initialize the login flow.                                                                                                                                                                                                                                                                                                                                                      |
-| redirectUri | string | Yes | The URI that Wristband will redirect to after authenticating a user.  This should point to your application's callback endpoint.                                                                                                                                                                                                                                                                                                                                            |
-| rootDomain | string | Only if using tenant subdomains | The root domain for your application. This value only needs to be specified if you use tenant subdomains in your login and redirect URLs.  The root domain should be set to the portion of the domain following the tenant subdomain.  For example, if your application uses tenant subdomains such as `tenantA.yourapp.com` and `tenantB.yourapp.com`, then the root domain should be set to `yourapp.com`.                                                                                                                                                                                                                                                      |
-| scopes | string[] | No | The scopes required for authentication. Refer to the docs for [currently supported scopes](https://docs.wristband.dev/docs/oauth2-and-openid-connect-oidc#supported-openid-scopes). The default value is `[openid, offline_access, email]`.                                                                                                                                                    |
-| useCustomDomains | boolean | No | Indicates whether your Wristband application is configured to use custom domains. Defaults to `false`.                                                                                                                                                                                                                                                                                                                                  |
-| useTenantSubdomains | boolean | No | Indicates whether tenant subdomains are used for your application's authentication endpoints (e.g. login and callback). Defaults to `false`.                                                                                                                                                                                                                                                                                                                               |
-| wristbandApplicationDomain | string | Yes | The vanity domain of the Wristband application.                                                                                                                                                                                                                                                                                                                                                |
+| dangerouslyDisableSecureCookies | boolean | No | USE WITH CAUTION: If set to `true`, the "Secure" attribute will not be included in any cookie settings. This should only be done when testing in local development environments that don't have HTTPS enabed.  If not provided, this value defaults to `false`. |
+| loginStateSecret | string | Yes | A 32 byte (or longer) secret used for encryption and decryption of login state cookies. You can run `openssl rand -base64 32` to create a secret from your CLI. |
+| loginUrl | string | Yes | The URL of your application's login endpoint.  This is the endpoint within your application that redirects to Wristband to initialize the login flow. |
+| redirectUri | string | Yes | The URI that Wristband will redirect to after authenticating a user.  This should point to your application's callback endpoint. |
+| rootDomain | string | Only if using tenant subdomains | The root domain for your application. This value only needs to be specified if you use tenant subdomains in your login and redirect URLs.  The root domain should be set to the portion of the domain following the tenant subdomain.  For example, if your application uses tenant subdomains such as `tenantA.yourapp.com` and `tenantB.yourapp.com`, then the root domain should be set to `yourapp.com`. |
+| scopes | string[] | No | The scopes required for authentication. Refer to the docs for [currently supported scopes](https://docs.wristband.dev/docs/oauth2-and-openid-connect-oidc#supported-openid-scopes). The default value is `[openid, offline_access, email]`. |
+| useCustomDomains | boolean | No | Indicates whether your Wristband application is configured to use custom domains. Defaults to `false`. |
+| useTenantSubdomains | boolean | No | Indicates whether tenant subdomains are used for your application's authentication endpoints (e.g. login and callback). Defaults to `false`. |
+| wristbandApplicationVanityDomain | string | Yes | The vanity domain of the Wristband application. |
 
 
 ## API
@@ -540,13 +576,14 @@ function createWristbandAuth(authConfig: AuthConfig): WristbandAuth {}
 // Definition
 login: (req: NextRequest, loginConfig?: LoginConfig) => Promise<NextResponse>;
 // Usage
-await wristbandAuth.appRouter.login(req);
+return await wristbandAuth.appRouter.login(req);
 
 /* *** Page Router *** */
 // Definition
-login: (req: NextApiRequest, res: NextApiResponse, loginConfig?: LoginConfig) => Promise<NextApiResponse>;
+login: (req: NextApiRequest, res: NextApiResponse, loginConfig?: LoginConfig) => Promise<string>;
 // Usage
-await wristbandAuth.pageRouter.login(req, res);
+const authorizeUrl = await wristbandAuth.pageRouter.login(req, res);
+res.redirect(authorizeUrl);
 ```
 
 Wristband requires that your application specify a Tenant-Level domain when redirecting to the Wristband Authorize Endpoint when initiating an auth request. When the frontend of your application redirects the user to your NextJS Login Endpoint, there are two ways to accomplish getting the `tenantDomainName` information: passing a query parameter or using tenant subdomains.
@@ -587,7 +624,7 @@ const wristbandAuth = createWristbandAuth({
   loginStateSecret: '7ffdbecc-ab7d-4134-9307-2dfcc52f7475',
   loginUrl: "https://yourapp.io/auth/login",
   redirectUri: "https://yourapp.io/auth/callback",
-  wristbandApplicationDomain: "yourapp-yourcompany.us.wristband.dev",
+  wristbandApplicationVanityDomain: "yourapp-yourcompany.us.wristband.dev",
 });
 ```
 
@@ -610,7 +647,7 @@ const wristbandAuth = createWristbandAuth({
   redirectUri: "https://{tenant_domain}.yourapp.io/auth/callback",
   rootDomain: "yourapp.io",
   useTenantSubdomains: true,
-  wristbandApplicationDomain: "yourapp-yourcompany.us.wristband.dev",
+  wristbandApplicationVanityDomain: "yourapp-yourcompany.us.wristband.dev",
 });
 ```
 
@@ -678,16 +715,16 @@ The return URL is stored in the Login State Cookie, and you can choose to send u
 ```ts
 /* *** App Router *** */
 // Definition
-callback: (req: NextRequest) => Promise<AppRouterCallbackResult>;
+callback: (req: NextRequest) => Promise<CallbackResult>;
 createCallbackResponse: (req: NextRequest, redirectUrl: string) => NextResponse;
 
 // Usage
 const callbackResult = await wristbandAuth.appRouter.callback(req);
-return wristbandAuth.appRouter.createCallbackResponse(req, appUrl);
+return await wristbandAuth.appRouter.createCallbackResponse(req, appUrl);
 
 /* *** Page Router *** */
 // Definition
-callback: (req: NextApiRequest, res: NextApiResponse) => Promise<PageRouterCallbackResult>;
+callback: (req: NextApiRequest, res: NextApiResponse) => Promise<CallbackResult>;
 
 // Usage
 const callbackResult = await wristbandAuth.pageRouter.callback(req, res);
@@ -699,20 +736,13 @@ After a user authenticates on the Tenant-Level Login Page, Wristband will redire
 GET https://customer01.yourapp.io/api/auth/callback?state=f983yr893hf89ewn0idjw8e9f&code=shcsh90jf9wc09j9w0jewc
 ```
 
-The SDK will validate that the incoming state matches the Login State Cookie, and then it will call the Wristband Token Endpoint to exchange the authorizaiton code for JWTs. Lastly, it will call the Wristband Userinfo Endpoint to get any user data as specified by the `scopes` in your SDK configuration. The return type of the callback function is either a `PageRouterCallbackResult` or a `AppRouterCallbackResult` object containing the result of what happened during callback execution as well as any accompanying data. The following are common fields that both objects share:
+The SDK will validate that the incoming state matches the Login State Cookie, and then it will call the Wristband Token Endpoint to exchange the authorizaiton code for JWTs. Lastly, it will call the Wristband Userinfo Endpoint to get any user data as specified by the `scopes` in your SDK configuration. The return type of the callback function is a `CallbackResult` object containing the result of what happened during callback execution as well as any accompanying data.
 
 | CallbackResult Field | Type | Description |
 | -------------------- | ---- | ----------- |
 | callbackData | CallbackData or `undefined` | The callback data received after authentication (`COMPLETED` result only). |
-| result | CallbackResultType | Enum representing the end result of callback execution. |
-
-<br>
-
-The following are fields only for the `AppRouterCallbackResult`:
-
-| AppRouterCallbackResult Field | Type | Description |
-| ----------------------------- | ---- | ----------- |
-| redirectResponse | NextResponse or `undefined` | The NextResponse that the user should be redirected with (`REDIRECT_REQUIRED` only). |
+| redirectUrl | string or `undefined` | The URL that the user should redirected to (`REDIRECT_REQUIRED` only). |
+| type | CallbackResultType | Enum representing the end result of callback execution. |
 
 <br>
 
@@ -720,8 +750,8 @@ The following are the possible `CallbackResultType` enum values that can be retu
 
 | CallbackResultType | Description |
 | ------------------ | ----------- |
-| COMPLETED | Indicates that the callback is successfully completed and data is available for creating a session. |
-| REDIRECT_REQUIRED | Indicates that a redirect is required, generally to a login route or page. |
+| `COMPLETED` | Indicates that the callback is successfully completed and data is available for creating a session. |
+| `REDIRECT_REQUIRED` | Indicates that a redirect is required, generally to a login route or page. |
 
 <br>
 
@@ -745,19 +775,19 @@ When using the App Router, there is a second function called `createCallbackResp
 
 ```
 const appUrl = callbackData.returnUrl || `https://yourapp.io/home`;
-return wristbandAuth.appRouter.createCallbackResponse(req, appUrl);
+return await wristbandAuth.appRouter.createCallbackResponse(req, appUrl);
 ```
 
 
 #### Redirect Responses
 
-There are certain scenarios where instead of callback data being returned by the SDK, a redirect response occurs during execution instead.  The following are edge cases where this occurs:
+There are certain scenarios where instead of callback data being returned by the SDK, a redirect URL is returned instead.  The following are edge cases where this occurs:
 
 - The Login State Cookie is missing by the time Wristband redirects back to the Callback Endpoint.
 - The `state` query parameter sent from Wristband to your Callback Endpoint does not match the Login State Cookie.
 - Wristband sends an `error` query parameter to your Callback Endpoint, and it is an expected error type that the SDK knows how to resolve.
 
-In these events, the user will get redirected back to your NextJS Login Endpoint.
+In these events, the your application should redirect the user to that location (typically it is your NextJS Login Endpoint).
 
 #### Error Parameters
 
@@ -788,13 +818,14 @@ For all other error types, the SDK will throw a `WristbandError` object (contain
 // Definition
 logout: (req: NextRequest, logoutConfig?: LogoutConfig) => Promise<NextResponse>;
 // Usage
-await wristbandAuth.appRouter.logout(req, { refreshToken: '98yht308hf902hc90wh09' });
+return await wristbandAuth.appRouter.logout(req, { refreshToken: '98yht308hf902hc90wh09' });
 
 /* *** Page Router *** */
 // Definition
-logout: (req: NextApiRequest, res: NextApiResponse, logoutConfig?: LogoutConfig) => Promise<NextApiResponse>;
+logout: (req: NextApiRequest, res: NextApiResponse, logoutConfig?: LogoutConfig) => Promise<string>;
 // Usage
-await wristbandAuth.pageRouter.logout(req, res, { refreshToken: '98yht308hf902hc90wh09' });
+const logoutUrl = await wristbandAuth.pageRouter.logout(req, res, { refreshToken: '98yht308hf902hc90wh09' });
+res.redirect(logoutUrl);
 ```
 
 When users of your application are ready to log out and/or their application session expires, your frontend should redirect the user to your NextJS Logout Endpoint.
@@ -889,8 +920,8 @@ If the `refreshTokenIfExpired()` functions finds that your token has not expired
 
 You can check out the following NextJS demo apps to see the SDK in action. Refer to that GitHub repositories for more information.
 
-- [NextJS Demo App - App Router](https://github.com/wristband-dev/b2b-nextjs-app-router-demo-app)
-- [NextJS Demo App - Page Router](https://github.com/wristband-dev/b2b-nextjs-page-router-demo-app) 
+- [NextJS Demo App - App Router](https://github.com/wristband-dev/nextjs-app-router-demo-app)
+- [NextJS Demo App - Page Router](https://github.com/wristband-dev/nextjs-page-router-demo-app) 
 
 <br/>
 

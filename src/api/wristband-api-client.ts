@@ -10,8 +10,8 @@ export class WristbandApiClient {
   private baseURL: string;
   private defaultHeaders: HeadersInit;
 
-  constructor(wristbandApplicationDomain: string) {
-    this.baseURL = `https://${wristbandApplicationDomain}/api/v1`;
+  constructor(wristbandApplicationVanityDomain: string) {
+    this.baseURL = `https://${wristbandApplicationVanityDomain}/api/v1`;
     this.defaultHeaders = { 'Content-Type': FORM_URLENCODED_MEDIA_TYPE, Accept: JSON_MEDIA_TYPE };
   }
 
