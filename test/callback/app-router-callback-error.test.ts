@@ -207,9 +207,9 @@ describe('Callback Errors', () => {
 
   describe('Redirect to Application-level Login', () => {
     test('Missing login state cookie, without subdomains, without tenant domain query param', async () => {
-      const rootDomain = 'business.invotastic.com';
-      const loginUrl = `https://${rootDomain}/api/auth/login`;
-      const redirectUri = `https://${rootDomain}/api/auth/callback`;
+      const parseTenantFromRootDomain = 'business.invotastic.com';
+      const loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+      const redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
       const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -217,7 +217,6 @@ describe('Callback Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        useTenantSubdomains: false,
         wristbandApplicationVanityDomain,
       });
 
@@ -240,9 +239,9 @@ describe('Callback Errors', () => {
     });
 
     test('Missing login state cookie, with subdomains, and without URL subdomain', async () => {
-      const rootDomain = 'business.invotastic.com';
-      const loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      const redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      const parseTenantFromRootDomain = 'business.invotastic.com';
+      const loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      const redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
       const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -251,8 +250,7 @@ describe('Callback Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
       });
 
@@ -260,7 +258,7 @@ describe('Callback Errors', () => {
       const req = httpMocks.createRequest({
         method: 'GET',
         url: `${REDIRECT_URI}?state=state&code=code`,
-        headers: { host: rootDomain },
+        headers: { host: parseTenantFromRootDomain },
       });
       const mockNextRequest = createMockNextRequest(req);
 
@@ -275,9 +273,9 @@ describe('Callback Errors', () => {
     });
 
     test('Create callback response, empty redirectURL', async () => {
-      const rootDomain = 'business.invotastic.com';
-      const loginUrl = `https://${rootDomain}/api/auth/login`;
-      const redirectUri = `https://${rootDomain}/api/auth/callback`;
+      const parseTenantFromRootDomain = 'business.invotastic.com';
+      const loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+      const redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
       const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -285,15 +283,13 @@ describe('Callback Errors', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useTenantSubdomains: false,
         wristbandApplicationVanityDomain,
       });
 
       // Create mock request
       const { req } = createMocks({
         method: 'GET',
-        headers: { host: rootDomain },
+        headers: { host: parseTenantFromRootDomain },
         url: `${REDIRECT_URI}?tenant_domain=error`,
       });
       const mockNextRequest = createMockNextRequest(req);

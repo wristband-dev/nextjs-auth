@@ -14,15 +14,15 @@ import { decryptLoginState } from '../../src/utils/auth/common-utils';
 
 describe('appRouter.login()', () => {
   let wristbandAuth: WristbandAuth;
-  let rootDomain: string;
+  let parseTenantFromRootDomain: string;
   let loginUrl: string;
   let redirectUri: string;
   let wristbandApplicationVanityDomain: string;
 
   beforeEach(() => {
-    rootDomain = 'localhost:6001';
-    loginUrl = `https://${rootDomain}/api/auth/login`;
-    redirectUri = `https://${rootDomain}/api/auth/callback`;
+    parseTenantFromRootDomain = 'localhost:6001';
+    loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+    redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
     wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
   });
 
@@ -41,7 +41,7 @@ describe('appRouter.login()', () => {
       const { req } = createMocks({
         method: 'GET',
         url: `${loginUrl}?tenant_domain=devs4you`,
-        headers: { host: `${rootDomain}` },
+        headers: { host: `${parseTenantFromRootDomain}` },
       });
       const mockNextRequest = createMockNextRequest(req);
 
@@ -118,7 +118,7 @@ describe('appRouter.login()', () => {
       const { req } = createMocks({
         method: 'GET',
         url: `${loginUrl}?tenant_domain=devs4you`,
-        headers: { host: `${rootDomain}` },
+        headers: { host: `${parseTenantFromRootDomain}` },
       });
       const mockNextRequest = createMockNextRequest(req);
 

@@ -4,14 +4,16 @@ import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../cons
 import { LoginState, LoginStateMapConfig } from '../../types';
 import { base64ToURLSafe, generateRandomString, sha256Base64 } from './common-utils';
 
-export function parseTenantSubdomain(req: NextApiRequest, rootDomain: string): string {
+export function parseTenantSubdomain(req: NextApiRequest, parseTenantFromRootDomain: string): string {
   const { host } = req.headers;
-  return host!.substring(host!.indexOf('.') + 1) === rootDomain ? host!.substring(0, host!.indexOf('.')) : '';
+  return host!.substring(host!.indexOf('.') + 1) === parseTenantFromRootDomain
+    ? host!.substring(0, host!.indexOf('.'))
+    : '';
 }
 
-export function resolveTenantDomainName(req: NextApiRequest, useTenantSubdomains: boolean, rootDomain: string): string {
-  if (useTenantSubdomains) {
-    return parseTenantSubdomain(req, rootDomain) || '';
+export function resolveTenantDomainName(req: NextApiRequest, parseTenantFromRootDomain: string): string {
+  if (parseTenantFromRootDomain) {
+    return parseTenantSubdomain(req, parseTenantFromRootDomain) || '';
   }
 
   const { tenant_domain: tenantDomainParam } = req.query;
@@ -121,7 +123,7 @@ export async function getAuthorizeUrl(
     state: string;
     tenantCustomDomain?: string;
     tenantDomainName?: string;
-    useCustomDomains?: boolean;
+    isApplicationCustomDomainActive?: boolean;
     wristbandApplicationVanityDomain: string;
   }
 ): Promise<string> {
@@ -145,7 +147,7 @@ export async function getAuthorizeUrl(
     ...(!!loginHint && typeof loginHint === 'string' ? { login_hint: loginHint } : {}),
   });
 
-  const separator = config.useCustomDomains ? '.' : '-';
+  const separator = config.isApplicationCustomDomainActive ? '.' : '-';
 
   // Domain priority order resolution:
   // 1)  tenant_custom_domain query param

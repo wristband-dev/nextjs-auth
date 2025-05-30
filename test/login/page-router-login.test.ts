@@ -75,15 +75,15 @@ async function validateLoginStateCookie(
 
 describe('pageRouter.login()', () => {
   let wristbandAuth: WristbandAuth;
-  let rootDomain: string;
+  let parseTenantFromRootDomain: string;
   let loginUrl: string;
   let redirectUri: string;
   let wristbandApplicationVanityDomain: string;
 
   beforeEach(() => {
-    rootDomain = 'localhost:6001';
-    loginUrl = `https://${rootDomain}/api/auth/login`;
-    redirectUri = `https://${rootDomain}/api/auth/callback`;
+    parseTenantFromRootDomain = 'localhost:6001';
+    loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+    redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
     wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
   });
 
@@ -102,7 +102,7 @@ describe('pageRouter.login()', () => {
       const { req, res } = createMocks({
         method: 'GET',
         url: `${loginUrl}?tenant_domain=devs4you`,
-        headers: { host: `${rootDomain}` },
+        headers: { host: `${parseTenantFromRootDomain}` },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
@@ -136,7 +136,7 @@ describe('pageRouter.login()', () => {
       const { req, res } = createMocks({
         method: 'GET',
         url: `${loginUrl}?tenant_domain=devs4you`,
-        headers: { host: `${rootDomain}` },
+        headers: { host: `${parseTenantFromRootDomain}` },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
@@ -189,9 +189,9 @@ describe('pageRouter.login()', () => {
     });
 
     test('Tenant Subdomains Configuration', async () => {
-      rootDomain = 'business.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -199,8 +199,7 @@ describe('pageRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
       });
 
@@ -208,7 +207,7 @@ describe('pageRouter.login()', () => {
       const { req, res } = createMocks({
         method: 'GET',
         url: `${loginUrl}`,
-        headers: { host: `devs4you.${rootDomain}` },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
@@ -227,10 +226,10 @@ describe('pageRouter.login()', () => {
     });
 
     test('Custom Domains and Tenant Subdomains Configuration', async () => {
-      rootDomain = 'business.invotastic.com';
+      parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -238,9 +237,8 @@ describe('pageRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useCustomDomains: true,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
       });
 
@@ -248,7 +246,7 @@ describe('pageRouter.login()', () => {
       const { req, res } = createMocks({
         method: 'GET',
         url: `${loginUrl}`,
-        headers: { host: `devs4you.${rootDomain}` },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
@@ -267,10 +265,10 @@ describe('pageRouter.login()', () => {
     });
 
     test('Custom Domains with Tenant Custom Domain', async () => {
-      rootDomain = 'business.invotastic.com';
+      parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -278,9 +276,8 @@ describe('pageRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useCustomDomains: true,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
       });
 
@@ -288,7 +285,7 @@ describe('pageRouter.login()', () => {
       const { req, res } = createMocks({
         method: 'GET',
         url: `${loginUrl}`,
-        headers: { host: `devs4you.${rootDomain}` },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
         query: { tenant_custom_domain: 'tenant.custom.com' },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
@@ -303,10 +300,10 @@ describe('pageRouter.login()', () => {
     });
 
     test('Custom Domains with All Domain Params', async () => {
-      rootDomain = 'business.invotastic.com';
+      parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://${rootDomain}/api/auth/login`;
-      redirectUri = `https://${rootDomain}/api/auth/callback`;
+      loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -314,9 +311,7 @@ describe('pageRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useCustomDomains: true,
-        useTenantSubdomains: false,
+        isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
       });
 
@@ -324,7 +319,7 @@ describe('pageRouter.login()', () => {
       const { req, res } = createMocks({
         method: 'GET',
         url: `${loginUrl}`,
-        headers: { host: `${rootDomain}` },
+        headers: { host: `${parseTenantFromRootDomain}` },
         query: { tenant_domain: 'devs4you', tenant_custom_domain: 'tenant.custom.com' },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
@@ -339,10 +334,10 @@ describe('pageRouter.login()', () => {
     });
 
     test('With login_hint and return_url query params', async () => {
-      rootDomain = 'business.invotastic.com';
+      parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -350,9 +345,8 @@ describe('pageRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useCustomDomains: true,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
       });
 
@@ -360,10 +354,10 @@ describe('pageRouter.login()', () => {
       const { req, res } = createMocks({
         method: 'GET',
         url: `${loginUrl}`,
-        headers: { host: `devs4you.${rootDomain}` },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
         query: {
           login_hint: 'test@wristband.dev',
-          return_url: `https://devs4you.${rootDomain}/settings`,
+          return_url: `https://devs4you.${parseTenantFromRootDomain}/settings`,
         },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
@@ -400,14 +394,14 @@ describe('pageRouter.login()', () => {
       expect(cookieValue).toBeTruthy();
       const loginState: LoginState = await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET);
       expect(loginState.state).toEqual(keyParts[1]);
-      expect(loginState.returnUrl).toBe(`https://devs4you.${rootDomain}/settings`);
+      expect(loginState.returnUrl).toBe(`https://devs4you.${parseTenantFromRootDomain}/settings`);
     });
 
     test('Clear old login state cookie', async () => {
-      rootDomain = 'business.invotastic.com';
+      parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -415,9 +409,8 @@ describe('pageRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useCustomDomains: true,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
       });
 
@@ -438,7 +431,7 @@ describe('pageRouter.login()', () => {
           'login#state02#2222222222': encryptedLoginState02,
           'login#state03#3333333333': encryptedLoginState03,
         },
-        headers: { host: `devs4you.${rootDomain}` },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
@@ -505,7 +498,7 @@ describe('pageRouter.login()', () => {
       const { req, res } = createMocks({
         method: 'GET',
         url: `${loginUrl}`,
-        headers: { host: rootDomain },
+        headers: { host: parseTenantFromRootDomain },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
@@ -516,10 +509,10 @@ describe('pageRouter.login()', () => {
     });
 
     test('Unresolved tenant subdomain', async () => {
-      rootDomain = 'business.invotastic.com';
+      parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -527,9 +520,8 @@ describe('pageRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useCustomDomains: true,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
       });
 
@@ -538,7 +530,7 @@ describe('pageRouter.login()', () => {
       const { req, res } = createMocks({
         method: 'GET',
         url: `${loginUrl}`,
-        headers: { host: rootDomain },
+        headers: { host: parseTenantFromRootDomain },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
@@ -549,10 +541,10 @@ describe('pageRouter.login()', () => {
     });
 
     test('Custom application login URL redirect', async () => {
-      rootDomain = 'business.invotastic.com';
+      parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -560,9 +552,8 @@ describe('pageRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useCustomDomains: true,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         customApplicationLoginPageUrl: 'https://google.com',
       });
@@ -572,7 +563,7 @@ describe('pageRouter.login()', () => {
       const { req, res } = createMocks({
         method: 'GET',
         url: `${loginUrl}`,
-        headers: { host: rootDomain },
+        headers: { host: parseTenantFromRootDomain },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
