@@ -12,10 +12,9 @@
  * @property {string} loginStateSecret A secret (32 or more characters in length) used for encryption and decryption of login state cookies.
  * @property {string} loginUrl The URL for initiating the login request.
  * @property {string} redirectUri The redirect URI for callback after authentication.
- * @property {string} [rootDomain] The root domain for your application.
+ * @property {string} [parseTenantFromRootDomain] The root domain for your application.
  * @property {string[]} [scopes] The scopes required for authentication.
- * @property {boolean} [useCustomDomains] Indicates whether custom domains are used for authentication.
- * @property {boolean} [useTenantSubdomains] Indicates whether tenant subdomains are used for authentication.
+ * @property {boolean} [isApplicationCustomDomainActive] Indicates whether custom domains are used for authentication.
  * @property {string} wristbandApplicationVanityDomain The vanity domain of the Wristband application.
  */
 export type AuthConfig = {
@@ -26,10 +25,9 @@ export type AuthConfig = {
   loginStateSecret: string;
   loginUrl: string;
   redirectUri: string;
-  rootDomain?: string;
+  parseTenantFromRootDomain?: string;
   scopes?: string[];
-  useCustomDomains?: boolean;
-  useTenantSubdomains?: boolean;
+  isApplicationCustomDomainActive?: boolean;
   wristbandApplicationVanityDomain: string;
 };
 

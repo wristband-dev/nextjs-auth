@@ -188,10 +188,7 @@ export class WristbandAuthImpl implements WristbandAuth {
     if (!authConfig.wristbandApplicationVanityDomain) {
       throw new TypeError('The [wristbandApplicationVanityDomain] config must have a value.');
     }
-    if (authConfig.useTenantSubdomains) {
-      if (!authConfig.rootDomain) {
-        throw new TypeError('The [rootDomain] config must have a value when using tenant subdomains.');
-      }
+    if (authConfig.parseTenantFromRootDomain) {
       if (!authConfig.loginUrl.includes(TENANT_DOMAIN_TOKEN)) {
         throw new TypeError('The [loginUrl] must contain the "{tenant_domain}" token when using tenant subdomains.');
       }

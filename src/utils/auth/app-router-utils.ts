@@ -14,14 +14,16 @@ function parseCookies(cookieHeader: string | null): Record<string, string> {
   );
 }
 
-export function parseTenantSubdomain(req: NextRequest, rootDomain: string): string {
+export function parseTenantSubdomain(req: NextRequest, parseTenantFromRootDomain: string): string {
   const host = req.headers.get('host');
-  return host!.substring(host!.indexOf('.') + 1) === rootDomain ? host!.substring(0, host!.indexOf('.')) : '';
+  return host!.substring(host!.indexOf('.') + 1) === parseTenantFromRootDomain
+    ? host!.substring(0, host!.indexOf('.'))
+    : '';
 }
 
-export function resolveTenantDomainName(req: NextRequest, useTenantSubdomains: boolean, rootDomain: string): string {
-  if (useTenantSubdomains) {
-    return parseTenantSubdomain(req, rootDomain) || '';
+export function resolveTenantDomainName(req: NextRequest, parseTenantFromRootDomain: string): string {
+  if (parseTenantFromRootDomain) {
+    return parseTenantSubdomain(req, parseTenantFromRootDomain) || '';
   }
 
   const tenantDomainParam = req.nextUrl.searchParams.getAll('tenant_domain');
@@ -114,7 +116,7 @@ export async function getAuthorizeUrl(
     state: string;
     tenantCustomDomain?: string;
     tenantDomainName?: string;
-    useCustomDomains?: boolean;
+    isApplicationCustomDomainActive?: boolean;
     wristbandApplicationVanityDomain: string;
   }
 ): Promise<string> {
@@ -138,7 +140,7 @@ export async function getAuthorizeUrl(
     ...(loginHint.length > 0 ? { login_hint: loginHint[0] } : {}),
   });
 
-  const separator = config.useCustomDomains ? '.' : '-';
+  const separator = config.isApplicationCustomDomainActive ? '.' : '-';
 
   // Domain priority order resolution:
   // 1)  tenant_custom_domain query param

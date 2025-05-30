@@ -89,21 +89,6 @@ describe('WristbandAuth Instantiation Errors', () => {
     }).toThrow(TypeError);
   });
 
-  test('Empty rootDomain with tenant subdomains', async () => {
-    expect(() => {
-      return createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl: LOGIN_URL,
-        redirectUri: REDIRECT_URI,
-        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-        useTenantSubdomains: true,
-        rootDomain: '',
-      });
-    }).toThrow(TypeError);
-  });
-
   test('Missing tenant domain token in loginUrl with tenant subdomains', async () => {
     expect(() => {
       return createWristbandAuth({
@@ -113,8 +98,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginUrl: LOGIN_URL,
         redirectUri: REDIRECT_URI_WITH_SUBDOMAIN,
         wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-        useTenantSubdomains: true,
-        rootDomain: ROOT_DOMAIN,
+        parseTenantFromRootDomain: ROOT_DOMAIN,
       });
     }).toThrow(TypeError);
   });
@@ -128,8 +112,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginUrl: LOGIN_URL_WITH_SUBDOMAIN,
         redirectUri: REDIRECT_URI,
         wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-        useTenantSubdomains: true,
-        rootDomain: ROOT_DOMAIN,
+        parseTenantFromRootDomain: ROOT_DOMAIN,
       });
     }).toThrow(TypeError);
   });
@@ -143,8 +126,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginUrl: LOGIN_URL_WITH_SUBDOMAIN,
         redirectUri: REDIRECT_URI,
         wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-        useTenantSubdomains: false,
-        rootDomain: ROOT_DOMAIN,
+        parseTenantFromRootDomain: ROOT_DOMAIN,
       });
     }).toThrow(TypeError);
   });
@@ -158,8 +140,7 @@ describe('WristbandAuth Instantiation Errors', () => {
         loginUrl: LOGIN_URL,
         redirectUri: REDIRECT_URI_WITH_SUBDOMAIN,
         wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-        useTenantSubdomains: false,
-        rootDomain: ROOT_DOMAIN,
+        parseTenantFromRootDomain: ROOT_DOMAIN,
       });
     }).toThrow(TypeError);
   });

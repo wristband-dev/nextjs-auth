@@ -47,15 +47,15 @@ function validateMockCallbackData(callbackData: CallbackData) {
 
 describe('Multi Tenant Callback - Page Router', () => {
   let wristbandAuth: WristbandAuth;
-  let rootDomain: string;
+  let parseTenantFromRootDomain: string;
   let loginUrl: string;
   let redirectUri: string;
   let wristbandApplicationVanityDomain: string;
 
   beforeEach(() => {
-    rootDomain = 'localhost:6001';
-    loginUrl = `https://${rootDomain}/api/auth/login`;
-    redirectUri = `https://${rootDomain}/api/auth/callback`;
+    parseTenantFromRootDomain = 'localhost:6001';
+    loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+    redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
     wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
 
     // Reset fetch mock before each test
@@ -104,7 +104,7 @@ describe('Multi Tenant Callback - Page Router', () => {
       const { req, res } = createMocks({
         method: 'GET',
         url: `${redirectUri}?state=state&code=code&tenant_domain=devs4you`,
-        headers: { host: `${rootDomain}` },
+        headers: { host: `${parseTenantFromRootDomain}` },
         cookies: { 'login#state#1234567890': encryptedLoginState },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
@@ -151,17 +151,16 @@ describe('Multi Tenant Callback - Page Router', () => {
     });
 
     test('Tenant Subdomains Configuration', async () => {
-      rootDomain = 'business.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
         clientSecret: CLIENT_SECRET,
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
       });
 
@@ -172,7 +171,7 @@ describe('Multi Tenant Callback - Page Router', () => {
       // Create mock request
       const { req, res } = createMocks({
         method: 'GET',
-        headers: { host: `devs4you.${rootDomain}` },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
         query: { state: 'state', code: 'code' },
         cookies: { 'login#state#1234567890': encryptedLoginState },
       });
@@ -196,19 +195,18 @@ describe('Multi Tenant Callback - Page Router', () => {
     });
 
     test('Custom Domains and Tenant Subdomains Configuration', async () => {
-      rootDomain = 'business.invotastic.com';
+      parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
         clientSecret: CLIENT_SECRET,
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useCustomDomains: true,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
       });
       // Mock login state
@@ -218,7 +216,7 @@ describe('Multi Tenant Callback - Page Router', () => {
       // Create mock request
       const { req, res } = createMocks({
         method: 'GET',
-        headers: { host: `devs4you.${rootDomain}` },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
         query: { state: 'state', code: 'code' },
         cookies: { 'login#state#1234567890': encryptedLoginState },
       });
@@ -244,9 +242,9 @@ describe('Multi Tenant Callback - Page Router', () => {
 
   describe('Redirect to Tenant-level Login', () => {
     test('Missing login state cookie, without tenant subdomains', async () => {
-      rootDomain = 'business.invotastic.com';
-      loginUrl = `https://${rootDomain}/api/auth/login`;
-      redirectUri = `https://${rootDomain}/api/auth/callback`;
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
       wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -254,15 +252,13 @@ describe('Multi Tenant Callback - Page Router', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useTenantSubdomains: false,
         wristbandApplicationVanityDomain,
       });
 
       // Create mock request
       const { req, res } = createMocks({
         method: 'GET',
-        headers: { host: `${rootDomain}` },
+        headers: { host: `${parseTenantFromRootDomain}` },
         query: { state: 'state', code: 'code', tenant_domain: 'devs4you' },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
@@ -275,13 +271,13 @@ describe('Multi Tenant Callback - Page Router', () => {
       expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
       expect(callbackData).toBeFalsy();
       // Validate Redirect response
-      expect(redirectUrl).toBe(`https://${rootDomain}/api/auth/login?tenant_domain=devs4you`);
+      expect(redirectUrl).toBe(`https://${parseTenantFromRootDomain}/api/auth/login?tenant_domain=devs4you`);
     });
 
     test('Missing login state cookie, with tenant subdomains', async () => {
-      rootDomain = 'business.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
       wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -289,15 +285,14 @@ describe('Multi Tenant Callback - Page Router', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
       });
 
       // Create mock request
       const { req, res } = createMocks({
         method: 'GET',
-        headers: { host: `devs4you.${rootDomain}` },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
         query: { state: 'state', code: 'code' },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
@@ -310,13 +305,13 @@ describe('Multi Tenant Callback - Page Router', () => {
       expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
       expect(callbackData).toBeFalsy();
       // Validate Redirect response
-      expect(redirectUrl).toEqual(`https://devs4you.${rootDomain}/api/auth/login`);
+      expect(redirectUrl).toEqual(`https://devs4you.${parseTenantFromRootDomain}/api/auth/login`);
     });
 
     test('Default Configuration for login_required error', async () => {
-      rootDomain = 'business.invotastic.com';
-      loginUrl = `https://${rootDomain}/api/auth/login`;
-      redirectUri = `https://${rootDomain}/api/auth/callback`;
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
       wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -324,8 +319,6 @@ describe('Multi Tenant Callback - Page Router', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useTenantSubdomains: false,
         wristbandApplicationVanityDomain,
       });
 
@@ -356,15 +349,15 @@ describe('Multi Tenant Callback - Page Router', () => {
       // Validate Redirect response
       const locationUrl: URL = new URL(redirectUrl!);
       const { pathname, origin, searchParams } = locationUrl;
-      expect(origin).toEqual(`https://${rootDomain}`);
+      expect(origin).toEqual(`https://${parseTenantFromRootDomain}`);
       expect(pathname).toEqual('/api/auth/login');
       expect(searchParams.get('tenant_domain')).toBe('devs4you');
     });
 
     test('Tenant Subdomain Configuration for login_required error', async () => {
-      rootDomain = 'business.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
       wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -372,8 +365,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
       });
 
@@ -384,7 +376,7 @@ describe('Multi Tenant Callback - Page Router', () => {
       // Create mock request
       const { req, res } = createMocks({
         method: 'GET',
-        headers: { host: `devs4you.${rootDomain}` },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
         query: { state: 'state', code: 'code', error: 'login_required', error_description: 'Login required' },
         cookies: { 'login#state#1234567890': encryptedLoginState },
       });
@@ -399,14 +391,14 @@ describe('Multi Tenant Callback - Page Router', () => {
       // Validate Redirect response
       const locationUrl: URL = new URL(redirectUrl!);
       const { pathname, origin } = locationUrl;
-      expect(origin).toEqual(`https://devs4you.${rootDomain}`);
+      expect(origin).toEqual(`https://devs4you.${parseTenantFromRootDomain}`);
       expect(pathname).toEqual('/api/auth/login');
     });
 
     test('Cookie login state not matching query param state, without subdomains', async () => {
-      rootDomain = 'business.invotastic.com';
-      loginUrl = `https://${rootDomain}/api/auth/login`;
-      redirectUri = `https://${rootDomain}/api/auth/callback`;
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
       wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -438,15 +430,15 @@ describe('Multi Tenant Callback - Page Router', () => {
       // Validate Redirect response
       const locationUrl: URL = new URL(redirectUrl!);
       const { pathname, origin, searchParams } = locationUrl;
-      expect(origin).toEqual(`https://${rootDomain}`);
+      expect(origin).toEqual(`https://${parseTenantFromRootDomain}`);
       expect(pathname).toEqual('/api/auth/login');
       expect(searchParams.get('tenant_domain')).toBe('devs4you');
     });
 
     test('Cookie login state not matching query param state, with tenant subdomains', async () => {
-      rootDomain = 'business.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
       wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -454,8 +446,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
       });
 
@@ -466,7 +457,7 @@ describe('Multi Tenant Callback - Page Router', () => {
       // Create mock request
       const { req, res } = createMocks({
         method: 'GET',
-        headers: { host: `devs4you.${rootDomain}` },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
         query: { state: 'state', code: 'code' },
         cookies: { 'login#state#1234567890': encryptedLoginState },
       });
@@ -481,14 +472,14 @@ describe('Multi Tenant Callback - Page Router', () => {
       // Validate Redirect response
       const locationUrl: URL = new URL(redirectUrl!);
       const { pathname, origin } = locationUrl;
-      expect(origin).toEqual(`https://devs4you.${rootDomain}`);
+      expect(origin).toEqual(`https://devs4you.${parseTenantFromRootDomain}`);
       expect(pathname).toEqual('/api/auth/login');
     });
 
     test('Cookie login state not matching query param state, with custom domain, without tenant subdomains', async () => {
-      rootDomain = 'business.invotastic.com';
-      loginUrl = `https://${rootDomain}/api/auth/login`;
-      redirectUri = `https://${rootDomain}/api/auth/callback`;
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
       wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -496,9 +487,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useCustomDomains: true,
-        useTenantSubdomains: false,
+        isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
       });
 
@@ -509,7 +498,7 @@ describe('Multi Tenant Callback - Page Router', () => {
       // Create mock request
       const { req, res } = createMocks({
         method: 'GET',
-        headers: { host: `${rootDomain}` },
+        headers: { host: `${parseTenantFromRootDomain}` },
         query: { state: 'state', code: 'code', tenant_domain: 'devs4you', tenant_custom_domain: 'custom.tenant.com' },
         cookies: { 'login#state#1234567890': encryptedLoginState },
       });
@@ -523,14 +512,14 @@ describe('Multi Tenant Callback - Page Router', () => {
       expect(callbackData).toBeFalsy();
       // Validate Redirect response
       expect(redirectUrl).toEqual(
-        `https://${rootDomain}/api/auth/login?tenant_domain=devs4you&tenant_custom_domain=custom.tenant.com`
+        `https://${parseTenantFromRootDomain}/api/auth/login?tenant_domain=devs4you&tenant_custom_domain=custom.tenant.com`
       );
     });
 
     test('Cookie login state not matching query param state, with custom domain, with tenant subdomains', async () => {
-      rootDomain = 'business.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${rootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${rootDomain}/api/auth/callback`;
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
       wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -538,9 +527,8 @@ describe('Multi Tenant Callback - Page Router', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        rootDomain,
-        useCustomDomains: true,
-        useTenantSubdomains: true,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
       });
 
@@ -551,7 +539,7 @@ describe('Multi Tenant Callback - Page Router', () => {
       // Create mock request
       const { req, res } = createMocks({
         method: 'GET',
-        headers: { host: `devs4you.${rootDomain}` },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
         query: { state: 'state', code: 'code', tenant_domain: 'devs4you', tenant_custom_domain: 'custom.tenant.com' },
         cookies: { 'login#state#1234567890': encryptedLoginState },
       });
@@ -565,7 +553,7 @@ describe('Multi Tenant Callback - Page Router', () => {
       expect(callbackData).toBeFalsy();
       // Validate Redirect response
       expect(redirectUrl).toEqual(
-        `https://devs4you.${rootDomain}/api/auth/login?tenant_custom_domain=custom.tenant.com`
+        `https://devs4you.${parseTenantFromRootDomain}/api/auth/login?tenant_custom_domain=custom.tenant.com`
       );
     });
   });

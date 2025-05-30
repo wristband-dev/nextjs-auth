@@ -32,10 +32,9 @@ export class PageRouterAuthHandler {
   private loginStateSecret: string;
   private loginUrl: string;
   private redirectUri: string;
-  private rootDomain: string;
+  private parseTenantFromRootDomain: string;
   private scopes: string[];
-  private useCustomDomains: boolean;
-  private useTenantSubdomains: boolean;
+  private isApplicationCustomDomainActive: boolean;
   private wristbandApplicationVanityDomain: string;
 
   constructor(authConfig: AuthConfig, wristbandService: WristbandService) {
@@ -49,12 +48,13 @@ export class PageRouterAuthHandler {
     this.loginStateSecret = authConfig.loginStateSecret;
     this.loginUrl = authConfig.loginUrl;
     this.redirectUri = authConfig.redirectUri;
-    this.rootDomain = authConfig.rootDomain || '';
+    this.parseTenantFromRootDomain = authConfig.parseTenantFromRootDomain || '';
     this.scopes =
       !!authConfig.scopes && !!authConfig.scopes.length ? authConfig.scopes : ['openid', 'offline_access', 'email'];
-    this.useCustomDomains = typeof authConfig.useCustomDomains !== 'undefined' ? authConfig.useCustomDomains : false;
-    this.useTenantSubdomains =
-      typeof authConfig.useTenantSubdomains !== 'undefined' ? authConfig.useTenantSubdomains : false;
+    this.isApplicationCustomDomainActive =
+      typeof authConfig.isApplicationCustomDomainActive !== 'undefined'
+        ? authConfig.isApplicationCustomDomainActive
+        : false;
     this.wristbandApplicationVanityDomain = authConfig.wristbandApplicationVanityDomain;
   }
 
@@ -64,7 +64,7 @@ export class PageRouterAuthHandler {
 
     // Determine if a tenant custom domain is present as it will be needed for the authorize URL, if provided.
     const tenantCustomDomain: string = resolveTenantCustomDomainParam(req);
-    const tenantDomainName: string = resolveTenantDomainName(req, this.useTenantSubdomains, this.rootDomain);
+    const tenantDomainName: string = resolveTenantDomainName(req, this.parseTenantFromRootDomain);
     const defaultTenantCustomDomain: string = loginConfig.defaultTenantCustomDomain || '';
     const defaultTenantDomainName: string = loginConfig.defaultTenantDomainName || '';
 
@@ -87,7 +87,7 @@ export class PageRouterAuthHandler {
     // Create the Wristband Authorize Endpoint URL which the user will get redirectd to.
     const authorizeUrl: string = await getAuthorizeUrl(req, {
       wristbandApplicationVanityDomain: this.wristbandApplicationVanityDomain,
-      useCustomDomains: this.useCustomDomains,
+      isApplicationCustomDomainActive: this.isApplicationCustomDomainActive,
       clientId: this.clientId,
       redirectUri: this.redirectUri,
       state: loginState.state,
@@ -131,22 +131,22 @@ export class PageRouterAuthHandler {
     }
 
     // Resolve and validate the tenant domain name
-    const resolvedTenantDomainName: string = resolveTenantDomainName(req, this.useTenantSubdomains, this.rootDomain);
+    const resolvedTenantDomainName: string = resolveTenantDomainName(req, this.parseTenantFromRootDomain);
     if (!resolvedTenantDomainName) {
       throw new WristbandError(
-        this.useTenantSubdomains ? 'missing_tenant_subdomain' : 'missing_tenant_domain',
-        this.useTenantSubdomains
+        this.parseTenantFromRootDomain ? 'missing_tenant_subdomain' : 'missing_tenant_domain',
+        this.parseTenantFromRootDomain
           ? 'Callback request URL is missing a tenant subdomain'
           : 'Callback request is missing the [tenant_domain] query parameter from Wristband'
       );
     }
 
     // Construct the tenant login URL in the event we have to redirect to the login endpoint
-    let tenantLoginUrl: string = this.useTenantSubdomains
+    let tenantLoginUrl: string = this.parseTenantFromRootDomain
       ? this.loginUrl.replace(TENANT_DOMAIN_TOKEN, resolvedTenantDomainName)
       : `${this.loginUrl}?tenant_domain=${resolvedTenantDomainName}`;
     if (tenantCustomDomainParam) {
-      tenantLoginUrl = `${tenantLoginUrl}${this.useTenantSubdomains ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
+      tenantLoginUrl = `${tenantLoginUrl}${this.parseTenantFromRootDomain ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
     }
 
     // Make sure the login state cookie exists, extract it, and set it to be cleared by the server.
@@ -205,8 +205,6 @@ export class PageRouterAuthHandler {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Pragma', 'no-cache');
 
-    const { host } = req.headers;
-
     // Revoke the refresh token only if present.
     if (logoutConfig.refreshToken) {
       try {
@@ -217,29 +215,38 @@ export class PageRouterAuthHandler {
       }
     }
 
-    // Construct the appropriate Logout Endpoint URL that the user will get redirected to.
-    const appLoginUrl: string =
-      this.customApplicationLoginPageUrl || `https://${this.wristbandApplicationVanityDomain}/login`;
-    if (!logoutConfig.tenantCustomDomain) {
-      if (this.useTenantSubdomains && host!.substring(host!.indexOf('.') + 1) !== this.rootDomain) {
-        return logoutConfig.redirectUrl || `${appLoginUrl}?client_id=${this.clientId}`;
-      }
-      if (!this.useTenantSubdomains && !logoutConfig.tenantDomainName) {
-        return logoutConfig.redirectUrl || `${appLoginUrl}?client_id=${this.clientId}`;
-      }
-    }
-
     // The client ID is always required by the Wristband Logout Endpoint.
     const logoutRedirectUrl: string = logoutConfig.redirectUrl ? `&redirect_url=${logoutConfig.redirectUrl}` : '';
-    const query: string = `client_id=${this.clientId}${logoutRedirectUrl}`;
+    const logoutPath: string = `/api/v1/logout?client_id=${this.clientId}${logoutRedirectUrl}`;
+    const separator = this.isApplicationCustomDomainActive ? '.' : '-';
+    const tenantCustomDomainParam: string = resolveTenantCustomDomainParam(req);
+    const tenantDomainName: string = resolveTenantDomainName(req, this.parseTenantFromRootDomain);
 
-    // Always perform logout redirect to the Wristband logout endpoint.
-    const tenantDomainName = this.useTenantSubdomains
-      ? host!.substring(0, host!.indexOf('.'))
-      : logoutConfig.tenantDomainName;
-    const separator = this.useCustomDomains ? '.' : '-';
-    const tenantDomainToUse =
-      logoutConfig.tenantCustomDomain || `${tenantDomainName}${separator}${this.wristbandApplicationVanityDomain}`;
-    return `https://${tenantDomainToUse}/api/v1/logout?${query}`;
+    // Domain priority order resolution:
+    // 1) If the LogoutConfig has a tenant custom domain explicitly defined, use that.
+    if (logoutConfig.tenantCustomDomain) {
+      return `https://${logoutConfig.tenantCustomDomain}${logoutPath}`;
+    }
+
+    // 2) If the LogoutConfig has a tenant domain defined, then use that.
+    if (logoutConfig.tenantDomainName) {
+      return `https://${logoutConfig.tenantDomainName}${separator}${this.wristbandApplicationVanityDomain}${logoutPath}`;
+    }
+
+    // 3) If the tenant_custom_domain query param exists, then use that.
+    if (tenantCustomDomainParam) {
+      return `https://${tenantCustomDomainParam}${logoutPath}`;
+    }
+
+    // 4a) If tenant subdomains are enabled, get the tenant domain from the host.
+    // 4b) Otherwise, if tenant subdomains are not enabled, then look for it in the tenant_domain query param.
+    if (tenantDomainName) {
+      return `https://${tenantDomainName}${separator}${this.wristbandApplicationVanityDomain}${logoutPath}`;
+    }
+
+    // Fallback to the appropriate Application-Level Login or Redirect URL if tenant cannot be resolved.
+    const appLoginUrl: string =
+      this.customApplicationLoginPageUrl || `https://${this.wristbandApplicationVanityDomain}/login`;
+    return logoutConfig.redirectUrl || `${appLoginUrl}?client_id=${this.clientId}`;
   }
 }

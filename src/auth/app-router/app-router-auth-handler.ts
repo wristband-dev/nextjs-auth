@@ -24,7 +24,7 @@ import {
   resolveTenantDomainName,
   clearLoginStateCookie,
 } from '../../utils/auth/app-router-utils';
-import { LOGIN_REQUIRED_ERROR, NO_CACHE_HEADERS, TENANT_DOMAIN_TOKEN } from '../../utils/constants';
+import { LOGIN_REQUIRED_ERROR, REDIRECT_RESPONSE_INIT, TENANT_DOMAIN_TOKEN } from '../../utils/constants';
 import { WristbandError } from '../../error';
 
 export class AppRouterAuthHandler {
@@ -35,10 +35,9 @@ export class AppRouterAuthHandler {
   private loginStateSecret: string;
   private loginUrl: string;
   private redirectUri: string;
-  private rootDomain: string;
+  private parseTenantFromRootDomain: string;
   private scopes: string[];
-  private useCustomDomains: boolean;
-  private useTenantSubdomains: boolean;
+  private isApplicationCustomDomainActive: boolean;
   private wristbandApplicationVanityDomain: string;
 
   constructor(authConfig: AuthConfig, wristbandService: WristbandService) {
@@ -52,19 +51,20 @@ export class AppRouterAuthHandler {
     this.loginStateSecret = authConfig.loginStateSecret;
     this.loginUrl = authConfig.loginUrl;
     this.redirectUri = authConfig.redirectUri;
-    this.rootDomain = authConfig.rootDomain || '';
+    this.parseTenantFromRootDomain = authConfig.parseTenantFromRootDomain || '';
     this.scopes =
       !!authConfig.scopes && !!authConfig.scopes.length ? authConfig.scopes : ['openid', 'offline_access', 'email'];
-    this.useCustomDomains = typeof authConfig.useCustomDomains !== 'undefined' ? authConfig.useCustomDomains : false;
-    this.useTenantSubdomains =
-      typeof authConfig.useTenantSubdomains !== 'undefined' ? authConfig.useTenantSubdomains : false;
+    this.isApplicationCustomDomainActive =
+      typeof authConfig.isApplicationCustomDomainActive !== 'undefined'
+        ? authConfig.isApplicationCustomDomainActive
+        : false;
     this.wristbandApplicationVanityDomain = authConfig.wristbandApplicationVanityDomain;
   }
 
   async login(req: NextRequest, loginConfig: LoginConfig = {}): Promise<NextResponse> {
     // Determine if a tenant custom domain is present as it will be needed for the authorize URL, if provided.
     const tenantCustomDomain: string = resolveTenantCustomDomainParam(req);
-    const tenantDomainName: string = resolveTenantDomainName(req, this.useTenantSubdomains, this.rootDomain);
+    const tenantDomainName: string = resolveTenantDomainName(req, this.parseTenantFromRootDomain);
     const defaultTenantCustomDomain: string = loginConfig.defaultTenantCustomDomain || '';
     const defaultTenantDomainName: string = loginConfig.defaultTenantDomainName || '';
 
@@ -72,10 +72,7 @@ export class AppRouterAuthHandler {
     if (!tenantCustomDomain && !tenantDomainName && !defaultTenantCustomDomain && !defaultTenantDomainName) {
       const apploginUrl =
         this.customApplicationLoginPageUrl || `https://${this.wristbandApplicationVanityDomain}/login`;
-      return NextResponse.redirect(`${apploginUrl}?client_id=${this.clientId}`, {
-        status: 302,
-        headers: NO_CACHE_HEADERS,
-      });
+      return NextResponse.redirect(`${apploginUrl}?client_id=${this.clientId}`, REDIRECT_RESPONSE_INIT);
     }
 
     // Create the login state which will be cached in a cookie so that it can be accessed in the callback.
@@ -86,7 +83,7 @@ export class AppRouterAuthHandler {
     // Create the Wristband Authorize Endpoint URL which the user will get redirectd to.
     const authorizeUrl: string = await getAuthorizeUrl(req, {
       wristbandApplicationVanityDomain: this.wristbandApplicationVanityDomain,
-      useCustomDomains: this.useCustomDomains,
+      isApplicationCustomDomainActive: this.isApplicationCustomDomainActive,
       clientId: this.clientId,
       redirectUri: this.redirectUri,
       state: loginState.state,
@@ -99,7 +96,7 @@ export class AppRouterAuthHandler {
     });
 
     // Prepare a response object for cookies and redirect
-    const res = NextResponse.redirect(authorizeUrl, { status: 302, headers: NO_CACHE_HEADERS });
+    const res = NextResponse.redirect(authorizeUrl, REDIRECT_RESPONSE_INIT);
 
     // Clear any stale login state cookies and add a new one for the current request.
     const encryptedLoginState: string = await encryptLoginState(loginState, this.loginStateSecret);
@@ -140,22 +137,22 @@ export class AppRouterAuthHandler {
     const tenantCustomDomainParam = tenantCustomDomainParamArray[0] || '';
 
     // Resolve and validate the tenant domain name
-    const resolvedTenantDomainName: string = resolveTenantDomainName(req, this.useTenantSubdomains, this.rootDomain);
+    const resolvedTenantDomainName: string = resolveTenantDomainName(req, this.parseTenantFromRootDomain);
     if (!resolvedTenantDomainName) {
       throw new WristbandError(
-        this.useTenantSubdomains ? 'missing_tenant_subdomain' : 'missing_tenant_domain',
-        this.useTenantSubdomains
+        this.parseTenantFromRootDomain ? 'missing_tenant_subdomain' : 'missing_tenant_domain',
+        this.parseTenantFromRootDomain
           ? 'Callback request URL is missing a tenant subdomain'
           : 'Callback request is missing the [tenant_domain] query parameter from Wristband'
       );
     }
 
     // Construct the tenant login URL in the event we have to redirect to the login endpoint
-    let tenantLoginUrl: string = this.useTenantSubdomains
+    let tenantLoginUrl: string = this.parseTenantFromRootDomain
       ? this.loginUrl.replace(TENANT_DOMAIN_TOKEN, resolvedTenantDomainName)
       : `${this.loginUrl}?tenant_domain=${resolvedTenantDomainName}`;
     if (tenantCustomDomainParam) {
-      tenantLoginUrl = `${tenantLoginUrl}${this.useTenantSubdomains ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
+      tenantLoginUrl = `${tenantLoginUrl}${this.parseTenantFromRootDomain ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
     }
 
     // Make sure the login state cookie exists, extract it, and set it to be cleared by the server.
@@ -208,8 +205,6 @@ export class AppRouterAuthHandler {
   }
 
   async logout(req: NextRequest, logoutConfig: LogoutConfig = {}): Promise<NextResponse> {
-    const host = req.headers.get('host');
-
     // Revoke the refresh token only if present.
     if (logoutConfig.refreshToken) {
       try {
@@ -220,38 +215,48 @@ export class AppRouterAuthHandler {
       }
     }
 
-    const appLoginUrl: string =
-      this.customApplicationLoginPageUrl || `https://${this.wristbandApplicationVanityDomain}/login`;
-    if (!logoutConfig.tenantCustomDomain) {
-      if (this.useTenantSubdomains && host!.substring(host!.indexOf('.') + 1) !== this.rootDomain) {
-        return NextResponse.redirect(logoutConfig.redirectUrl || `${appLoginUrl}?client_id=${this.clientId}`, {
-          status: 302,
-          headers: NO_CACHE_HEADERS,
-        });
-      }
-      if (!this.useTenantSubdomains && !logoutConfig.tenantDomainName) {
-        return NextResponse.redirect(logoutConfig.redirectUrl || `${appLoginUrl}?client_id=${this.clientId}`, {
-          status: 302,
-          headers: NO_CACHE_HEADERS,
-        });
-      }
-    }
-
     // The client ID is always required by the Wristband Logout Endpoint.
     const logoutRedirectUrl: string = logoutConfig.redirectUrl ? `&redirect_url=${logoutConfig.redirectUrl}` : '';
-    const query: string = `client_id=${this.clientId}${logoutRedirectUrl}`;
+    const logoutPath: string = `/api/v1/logout?client_id=${this.clientId}${logoutRedirectUrl}`;
+    const separator = this.isApplicationCustomDomainActive ? '.' : '-';
+    const tenantCustomDomainParam: string = resolveTenantCustomDomainParam(req);
+    const tenantDomainName: string = resolveTenantDomainName(req, this.parseTenantFromRootDomain);
 
-    // Always perform logout redirect to the Wristband logout endpoint.
-    const tenantDomainName = this.useTenantSubdomains
-      ? host!.substring(0, host!.indexOf('.'))
-      : logoutConfig.tenantDomainName;
-    const separator = this.useCustomDomains ? '.' : '-';
-    const tenantDomainToUse =
-      logoutConfig.tenantCustomDomain || `${tenantDomainName}${separator}${this.wristbandApplicationVanityDomain}`;
-    return NextResponse.redirect(`https://${tenantDomainToUse}/api/v1/logout?${query}`, {
-      status: 302,
-      headers: NO_CACHE_HEADERS,
-    });
+    // Domain priority order resolution:
+    // 1) If the LogoutConfig has a tenant custom domain explicitly defined, use that.
+    if (logoutConfig.tenantCustomDomain) {
+      return NextResponse.redirect(`https://${logoutConfig.tenantCustomDomain}${logoutPath}`, REDIRECT_RESPONSE_INIT);
+    }
+
+    // 2) If the LogoutConfig has a tenant domain defined, then use that.
+    if (logoutConfig.tenantDomainName) {
+      return NextResponse.redirect(
+        `https://${logoutConfig.tenantDomainName}${separator}${this.wristbandApplicationVanityDomain}${logoutPath}`,
+        REDIRECT_RESPONSE_INIT
+      );
+    }
+
+    // 3) If the tenant_custom_domain query param exists, then use that.
+    if (tenantCustomDomainParam) {
+      return NextResponse.redirect(`https://${tenantCustomDomainParam}${logoutPath}`, REDIRECT_RESPONSE_INIT);
+    }
+
+    // 4a) If tenant subdomains are enabled, get the tenant domain from the host.
+    // 4b) Otherwise, if tenant subdomains are not enabled, then look for it in the tenant_domain query param.
+    if (tenantDomainName) {
+      return NextResponse.redirect(
+        `https://${tenantDomainName}${separator}${this.wristbandApplicationVanityDomain}${logoutPath}`,
+        REDIRECT_RESPONSE_INIT
+      );
+    }
+
+    // Fallback to the appropriate Application-Level Login or Redirect URL if tenant cannot be resolved.
+    const appLoginUrl: string =
+      this.customApplicationLoginPageUrl || `https://${this.wristbandApplicationVanityDomain}/login`;
+    return NextResponse.redirect(
+      logoutConfig.redirectUrl || `${appLoginUrl}?client_id=${this.clientId}`,
+      REDIRECT_RESPONSE_INIT
+    );
   }
 
   async createCallbackResponse(req: NextRequest, redirectUrl: string): Promise<NextResponse> {
@@ -259,7 +264,7 @@ export class AppRouterAuthHandler {
       throw new TypeError('redirectUrl cannot be null or empty');
     }
 
-    const redirectResponse = NextResponse.redirect(redirectUrl, { status: 302, headers: NO_CACHE_HEADERS });
+    const redirectResponse = NextResponse.redirect(redirectUrl, REDIRECT_RESPONSE_INIT);
 
     const loginStateCookie: AppRouterLoginStateCookie | null = getLoginStateCookie(req);
     if (loginStateCookie) {
