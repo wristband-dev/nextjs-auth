@@ -96,6 +96,7 @@ describe('pageRouter.login()', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request and response
@@ -130,6 +131,7 @@ describe('pageRouter.login()', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request and response
@@ -201,6 +203,7 @@ describe('pageRouter.login()', () => {
         redirectUri,
         parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request and response
@@ -240,6 +243,7 @@ describe('pageRouter.login()', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request and response
@@ -279,6 +283,7 @@ describe('pageRouter.login()', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request and response
@@ -313,6 +318,7 @@ describe('pageRouter.login()', () => {
         redirectUri,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request and response
@@ -348,6 +354,7 @@ describe('pageRouter.login()', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request and response
@@ -412,6 +419,7 @@ describe('pageRouter.login()', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Mock login states
@@ -491,6 +499,7 @@ describe('pageRouter.login()', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // tenant_domain and tenant_custom_domain query param is missing, which should redirect to app-level login.
@@ -523,6 +532,7 @@ describe('pageRouter.login()', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Subdomain is missing from host, which should redirect to app-level login.
@@ -556,6 +566,7 @@ describe('pageRouter.login()', () => {
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         customApplicationLoginPageUrl: 'https://google.com',
+        autoConfigureEnabled: false,
       });
 
       // Subdomain is missing from host, which should redirect to app-level login.

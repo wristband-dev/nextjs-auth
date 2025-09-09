@@ -11,137 +11,426 @@ const ROOT_DOMAIN = 'business.invotastic.com';
 const WRISTBAND_APPLICATION_DOMAIN = 'invotasticb2b-invotastic.dev.wristband.dev';
 
 describe('WristbandAuth Instantiation Errors', () => {
-  test('Empty clientId', async () => {
-    expect(() => {
-      return createWristbandAuth({
-        clientId: '',
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl: LOGIN_URL,
-        redirectUri: REDIRECT_URI,
-        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-      });
-    }).toThrow(TypeError);
+  describe('Required Configuration Validation', () => {
+    test('Empty clientId', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: '',
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [clientId] config must have a value.');
+    });
+
+    test('Whitespace-only clientId', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: '   ',
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [clientId] config must have a value.');
+    });
+
+    test('Empty clientSecret', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: '',
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [clientSecret] config must have a value.');
+    });
+
+    test('Whitespace-only clientSecret', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: '   ',
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [clientSecret] config must have a value.');
+    });
+
+    test('Empty wristbandApplicationVanityDomain', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: '',
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [wristbandApplicationVanityDomain] config must have a value.');
+    });
+
+    test('Whitespace-only wristbandApplicationVanityDomain', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: '   ',
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [wristbandApplicationVanityDomain] config must have a value.');
+    });
   });
 
-  test('Empty clientSecret', async () => {
-    expect(() => {
-      return createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: '',
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl: LOGIN_URL,
-        redirectUri: REDIRECT_URI,
-        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-      });
-    }).toThrow(TypeError);
+  describe('Login State Secret Validation', () => {
+    test('Short loginStateSecret (less than 32 characters)', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: 'short-secret',
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [loginStateSecret] config must have a value of at least 32 characters.');
+    });
+
+    test('Exactly 32 characters loginStateSecret should pass', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: '12345678901234567890123456789012', // 32 chars
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).not.toThrow();
+    });
+
+    test('Undefined loginStateSecret should use clientSecret as fallback', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).not.toThrow();
+    });
   });
 
-  test('Empty loginStateSecret', async () => {
-    expect(() => {
-      return createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: '',
-        loginUrl: LOGIN_URL,
-        redirectUri: REDIRECT_URI,
-        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-      });
-    }).toThrow(TypeError);
+  describe('Token Expiration Buffer Validation', () => {
+    test('Negative tokenExpirationBuffer', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          tokenExpirationBuffer: -10,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [tokenExpirationBuffer] config must be greater than or equal to 0.');
+    });
+
+    test('Zero tokenExpirationBuffer should pass', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          tokenExpirationBuffer: 0,
+          autoConfigureEnabled: false,
+        });
+      }).not.toThrow();
+    });
   });
 
-  test('Empty loginUrl', async () => {
-    expect(() => {
-      return createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl: '',
-        redirectUri: REDIRECT_URI,
-        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-      });
-    }).toThrow(TypeError);
+  describe('Auto-Configure Disabled Validation', () => {
+    test('Empty loginUrl when auto-configure disabled', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: '',
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [loginUrl] config must have a value when auto-configure is disabled.');
+    });
+
+    test('Empty redirectUri when auto-configure disabled', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: '',
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [redirectUri] config must have a value when auto-configure is disabled.');
+    });
+
+    test('Missing loginUrl when auto-configure disabled', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [loginUrl] config must have a value when auto-configure is disabled.');
+    });
+
+    test('Missing redirectUri when auto-configure disabled', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow('The [redirectUri] config must have a value when auto-configure is disabled.');
+    });
   });
 
-  test('Empty redirectUri', async () => {
-    expect(() => {
-      return createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl: LOGIN_URL,
-        redirectUri: '',
-        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-      });
-    }).toThrow(TypeError);
+  describe('Tenant Domain Token Validation with Auto-Configure Disabled', () => {
+    test('Missing tenant domain token in loginUrl with tenant subdomains', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI_WITH_SUBDOMAIN,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          parseTenantFromRootDomain: ROOT_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow(
+        'The [loginUrl] must contain the "{tenant_domain}" token when using the [parseTenantFromRootDomain] config.'
+      );
+    });
+
+    test('Missing tenant domain token in redirectUri with tenant subdomains', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL_WITH_SUBDOMAIN,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          parseTenantFromRootDomain: ROOT_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow(
+        'The [redirectUri] must contain the "{tenant_domain}" token when using the [parseTenantFromRootDomain] config.'
+      );
+    });
+
+    test('Invalid tenant domain token in loginUrl with no tenant subdomains', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL_WITH_SUBDOMAIN,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow(
+        'The [loginUrl] cannot contain the "{tenant_domain}" token when the [parseTenantFromRootDomain] is absent.'
+      );
+    });
+
+    test('Invalid tenant domain token in redirectUri with no tenant subdomains', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI_WITH_SUBDOMAIN,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).toThrow(
+        'The [redirectUri] cannot contain the "{tenant_domain}" token when the [parseTenantFromRootDomain] is absent.'
+      );
+    });
   });
 
-  test('Empty wristbandApplicationVanityDomain', async () => {
-    expect(() => {
-      return createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl: LOGIN_URL,
-        redirectUri: REDIRECT_URI,
-        wristbandApplicationVanityDomain: '',
-      });
-    }).toThrow(TypeError);
+  describe('Partial Configuration Validation with Auto-Configure Enabled', () => {
+    test('Manual loginUrl with parseTenantFromRootDomain but missing token', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL, // Missing {tenant_domain} token
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          parseTenantFromRootDomain: ROOT_DOMAIN,
+          autoConfigureEnabled: true,
+        });
+      }).toThrow(
+        'The [loginUrl] must contain the "{tenant_domain}" token when using the [parseTenantFromRootDomain] config.'
+      );
+    });
+
+    test('Manual redirectUri with parseTenantFromRootDomain but missing token', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          redirectUri: REDIRECT_URI, // Missing {tenant_domain} token
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          parseTenantFromRootDomain: ROOT_DOMAIN,
+          autoConfigureEnabled: true,
+        });
+      }).toThrow(
+        'The [redirectUri] must contain the "{tenant_domain}" token when using the [parseTenantFromRootDomain] config.'
+      );
+    });
+
+    test('Manual loginUrl with token but no parseTenantFromRootDomain', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL_WITH_SUBDOMAIN, // Has {tenant_domain} token
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: true,
+        });
+      }).toThrow(
+        'The [loginUrl] cannot contain the "{tenant_domain}" token when the [parseTenantFromRootDomain] is absent.'
+      );
+    });
+
+    test('Manual redirectUri with token but no parseTenantFromRootDomain', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          redirectUri: REDIRECT_URI_WITH_SUBDOMAIN, // Has {tenant_domain} token
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          autoConfigureEnabled: true,
+        });
+      }).toThrow(
+        'The [redirectUri] cannot contain the "{tenant_domain}" token when the [parseTenantFromRootDomain] is absent.'
+      );
+    });
   });
 
-  test('Missing tenant domain token in loginUrl with tenant subdomains', async () => {
-    expect(() => {
-      return createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl: LOGIN_URL,
-        redirectUri: REDIRECT_URI_WITH_SUBDOMAIN,
-        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-        parseTenantFromRootDomain: ROOT_DOMAIN,
-      });
-    }).toThrow(TypeError);
-  });
+  describe('Successful Instantiation Cases', () => {
+    test('Minimal valid configuration with auto-configure enabled', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+        });
+      }).not.toThrow();
+    });
 
-  test('Missing tenant domain token in redirectUri with tenant subdomains', async () => {
-    expect(() => {
-      return createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl: LOGIN_URL_WITH_SUBDOMAIN,
-        redirectUri: REDIRECT_URI,
-        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-        parseTenantFromRootDomain: ROOT_DOMAIN,
-      });
-    }).toThrow(TypeError);
-  });
+    test('Complete configuration with auto-configure disabled', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          scopes: ['openid', 'profile'],
+          tokenExpirationBuffer: 60,
+          dangerouslyDisableSecureCookies: false,
+          autoConfigureEnabled: false,
+        });
+      }).not.toThrow();
+    });
 
-  test('Invalid tenant domain token in loginUrl with no tenant subdomains', async () => {
-    expect(() => {
-      return createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl: LOGIN_URL_WITH_SUBDOMAIN,
-        redirectUri: REDIRECT_URI,
-        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-        parseTenantFromRootDomain: ROOT_DOMAIN,
-      });
-    }).toThrow(TypeError);
-  });
+    test('Valid tenant subdomain configuration', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL_WITH_SUBDOMAIN,
+          redirectUri: REDIRECT_URI_WITH_SUBDOMAIN,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          parseTenantFromRootDomain: ROOT_DOMAIN,
+          autoConfigureEnabled: false,
+        });
+      }).not.toThrow();
+    });
 
-  test('Invalid tenant domain token in redirectUri with no tenant subdomains', async () => {
-    expect(() => {
-      return createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl: LOGIN_URL,
-        redirectUri: REDIRECT_URI_WITH_SUBDOMAIN,
-        wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-        parseTenantFromRootDomain: ROOT_DOMAIN,
-      });
-    }).toThrow(TypeError);
+    test('Custom application login page URL', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          customApplicationLoginPageUrl: 'https://custom.login.example.com',
+          autoConfigureEnabled: false,
+        });
+      }).not.toThrow();
+    });
+
+    test('Application custom domain active', async () => {
+      expect(() => {
+        return createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl: LOGIN_URL,
+          redirectUri: REDIRECT_URI,
+          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+          isApplicationCustomDomainActive: true,
+          autoConfigureEnabled: false,
+        });
+      }).not.toThrow();
+    });
   });
 });

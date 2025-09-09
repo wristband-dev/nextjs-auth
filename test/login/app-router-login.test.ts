@@ -35,6 +35,7 @@ describe('appRouter.login()', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -112,6 +113,7 @@ describe('appRouter.login()', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request

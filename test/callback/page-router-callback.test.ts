@@ -30,7 +30,7 @@ const mockUserinfo = {
 
 function validateMockCallbackData(callbackData: CallbackData) {
   expect(callbackData.accessToken).toBe('accessToken');
-  expect(callbackData.expiresIn).toBe(1800);
+  expect(callbackData.expiresIn).toBe(1740);
   expect(callbackData.idToken).toBe('idToken');
   expect(callbackData.refreshToken).toBe('refreshToken');
   expect(callbackData.customState).toEqual({ test: 'abc' });
@@ -88,6 +88,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Mock login state
@@ -162,6 +163,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         redirectUri,
         parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Mock login state
@@ -208,6 +210,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
       // Mock login state
       const loginState: LoginState = { codeVerifier: 'codeVerifier', redirectUri: redirectUri, state: 'state' };
@@ -253,6 +256,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -287,6 +291,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         redirectUri,
         parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -320,6 +325,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Mock login state
@@ -367,6 +373,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         redirectUri,
         parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Mock login state
@@ -407,6 +414,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Mock login state
@@ -448,6 +456,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         redirectUri,
         parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Mock login state
@@ -489,6 +498,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         redirectUri,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Mock login state
@@ -530,6 +540,7 @@ describe('Multi Tenant Callback - Page Router', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Mock login state

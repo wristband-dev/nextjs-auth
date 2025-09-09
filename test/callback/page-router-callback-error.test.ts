@@ -26,6 +26,7 @@ describe('Callback Errors', () => {
       loginUrl: LOGIN_URL,
       redirectUri: REDIRECT_URI,
       wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
+      autoConfigureEnabled: false,
     });
     // Reset fetch mock before each test
     global.fetch = jest.fn();
@@ -248,6 +249,7 @@ describe('Callback Errors', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request and response
@@ -286,6 +288,7 @@ describe('Callback Errors', () => {
         redirectUri,
         parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request and response

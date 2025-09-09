@@ -80,6 +80,7 @@ describe('Custom Login Configurations', () => {
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         scopes: CUSTOM_SCOPES,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -143,6 +144,7 @@ describe('Custom Login Configurations', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -204,6 +206,7 @@ describe('Custom Login Configurations', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -234,6 +237,7 @@ describe('Custom Login Configurations', () => {
         redirectUri,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -263,6 +267,7 @@ describe('Custom Login Configurations', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -294,6 +299,7 @@ describe('Custom Login Configurations', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -329,6 +335,7 @@ describe('Custom Login Configurations', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -360,6 +367,7 @@ describe('Custom Login Configurations', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -393,6 +401,7 @@ describe('Custom Login Configurations', () => {
         parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -427,6 +436,7 @@ describe('Custom Login Configurations', () => {
         redirectUri,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -459,6 +469,7 @@ describe('Custom Login Configurations', () => {
         redirectUri,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -493,6 +504,7 @@ describe('Custom Login Configurations', () => {
         redirectUri,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -525,6 +537,7 @@ describe('Custom Login Configurations', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -561,6 +574,7 @@ describe('Custom Login Configurations', () => {
         redirectUri: `https://${parseTenantFromRootDomain}/api/auth/callback`,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Create mock request
@@ -576,6 +590,309 @@ describe('Custom Login Configurations', () => {
       // Validate Redirect response
       validateRedirectResponse(response, `https://global.${wristbandApplicationVanityDomain}`);
       await validateLoginStateCookie(response);
+    });
+  });
+
+  describe('Return URL Configuration Tests', () => {
+    test('returnUrl config stored in login state', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const returnUrl = '/dashboard';
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, { returnUrl });
+
+      validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`);
+
+      // Validate login state cookie contains returnUrl
+      const setCookieHeaders = response.headers.getSetCookie();
+      const parsedCookies = parseSetCookies(setCookieHeaders);
+      const loginStateCookie = parsedCookies[0];
+
+      const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+      expect(loginState.returnUrl).toBe(returnUrl);
+    });
+
+    test('returnUrl with absolute URL', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const returnUrl = 'https://external.example.com/after-login';
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, { returnUrl });
+
+      validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`);
+
+      const setCookieHeaders = response.headers.getSetCookie();
+      const parsedCookies = parseSetCookies(setCookieHeaders);
+      const loginStateCookie = parsedCookies[0];
+
+      const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+      expect(loginState.returnUrl).toBe(returnUrl);
+    });
+
+    test('returnUrl with query parameters', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const returnUrl = '/dashboard?tab=settings&view=detailed';
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, { returnUrl });
+
+      validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`);
+
+      const setCookieHeaders = response.headers.getSetCookie();
+      const parsedCookies = parseSetCookies(setCookieHeaders);
+      const loginStateCookie = parsedCookies[0];
+
+      const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+      expect(loginState.returnUrl).toBe(returnUrl);
+    });
+
+    test('returnUrl config takes precedence over return_url query param', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}?return_url=/query-return-url`,
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const configReturnUrl = '/config-return-url';
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, { returnUrl: configReturnUrl });
+
+      validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`);
+
+      const setCookieHeaders = response.headers.getSetCookie();
+      const parsedCookies = parseSetCookies(setCookieHeaders);
+      const loginStateCookie = parsedCookies[0];
+
+      const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+      expect(loginState.returnUrl).toBe(configReturnUrl);
+    });
+
+    test('return_url query param used when no returnUrl config provided', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}?return_url=/query-return-url`,
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, {});
+
+      validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`);
+
+      const setCookieHeaders = response.headers.getSetCookie();
+      const parsedCookies = parseSetCookies(setCookieHeaders);
+      const loginStateCookie = parsedCookies[0];
+
+      const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+      expect(loginState.returnUrl).toBe('/query-return-url');
+    });
+
+    test('no returnUrl when neither config nor query param provided', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, {});
+
+      validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`);
+
+      const setCookieHeaders = response.headers.getSetCookie();
+      const parsedCookies = parseSetCookies(setCookieHeaders);
+      const loginStateCookie = parsedCookies[0];
+
+      const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+      expect(loginState.returnUrl).toBeUndefined();
+    });
+
+    test('empty string returnUrl config should not be stored', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}?return_url=/fallback-url`,
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, { returnUrl: '' });
+
+      validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`);
+
+      const setCookieHeaders = response.headers.getSetCookie();
+      const parsedCookies = parseSetCookies(setCookieHeaders);
+      const loginStateCookie = parsedCookies[0];
+
+      const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+      expect(loginState.returnUrl).toBeUndefined();
+    });
+
+    test('returnUrl combined with customState', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const returnUrl = '/admin/dashboard';
+      const customState = { role: 'admin', preferences: { theme: 'dark' } };
+
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, {
+        returnUrl,
+        customState,
+      });
+
+      validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`);
+
+      const setCookieHeaders = response.headers.getSetCookie();
+      const parsedCookies = parseSetCookies(setCookieHeaders);
+      const loginStateCookie = parsedCookies[0];
+
+      const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+      expect(loginState.returnUrl).toBe(returnUrl);
+      expect(loginState.customState).toEqual(customState);
+    });
+
+    test('returnUrl with special characters and encoding', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        parseTenantFromRootDomain,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const returnUrl = '/dashboard?name=John Doe&category=R&D';
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, { returnUrl });
+
+      validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`);
+
+      const setCookieHeaders = response.headers.getSetCookie();
+      const parsedCookies = parseSetCookies(setCookieHeaders);
+      const loginStateCookie = parsedCookies[0];
+
+      const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+      expect(loginState.returnUrl).toBe(returnUrl);
     });
   });
 });

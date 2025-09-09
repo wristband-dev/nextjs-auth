@@ -40,21 +40,21 @@ export function createLoginState(
   redirectUri: string,
   config: LoginStateMapConfig = {}
 ): LoginState {
-  const { return_url: returnUrl } = req.query;
+  const { return_url: returnUrlParam } = req.query;
 
-  if (!!returnUrl && typeof returnUrl !== 'string') {
+  if (!!returnUrlParam && typeof returnUrlParam !== 'string') {
     throw new TypeError('More than one [return_url] query parameter was encountered');
   }
 
-  const loginStateData = {
+  const returnUrl = config.returnUrl ?? returnUrlParam;
+
+  return {
     state: generateRandomString(32),
     codeVerifier: generateRandomString(32),
     redirectUri,
     ...(!!returnUrl && typeof returnUrl === 'string' ? { returnUrl } : {}),
     ...(!!config.customState && !!Object.keys(config.customState).length ? { customState: config.customState } : {}),
   };
-
-  return config.customState ? { ...loginStateData, customState: config.customState } : loginStateData;
 }
 
 export function createLoginStateCookie(

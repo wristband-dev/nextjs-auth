@@ -1,12 +1,13 @@
 // The Wristband Service contains all code for REST API calls to the Wristband platform.
-import { WristbandApiClient } from '../api/wristband-api-client';
-import { FORM_URLENCODED_MEDIA_TYPE, JSON_MEDIA_TYPE } from '../utils/constants';
-import { TokenResponse, Userinfo } from '../types';
-import { encodeBase64 } from '../utils/auth/common-utils';
+import { WristbandApiClient } from './wristband-api-client';
+import { FORM_URLENCODED_MEDIA_TYPE, JSON_MEDIA_TYPE } from './utils/constants';
+import { SdkConfiguration, TokenResponse, Userinfo } from './types';
+import { encodeBase64 } from './utils/auth/common-utils';
 
 export class WristbandService {
   private wristbandApiClient: WristbandApiClient;
   private basicAuthHeaders: HeadersInit;
+  private clientId: string;
 
   constructor(wristbandApplicationVanityDomain: string, clientId: string, clientSecret: string) {
     this.wristbandApiClient = new WristbandApiClient(wristbandApplicationVanityDomain);
@@ -15,6 +16,18 @@ export class WristbandService {
       Accept: JSON_MEDIA_TYPE,
       Authorization: `Basic ${encodeBase64(`${clientId}:${clientSecret}`)}`,
     };
+    this.clientId = clientId;
+  }
+
+  async getSdkConfiguration(): Promise<SdkConfiguration> {
+    const jsonHeaders = { 'Content-Type': JSON_MEDIA_TYPE, Accept: JSON_MEDIA_TYPE };
+
+    const sdkConfig = await this.wristbandApiClient.get<SdkConfiguration>(
+      `/clients/${this.clientId}/sdk-configuration`,
+      jsonHeaders
+    );
+
+    return sdkConfig;
   }
 
   async getTokens(code: string, redirectUri: string, codeVerifier: string): Promise<TokenResponse> {

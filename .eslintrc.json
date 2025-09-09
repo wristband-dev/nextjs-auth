@@ -18,7 +18,8 @@
   "plugins": [
     "@typescript-eslint",
     "prettier",
-    "jest-extended"
+    "jest-extended",
+    "node"
   ],
   "rules": {
     "arrow-body-style": ["error", "always"],
