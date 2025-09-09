@@ -1,13 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { NextRequest, NextResponse } from 'next/server';
-import retry from 'async-retry';
 
 import type { AuthConfig, CallbackResult, LoginConfig, LogoutConfig, TokenData, TokenResponse } from '../types';
 import { AppRouterAuthHandler } from './app-router/app-router-auth-handler';
 import { PageRouterAuthHandler } from './page-router/page-router-auth-handler';
-import { WristbandService } from '../services/wristband-service';
-import { TENANT_DOMAIN_TOKEN } from '../utils/constants';
+import { WristbandService } from '../wristband-service';
 import { FetchError, WristbandError } from '../error';
+import { ConfigResolver } from '../config-resolver';
 
 /**
  * WristbandAuth is a utility interface providing methods for seamless interaction with Wristband for authenticating
@@ -160,6 +159,7 @@ export interface WristbandAuth {
  * @implements {WristbandAuth}
  */
 export class WristbandAuthImpl implements WristbandAuth {
+  private configResolver: ConfigResolver;
   private appRouterAuthHandler: AppRouterAuthHandler;
   private pageRouterAuthHandler: PageRouterAuthHandler;
   private wristbandService: WristbandService;
@@ -170,48 +170,14 @@ export class WristbandAuthImpl implements WristbandAuth {
    * @param {AuthConfig} authConfig The configuration for Wristband authentication.
    */
   constructor(authConfig: AuthConfig) {
-    if (!authConfig.clientId) {
-      throw new TypeError('The [clientId] config must have a value.');
-    }
-    if (!authConfig.clientSecret) {
-      throw new TypeError('The [clientSecret] config must have a value.');
-    }
-    if (!authConfig.loginStateSecret || authConfig.loginStateSecret.length < 32) {
-      throw new TypeError('The [loginStateSecret] config must have a value of at least 32 characters.');
-    }
-    if (!authConfig.loginUrl) {
-      throw new TypeError('The [loginUrl] config must have a value.');
-    }
-    if (!authConfig.redirectUri) {
-      throw new TypeError('The [redirectUri] config must have a value.');
-    }
-    if (!authConfig.wristbandApplicationVanityDomain) {
-      throw new TypeError('The [wristbandApplicationVanityDomain] config must have a value.');
-    }
-    if (authConfig.parseTenantFromRootDomain) {
-      if (!authConfig.loginUrl.includes(TENANT_DOMAIN_TOKEN)) {
-        throw new TypeError('The [loginUrl] must contain the "{tenant_domain}" token when using tenant subdomains.');
-      }
-      if (!authConfig.redirectUri.includes(TENANT_DOMAIN_TOKEN)) {
-        throw new TypeError('The [redirectUri] must contain the "{tenant_domain}" token when using tenant subdomains.');
-      }
-    } else {
-      if (authConfig.loginUrl.includes(TENANT_DOMAIN_TOKEN)) {
-        throw new TypeError('The [loginUrl] must contain the "{tenant_domain}" token when using tenant subdomains.');
-      }
-      if (authConfig.redirectUri.includes(TENANT_DOMAIN_TOKEN)) {
-        throw new TypeError('The [redirectUri] must contain the "{tenant_domain}" token when using tenant subdomains.');
-      }
-    }
-
-    const wristbandServiceImpl = new WristbandService(
-      authConfig.wristbandApplicationVanityDomain,
-      authConfig.clientId,
-      authConfig.clientSecret
+    this.configResolver = new ConfigResolver(authConfig);
+    this.wristbandService = new WristbandService(
+      this.configResolver.getWristbandApplicationVanityDomain(),
+      this.configResolver.getClientId(),
+      this.configResolver.getClientSecret()
     );
-    this.wristbandService = wristbandServiceImpl;
-    this.appRouterAuthHandler = new AppRouterAuthHandler(authConfig, wristbandServiceImpl);
-    this.pageRouterAuthHandler = new PageRouterAuthHandler(authConfig, wristbandServiceImpl);
+    this.appRouterAuthHandler = new AppRouterAuthHandler(this.configResolver, this.wristbandService);
+    this.pageRouterAuthHandler = new PageRouterAuthHandler(this.configResolver, this.wristbandService);
   }
 
   appRouter = {
@@ -242,6 +208,9 @@ export class WristbandAuthImpl implements WristbandAuth {
   };
 
   async refreshTokenIfExpired(refreshToken: string, expiresAt: number): Promise<TokenData | null> {
+    // Fetch SDK Configs
+    const tokenExpirationBuffer = this.configResolver.getTokenExpirationBuffer();
+
     // Safety checks
     if (!refreshToken) {
       throw new TypeError('Refresh token must be a valid string');
@@ -256,42 +225,58 @@ export class WristbandAuthImpl implements WristbandAuth {
 
     // Try up to 3 times to perform a token refresh.
     let tokenResponse: TokenResponse | null = null;
-    await retry(
-      async (bail) => {
-        try {
-          tokenResponse = await this.wristbandService.refreshToken(refreshToken);
-        } catch (error: any) {
-          if (
-            error instanceof FetchError &&
-            error.response &&
-            error.response.status >= 400 &&
-            error.response.status < 500
-          ) {
-            const errorDescription =
-              error.body && error.body.error_description ? error.body.error_description : 'Invalid Refresh Token';
-            // Only 4xx errors should short-circuit the retry loop early.
-            bail(new WristbandError('invalid_refresh_token', errorDescription));
-            return;
-          }
-
-          // Retry any 5xx errors.
-          throw new WristbandError('unexpected_error', 'Unexpected Error');
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        tokenResponse = await this.wristbandService.refreshToken(refreshToken);
+        break;
+      } catch (error: any) {
+        if (
+          error instanceof FetchError &&
+          error.response &&
+          error.response.status >= 400 &&
+          error.response.status < 500
+        ) {
+          const errorDescription =
+            error.body && error.body.error_description ? error.body.error_description : 'Invalid Refresh Token';
+          // Only 4xx errors should short-circuit the retry loop early.
+          throw new WristbandError('invalid_refresh_token', errorDescription, error);
         }
-      },
-      { retries: 2, minTimeout: 100, maxTimeout: 100 }
-    );
 
-    if (tokenResponse) {
-      const {
-        access_token: accessToken,
-        id_token: idToken,
-        expires_in: expiresIn,
-        refresh_token: responseRefreshToken,
-      } = tokenResponse;
-      return { accessToken, idToken, refreshToken: responseRefreshToken, expiresIn };
+        // Final attempt failed
+        if (attempt === 3) {
+          throw new WristbandError('unexpected_error', 'Unexpected Error', error);
+        }
+
+        // Wait before retrying (100ms delay)
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 100);
+        });
+      }
     }
 
-    // This is merely a safety check, but this should never happen.
-    throw new WristbandError('unexpected_error', 'Unexpected Error');
+    if (!tokenResponse) {
+      // This is merely a safety check, but this should never happen.
+      throw new WristbandError('unexpected_error', 'Unexpected Error');
+    }
+
+    const {
+      access_token: accessToken,
+      id_token: idToken,
+      expires_in: expiresIn,
+      refresh_token: responseRefreshToken,
+    } = tokenResponse;
+
+    const resolvedExpiresIn = expiresIn - (tokenExpirationBuffer || 0);
+    const resolvedExpiresAt = Date.now() + resolvedExpiresIn * 1000;
+
+    return {
+      accessToken,
+      expiresAt: resolvedExpiresAt,
+      expiresIn: resolvedExpiresIn,
+      idToken,
+      refreshToken: responseRefreshToken,
+    };
   }
 }

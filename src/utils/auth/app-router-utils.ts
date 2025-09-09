@@ -46,21 +46,22 @@ export function resolveTenantCustomDomainParam(req: NextRequest): string {
 }
 
 export function createLoginState(req: NextRequest, redirectUri: string, config: LoginStateMapConfig = {}): LoginState {
-  const returnUrl = req.nextUrl.searchParams.getAll('return_url');
+  const returnUrlParam = req.nextUrl.searchParams.getAll('return_url');
 
-  if (returnUrl.length > 1) {
+  if (returnUrlParam.length > 1) {
     throw new TypeError('More than one [return_url] query parameter was encountered');
   }
 
-  const loginStateData = {
+  const resolvedReturnUrlParam = returnUrlParam.length > 0 ? returnUrlParam[0] : '';
+  const returnUrl = config.returnUrl ?? resolvedReturnUrlParam;
+
+  return {
     state: generateRandomString(32),
     codeVerifier: generateRandomString(32),
     redirectUri,
-    ...(returnUrl.length > 0 ? { returnUrl: returnUrl[0] } : {}),
+    ...(!!returnUrl && typeof returnUrl === 'string' ? { returnUrl } : {}),
     ...(!!config.customState && !!Object.keys(config.customState).length ? { customState: config.customState } : {}),
   };
-
-  return config.customState ? { ...loginStateData, customState: config.customState } : loginStateData;
 }
 
 export function createLoginStateCookie(

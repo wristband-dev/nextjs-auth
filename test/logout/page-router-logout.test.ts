@@ -65,6 +65,7 @@ describe('Multi Tenant Logout', () => {
           loginUrl,
           redirectUri,
           wristbandApplicationVanityDomain,
+          autoConfigureEnabled: false,
         });
 
         const { req, res } = createMocks({
@@ -95,6 +96,7 @@ describe('Multi Tenant Logout', () => {
           loginUrl,
           redirectUri,
           wristbandApplicationVanityDomain,
+          autoConfigureEnabled: false,
         });
 
         const { req, res } = createMocks({
@@ -127,6 +129,7 @@ describe('Multi Tenant Logout', () => {
           redirectUri,
           wristbandApplicationVanityDomain,
           isApplicationCustomDomainActive: true,
+          autoConfigureEnabled: false,
         });
 
         const { req, res } = createMocks({
@@ -159,6 +162,7 @@ describe('Multi Tenant Logout', () => {
           loginUrl,
           redirectUri,
           wristbandApplicationVanityDomain,
+          autoConfigureEnabled: false,
         });
 
         const { req, res } = createMocks({
@@ -184,6 +188,7 @@ describe('Multi Tenant Logout', () => {
           loginUrl,
           redirectUri,
           wristbandApplicationVanityDomain,
+          autoConfigureEnabled: false,
         });
 
         const { req, res } = createMocks({
@@ -217,6 +222,7 @@ describe('Multi Tenant Logout', () => {
             redirectUri,
             parseTenantFromRootDomain,
             wristbandApplicationVanityDomain,
+            autoConfigureEnabled: false,
           });
 
           const { req, res } = createMocks({
@@ -246,6 +252,7 @@ describe('Multi Tenant Logout', () => {
             parseTenantFromRootDomain,
             isApplicationCustomDomainActive: true,
             wristbandApplicationVanityDomain,
+            autoConfigureEnabled: false,
           });
 
           const { req, res } = createMocks({
@@ -271,6 +278,7 @@ describe('Multi Tenant Logout', () => {
             loginUrl,
             redirectUri,
             wristbandApplicationVanityDomain,
+            autoConfigureEnabled: false,
           });
 
           const { req, res } = createMocks({
@@ -295,6 +303,7 @@ describe('Multi Tenant Logout', () => {
             redirectUri,
             wristbandApplicationVanityDomain,
             isApplicationCustomDomainActive: true,
+            autoConfigureEnabled: false,
           });
 
           const { req, res } = createMocks({
@@ -321,6 +330,7 @@ describe('Multi Tenant Logout', () => {
           loginUrl,
           redirectUri,
           wristbandApplicationVanityDomain,
+          autoConfigureEnabled: false,
         });
 
         const { req, res } = createMocks({
@@ -346,6 +356,7 @@ describe('Multi Tenant Logout', () => {
           redirectUri,
           wristbandApplicationVanityDomain,
           customApplicationLoginPageUrl: customLoginUrl,
+          autoConfigureEnabled: false,
         });
 
         const { req, res } = createMocks({
@@ -373,6 +384,7 @@ describe('Multi Tenant Logout', () => {
           redirectUri,
           wristbandApplicationVanityDomain,
           customApplicationLoginPageUrl: customLoginUrl,
+          autoConfigureEnabled: false,
         });
 
         const { req, res } = createMocks({
@@ -401,6 +413,7 @@ describe('Multi Tenant Logout', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       const { req, res } = createMocks({
@@ -440,6 +453,7 @@ describe('Multi Tenant Logout', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       const { req, res } = createMocks({
@@ -483,6 +497,7 @@ describe('Multi Tenant Logout', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       const { req, res } = createMocks({
@@ -515,6 +530,7 @@ describe('Multi Tenant Logout', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       const { req, res } = createMocks({
@@ -552,6 +568,7 @@ describe('Multi Tenant Logout', () => {
         loginUrl,
         redirectUri,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       const { req, res } = createMocks({
@@ -585,6 +602,7 @@ describe('Multi Tenant Logout', () => {
         redirectUri,
         parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
       });
 
       // Host matches parseTenantFromRootDomain exactly (no subdomain)
@@ -616,6 +634,7 @@ describe('Multi Tenant Logout', () => {
         parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         customApplicationLoginPageUrl: 'https://should.be.ignored.com',
+        autoConfigureEnabled: false,
       });
 
       const { req, res } = createMocks({
@@ -635,6 +654,265 @@ describe('Multi Tenant Logout', () => {
 
       // tenantCustomDomain config should take priority over everything else
       validateRedirectResponse(mockRes, logoutUrl, 'https://config.custom.com', 'https://redirect.com');
+    });
+  });
+
+  describe('State Parameter Tests', () => {
+    test('should include state parameter in logout URL when provided', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        tenantDomainName: 'test-tenant',
+        state: 'test-state-123',
+      });
+
+      expect(logoutUrl).toContain('state=test-state-123');
+      validateRedirectResponse(mockRes, logoutUrl, `https://test-tenant-${wristbandApplicationVanityDomain}`, null);
+    });
+
+    test('should not include state parameter when not provided', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        tenantDomainName: 'test-tenant',
+      });
+
+      expect(logoutUrl).not.toContain('state=');
+      validateRedirectResponse(mockRes, logoutUrl, `https://test-tenant-${wristbandApplicationVanityDomain}`, null);
+    });
+
+    test('should throw error when state exceeds 512 characters', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const longState = 'a'.repeat(513);
+
+      await expect(wristbandAuth.pageRouter.logout(mockReq, mockRes, { state: longState })).rejects.toThrow(
+        'The [state] logout config cannot exceed 512 characters.'
+      );
+    });
+
+    test('should accept state with exactly 512 characters', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const maxState = 'a'.repeat(512);
+
+      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        tenantDomainName: 'test-tenant',
+        state: maxState,
+      });
+
+      expect(logoutUrl).toContain(`state=${maxState}`);
+      validateRedirectResponse(mockRes, logoutUrl, `https://test-tenant-${wristbandApplicationVanityDomain}`, null);
+    });
+
+    test('should handle state with special characters', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const stateWithSpecialChars = 'state-with-special-chars!@#$%^&*()';
+
+      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        tenantDomainName: 'test-tenant',
+        state: stateWithSpecialChars,
+      });
+
+      expect(logoutUrl).toContain(`state=${stateWithSpecialChars}`);
+      validateRedirectResponse(mockRes, logoutUrl, `https://test-tenant-${wristbandApplicationVanityDomain}`, null);
+    });
+
+    test('should handle empty string state', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        tenantDomainName: 'test-tenant',
+        state: '',
+      });
+
+      expect(logoutUrl).not.toContain('state=');
+      validateRedirectResponse(mockRes, logoutUrl, `https://test-tenant-${wristbandApplicationVanityDomain}`, null);
+    });
+
+    test('should include state parameter with all priority domains', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=query.custom.com&tenant_domain=query_tenant`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        tenantCustomDomain: 'config.custom.com',
+        state: 'priority-test-state',
+        redirectUrl: 'https://redirect.com',
+      });
+
+      expect(logoutUrl).toContain('state=priority-test-state');
+      validateRedirectResponse(mockRes, logoutUrl, 'https://config.custom.com', 'https://redirect.com');
+    });
+
+    test('should include state parameter in fallback scenarios', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        state: 'fallback-state',
+      });
+
+      // Since no tenant can be resolved, it should fallback but not include state in the app login URL
+      expect(logoutUrl).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
+      expect(logoutUrl).not.toContain('state=');
+    });
+
+    test('should handle state parameter with redirect URL precedence', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const redirectUrl = 'https://redirect.priority.com';
+
+      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        redirectUrl,
+        state: 'ignored-state',
+      });
+
+      // When redirectUrl takes precedence over fallback, state should be ignored
+      expect(logoutUrl).toBe(redirectUrl);
+      expect(logoutUrl).not.toContain('state=');
     });
   });
 });

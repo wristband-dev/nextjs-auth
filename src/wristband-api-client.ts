@@ -1,5 +1,5 @@
-import { FetchError } from '../error';
-import { FORM_URLENCODED_MEDIA_TYPE, JSON_MEDIA_TYPE } from '../utils/constants';
+import { FetchError } from './error';
+import { FORM_URLENCODED_MEDIA_TYPE, JSON_MEDIA_TYPE } from './utils/constants';
 
 interface RequestOptions extends RequestInit {
   headers?: HeadersInit;
