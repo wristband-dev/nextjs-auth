@@ -569,6 +569,15 @@ function createWristbandAuth(authConfig: AuthConfig): WristbandAuth {}
 
 This function creates an instance of `WristbandAuth` using lazy auto-configuration. Auto-configuration is enabled by default and will fetch any missing configuration values from the Wristband SDK Configuration Endpoint when any auth function is first called (i.e. `login`, `callback`, etc.). Set `autoConfigureEnabled` to `false` disable to prevent the SDK from making an API request to the Wristband SDK Configuration Endpoint. In the event auto-configuration is disabled, you must manually configure all required values. Manual configuration values take precedence over auto-configured values.
 
+>  **⚠️ Auto-Configuration in Edge Runtimes**
+> 
+> While auto-configuration works well in Node.js runtime environments, **manual configuration is strongly recommended when using Next.js Edge Runtime** (Edge API Routes, Middleware, and Edge-rendered pages) due to the following limitations:
+>
+> - **Cold start latency**: Auto-configuration requires an API call to the Wristband SDK Configuration Endpoint on every cold start, which can impact response times for authentication flows in Edge Runtime.
+> - **No persistent memory**: Edge Runtime instances don't maintain in-memory caches between requests, causing the SDK to refetch configuration data on every invocation
+>
+> For production Next.js applications using Edge Runtime, you can set `autoConfigureEnabled: false` and provide all required configuration values manually. This is especially critical for authentication middleware that runs on every protected route.
+
 **Minimal config with auto-configure (default behavior)**
 ```ts
 const auth = createWristbandAuth({
