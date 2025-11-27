@@ -92,7 +92,7 @@ describe('App Router Multi Tenant Logout', () => {
 
         const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
           tenantCustomDomain: 'priority1.custom.com',
-          tenantDomainName: 'ignored',
+          tenantName: 'ignored',
           refreshToken: 'refreshToken',
           redirectUrl: 'https://example.com',
         });
@@ -101,8 +101,8 @@ describe('App Router Multi Tenant Logout', () => {
       });
     });
 
-    describe('Priority 2: logoutConfig.tenantDomainName', () => {
-      test('tenantDomainName config with default separator', async () => {
+    describe('Priority 2: logoutConfig.tenantName', () => {
+      test('tenantName config with default separator', async () => {
         wristbandAuth = createWristbandAuth({
           clientId: CLIENT_ID,
           clientSecret: CLIENT_SECRET,
@@ -121,14 +121,14 @@ describe('App Router Multi Tenant Logout', () => {
         const mockNextRequest = createMockNextRequest(req);
 
         const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-          tenantDomainName: 'priority2tenant',
+          tenantName: 'priority2tenant',
           refreshToken: 'refreshToken',
         });
 
         validateRedirectResponse(response, `https://priority2tenant-${wristbandApplicationVanityDomain}`, null);
       });
 
-      test('tenantDomainName config with custom domain separator', async () => {
+      test('tenantName config with custom domain separator', async () => {
         wristbandAuth = createWristbandAuth({
           clientId: CLIENT_ID,
           clientSecret: CLIENT_SECRET,
@@ -148,7 +148,7 @@ describe('App Router Multi Tenant Logout', () => {
         const mockNextRequest = createMockNextRequest(req);
 
         const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-          tenantDomainName: 'priority2tenant',
+          tenantName: 'priority2tenant',
         });
 
         validateRedirectResponse(response, `https://priority2tenant.${wristbandApplicationVanityDomain}`, null);
@@ -417,7 +417,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
       });
 
       // Should not call revoke since no refresh token
@@ -456,7 +456,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
         refreshToken: 'invalid-token',
       });
 
@@ -499,7 +499,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
         refreshToken: 'valid-token',
       });
 
@@ -531,7 +531,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
         refreshToken: 'valid-token',
         redirectUrl: 'https://success.com',
       });
@@ -567,7 +567,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
       });
 
       expect(response.headers.get('Cache-Control')).toBe('no-store');
@@ -632,7 +632,7 @@ describe('App Router Multi Tenant Logout', () => {
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
         tenantCustomDomain: 'config.custom.com', // Should win (priority 1)
-        tenantDomainName: 'config_tenant',
+        tenantName: 'config_tenant',
         refreshToken: 'token',
         redirectUrl: 'https://redirect.com',
       });
@@ -662,7 +662,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'devs4you',
+        tenantName: 'devs4you',
         refreshToken: 'refreshToken',
         redirectUrl: 'https://google.com',
       });
@@ -728,7 +728,7 @@ describe('App Router Multi Tenant Logout', () => {
       validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`, null);
     });
 
-    test('Unresolved tenantDomainName logout config', async () => {
+    test('Unresolved tenantName logout config', async () => {
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
         clientSecret: CLIENT_SECRET,
@@ -746,7 +746,7 @@ describe('App Router Multi Tenant Logout', () => {
       });
       const mockNextRequest = createMockNextRequest(req);
 
-      // tenantDomainName logout config is missing, which should redirect to app-level login.
+      // tenantName logout config is missing, which should redirect to app-level login.
       const response = await wristbandAuth.appRouter.logout(mockNextRequest);
 
       validateAppLoginRedirect(response, `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
@@ -917,7 +917,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
         redirectUrl: '', // Empty string
       });
 
@@ -945,7 +945,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'tenant-with-hyphens',
+        tenantName: 'tenant-with-hyphens',
         redirectUrl: 'https://example.com/path?param=value',
       });
 
@@ -977,7 +977,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
         state: 'test-state-123',
       });
 
@@ -1005,7 +1005,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
       });
 
       const locationUrl = new URL(response.headers.get('location')!);
@@ -1059,7 +1059,7 @@ describe('App Router Multi Tenant Logout', () => {
       const maxState = 'a'.repeat(512);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
         state: maxState,
       });
 
@@ -1089,7 +1089,7 @@ describe('App Router Multi Tenant Logout', () => {
       const stateWithSpecialChars = 'state-with-special-chars!@$*()';
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
         state: stateWithSpecialChars,
       });
 
@@ -1117,7 +1117,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
         state: '',
       });
 
@@ -1233,7 +1233,7 @@ describe('App Router Multi Tenant Logout', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-        tenantDomainName: 'test-tenant',
+        tenantName: 'test-tenant',
         state: 'combo-state',
         redirectUrl: 'https://example.com/after-logout',
       });

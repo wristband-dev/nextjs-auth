@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server';
 import {
   parseTenantSubdomain,
-  resolveTenantDomainName,
+  resolveTenantName,
   resolveTenantCustomDomainParam,
   createLoginState,
   createLoginStateCookie,
   getAuthorizeUrl,
   getLoginStateCookie,
   clearLoginStateCookie,
-} from '../../src/utils/auth/app-router-utils';
-import { createMockNextRequest, CLIENT_ID } from '../test-utils';
-import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
+} from '../../../src/utils/auth/app-router-utils';
+import { createMockNextRequest, CLIENT_ID } from '../../test-utils';
+import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
 
-jest.mock('../../src/utils/auth/common-utils', () => {
+jest.mock('../../../src/utils/crypto', () => {
   return {
     base64ToURLSafe: jest.fn((input) => {
       return input.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -68,14 +68,14 @@ describe('parseTenantSubdomain', () => {
   });
 });
 
-describe('resolveTenantDomainName', () => {
+describe('resolveTenantName', () => {
   test('should return subdomain when parseTenantFromRootDomain is provided', () => {
     const req = createMockNextRequest({
       url: 'https://tenant.example.com/path',
       headers: { host: 'tenant.example.com' },
     });
 
-    const result = resolveTenantDomainName(req, 'example.com');
+    const result = resolveTenantName(req, 'example.com');
     expect(result).toBe('tenant');
   });
 
@@ -85,7 +85,7 @@ describe('resolveTenantDomainName', () => {
       headers: { host: 'example.com' },
     });
 
-    const result = resolveTenantDomainName(req, '');
+    const result = resolveTenantName(req, '');
     expect(result).toBe('mytenant');
   });
 
@@ -95,7 +95,7 @@ describe('resolveTenantDomainName', () => {
       headers: { host: 'example.com' },
     });
 
-    const result = resolveTenantDomainName(req, '');
+    const result = resolveTenantName(req, '');
     expect(result).toBe('');
   });
 
@@ -106,7 +106,7 @@ describe('resolveTenantDomainName', () => {
     });
 
     expect(() => {
-      return resolveTenantDomainName(req, '');
+      return resolveTenantName(req, '');
     }).toThrow('More than one [tenant_domain] query parameter was encountered');
   });
 
@@ -116,7 +116,7 @@ describe('resolveTenantDomainName', () => {
       headers: { host: 'subdomain-tenant.example.com' },
     });
 
-    const result = resolveTenantDomainName(req, 'example.com');
+    const result = resolveTenantName(req, 'example.com');
     expect(result).toBe('subdomain-tenant');
   });
 });
@@ -347,9 +347,9 @@ describe('getAuthorizeUrl', () => {
     const config = {
       ...baseConfig,
       tenantCustomDomain: 'custom.domain.com',
-      tenantDomainName: 'tenant',
+      tenantName: 'tenant',
       defaultTenantCustomDomain: 'default-custom.domain.com',
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);
@@ -368,9 +368,9 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      tenantDomainName: 'tenant',
+      tenantName: 'tenant',
       defaultTenantCustomDomain: 'default-custom.domain.com',
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);
@@ -386,7 +386,7 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      tenantDomainName: 'tenant',
+      tenantName: 'tenant',
       isApplicationCustomDomainActive: true,
     };
 
@@ -404,7 +404,7 @@ describe('getAuthorizeUrl', () => {
     const config = {
       ...baseConfig,
       defaultTenantCustomDomain: 'default-custom.domain.com',
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);
@@ -420,7 +420,7 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);
@@ -436,7 +436,7 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);
@@ -452,7 +452,7 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     await expect(getAuthorizeUrl(req, config)).rejects.toThrow(
@@ -468,7 +468,7 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);

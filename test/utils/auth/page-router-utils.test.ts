@@ -1,19 +1,19 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import {
   parseTenantSubdomain,
-  resolveTenantDomainName,
+  resolveTenantName,
   resolveTenantCustomDomainParam,
   createLoginState,
   createLoginStateCookie,
   getAuthorizeUrl,
   getAndClearLoginStateCookie,
-} from '../../src/utils/auth/page-router-utils';
-import { LoginStateMapConfig } from '../../src/types';
-import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
-import * as commonUtils from '../../src/utils/auth/common-utils';
+} from '../../../src/utils/auth/page-router-utils';
+import { LoginStateMapConfig } from '../../../src/types';
+import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
+import * as commonUtils from '../../../src/utils/crypto';
 
 // Mock common utils
-jest.mock('../../src/utils/auth/common-utils');
+jest.mock('../../../src/utils/crypto');
 const mockGenerateRandomString = commonUtils.generateRandomString as jest.MockedFunction<
   typeof commonUtils.generateRandomString
 >;
@@ -66,14 +66,14 @@ describe('Page Router Utils', () => {
     });
   });
 
-  describe('resolveTenantDomainName', () => {
+  describe('resolveTenantName', () => {
     it('should return tenant subdomain when parseTenantFromRootDomain is provided', () => {
       const req = {
         headers: { host: 'tenant1.example.com' },
         query: { tenant_domain: 'query-tenant' },
       } as unknown as NextApiRequest;
 
-      const result = resolveTenantDomainName(req, 'example.com');
+      const result = resolveTenantName(req, 'example.com');
       expect(result).toBe('tenant1');
     });
 
@@ -83,7 +83,7 @@ describe('Page Router Utils', () => {
         query: { tenant_domain: 'query-tenant' },
       } as unknown as NextApiRequest;
 
-      const result = resolveTenantDomainName(req, 'example.com');
+      const result = resolveTenantName(req, 'example.com');
       expect(result).toBe('');
     });
 
@@ -93,7 +93,7 @@ describe('Page Router Utils', () => {
         query: { tenant_domain: 'query-tenant' },
       } as unknown as NextApiRequest;
 
-      const result = resolveTenantDomainName(req, '');
+      const result = resolveTenantName(req, '');
       expect(result).toBe('query-tenant');
     });
 
@@ -103,7 +103,7 @@ describe('Page Router Utils', () => {
         query: {},
       } as NextApiRequest;
 
-      const result = resolveTenantDomainName(req, '');
+      const result = resolveTenantName(req, '');
       expect(result).toBe('');
     });
 
@@ -114,7 +114,7 @@ describe('Page Router Utils', () => {
       } as unknown as NextApiRequest;
 
       expect(() => {
-        return resolveTenantDomainName(req, '');
+        return resolveTenantName(req, '');
       }).toThrow('More than one [tenant_domain] query parameter was encountered');
     });
   });
@@ -417,7 +417,7 @@ describe('Page Router Utils', () => {
       const req = { query: {} } as NextApiRequest;
       const config = {
         ...baseConfig,
-        tenantDomainName: 'tenant1',
+        tenantName: 'tenant1',
         isApplicationCustomDomainActive: true,
       };
 
@@ -430,7 +430,7 @@ describe('Page Router Utils', () => {
       const req = { query: {} } as NextApiRequest;
       const config = {
         ...baseConfig,
-        tenantDomainName: 'tenant1',
+        tenantName: 'tenant1',
         isApplicationCustomDomainActive: false,
       };
 
@@ -455,7 +455,7 @@ describe('Page Router Utils', () => {
       const req = { query: {} } as NextApiRequest;
       const config = {
         ...baseConfig,
-        defaultTenantDomainName: 'default-tenant',
+        defaultTenantName: 'default-tenant',
         isApplicationCustomDomainActive: false,
       };
 
@@ -501,9 +501,9 @@ describe('Page Router Utils', () => {
       const configWithAll = {
         ...baseConfig,
         tenantCustomDomain: 'tenant.custom.com',
-        tenantDomainName: 'tenant1',
+        tenantName: 'tenant1',
         defaultTenantCustomDomain: 'default.custom.com',
-        defaultTenantDomainName: 'default-tenant',
+        defaultTenantName: 'default-tenant',
       };
 
       const result = await getAuthorizeUrl(req, configWithAll);

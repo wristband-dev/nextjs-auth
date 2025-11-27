@@ -1,25 +1,34 @@
+/**
+ * Represents a structured error from the Wristband SDK.
+ *
+ * Wraps an error code, an optional description, and optionally the original underlying Error.
+ */
 export class WristbandError extends Error {
-  private error: string;
-  private errorDescription?: string;
-  private originalError?: Error;
+  /**
+   * A short error code or identifier.
+   */
+  readonly code: string;
+  /**
+   * An optional human-readable description of the error.
+   */
+  readonly errorDescription?: string;
+  /**
+   * The original Error instance that triggered this WristbandError, if any.
+   */
+  readonly originalError?: Error;
 
-  constructor(error: string, errorDescription?: string, originalError?: Error) {
-    super(error);
+  /**
+   * Creates a new WristbandError instance.
+   *
+   * @param code - A short error code or identifier.
+   * @param errorDescription - Optional human-readable description of the error.
+   * @param originalError - Optional original Error instance that caused this error.
+   */
+  constructor(code: string, errorDescription?: string, originalError?: Error) {
+    super(errorDescription || code);
     this.name = 'WristbandError';
-    this.error = error;
+    this.code = code;
     this.errorDescription = errorDescription;
     this.originalError = originalError;
-  }
-
-  getError(): string {
-    return this.error;
-  }
-
-  getErrorDescription(): string | undefined {
-    return this.errorDescription;
-  }
-
-  getOriginalError(): Error | undefined {
-    return this.originalError;
   }
 }

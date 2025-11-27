@@ -5,7 +5,7 @@ import { createMocks, MockResponse } from 'node-mocks-http';
 
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
-import { decryptLoginState } from '../../src/utils/auth/common-utils';
+import { decryptLoginState } from '../../src/utils/crypto';
 import { LoginState } from '../../src/types';
 import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
 import { parseSetCookies } from '../test-utils';
@@ -87,7 +87,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate Redirect response
       const locationUrl: URL = new URL(authorizeUrl);
@@ -152,7 +152,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, { customState: CUSTOM_STATE });
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { customState: CUSTOM_STATE });
       expect(
         authorizeUrl.startsWith(`https://devs4you.${wristbandApplicationVanityDomain}/api/v1/oauth2/authorize`)
       ).toBeTruthy();
@@ -214,7 +214,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate Redirect response
       validateRedirectResponse(authorizeUrl, 'https://query.tenant.com');
@@ -247,7 +247,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate Redirect response
       validateRedirectResponse(authorizeUrl, 'https://query.tenant.com');
@@ -279,7 +279,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, {
         defaultTenantCustomDomain: 'tenant.custom.com',
       });
 
@@ -312,10 +312,7 @@ describe('Custom Login Configurations', () => {
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
-
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {
-        defaultTenantDomainName: 'tenant',
-      });
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { defaultTenantName: 'tenant' });
 
       // Validate Redirect response
       validateRedirectResponse(authorizeUrl, 'https://query.tenant.com');
@@ -353,7 +350,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate Redirect response
       validateRedirectResponse(authorizeUrl, `https://devs4you.${wristbandApplicationVanityDomain}`);
@@ -386,7 +383,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, {
         defaultTenantCustomDomain: 'default.tenant.com',
       });
 
@@ -420,10 +417,7 @@ describe('Custom Login Configurations', () => {
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
-
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {
-        defaultTenantDomainName: 'default',
-      });
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { defaultTenantName: 'default' });
 
       // Validate Redirect response
       validateRedirectResponse(authorizeUrl, `https://devs4you.${wristbandApplicationVanityDomain}`);
@@ -460,7 +454,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, {
         defaultTenantCustomDomain: 'global.tenant.com',
       });
 
@@ -494,10 +488,7 @@ describe('Custom Login Configurations', () => {
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
-
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {
-        defaultTenantDomainName: 'global',
-      });
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { defaultTenantName: 'global' });
 
       // Validate Redirect response
       validateRedirectResponse(authorizeUrl, `https://devs4you.${wristbandApplicationVanityDomain}`);
@@ -533,8 +524,8 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {
-        defaultTenantDomainName: 'global',
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, {
+        defaultTenantName: 'global',
         defaultTenantCustomDomain: 'global.tenant.com',
       });
 
@@ -567,7 +558,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, {
         defaultTenantCustomDomain: 'tenant.custom.com',
       });
 
@@ -604,10 +595,7 @@ describe('Custom Login Configurations', () => {
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
-
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {
-        defaultTenantDomainName: 'global',
-      });
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { defaultTenantName: 'global' });
 
       // Validate Redirect response
       validateRedirectResponse(authorizeUrl, `https://global.${wristbandApplicationVanityDomain}`);
@@ -637,7 +625,7 @@ describe('Custom Login Configurations', () => {
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
       const returnUrl = '/dashboard';
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, { returnUrl });
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl });
 
       validateRedirectResponse(authorizeUrl, `https://devs4you.${wristbandApplicationVanityDomain}`);
 
@@ -671,7 +659,7 @@ describe('Custom Login Configurations', () => {
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
       const returnUrl = 'https://external.example.com/after-login';
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, { returnUrl });
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl });
 
       validateRedirectResponse(authorizeUrl, `https://devs4you.${wristbandApplicationVanityDomain}`);
 
@@ -704,7 +692,7 @@ describe('Custom Login Configurations', () => {
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
       const returnUrl = '/dashboard?tab=settings&view=detailed';
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, { returnUrl });
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl });
 
       validateRedirectResponse(authorizeUrl, `https://devs4you.${wristbandApplicationVanityDomain}`);
 
@@ -738,7 +726,7 @@ describe('Custom Login Configurations', () => {
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
       const configReturnUrl = '/config-return-url';
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, { returnUrl: configReturnUrl });
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl: configReturnUrl });
 
       validateRedirectResponse(authorizeUrl, `https://devs4you.${wristbandApplicationVanityDomain}`);
 
@@ -771,7 +759,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {});
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, {});
 
       validateRedirectResponse(authorizeUrl, `https://devs4you.${wristbandApplicationVanityDomain}`);
 
@@ -803,7 +791,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {});
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, {});
 
       validateRedirectResponse(authorizeUrl, `https://devs4you.${wristbandApplicationVanityDomain}`);
 
@@ -836,7 +824,7 @@ describe('Custom Login Configurations', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, { returnUrl: '' });
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl: '' });
 
       validateRedirectResponse(authorizeUrl, `https://devs4you.${wristbandApplicationVanityDomain}`);
 
@@ -871,7 +859,7 @@ describe('Custom Login Configurations', () => {
       const returnUrl = '/admin/dashboard';
       const customState = { role: 'admin', preferences: { theme: 'dark' } };
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, {
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, {
         returnUrl,
         customState,
       });
@@ -908,7 +896,7 @@ describe('Custom Login Configurations', () => {
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
       const returnUrl = '/dashboard?name=John Doe&category=R&D';
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes, { returnUrl });
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl });
 
       validateRedirectResponse(authorizeUrl, `https://devs4you.${wristbandApplicationVanityDomain}`);
 

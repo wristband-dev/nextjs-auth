@@ -5,7 +5,7 @@ import { createMocks } from 'node-mocks-http';
 
 import { NextResponse } from 'next/server';
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
-import { decryptLoginState } from '../../src/utils/auth/common-utils';
+import { decryptLoginState } from '../../src/utils/crypto';
 import { LoginState } from '../../src/types';
 import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
 import { createMockNextRequest, parseSetCookies } from '../test-utils';
@@ -310,7 +310,7 @@ describe('Custom Login Configurations', () => {
       });
       const mockNextRequest = createMockNextRequest(req);
 
-      const response = await wristbandAuth.appRouter.login(mockNextRequest, { defaultTenantDomainName: 'tenant' });
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, { defaultTenantName: 'tenant' });
 
       // Validate Redirect response
       validateRedirectResponse(response, 'https://query.tenant.com');
@@ -412,7 +412,7 @@ describe('Custom Login Configurations', () => {
       });
       const mockNextRequest = createMockNextRequest(req);
 
-      const response = await wristbandAuth.appRouter.login(mockNextRequest, { defaultTenantDomainName: 'default' });
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, { defaultTenantName: 'default' });
 
       // Validate Redirect response
       validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`);
@@ -480,7 +480,7 @@ describe('Custom Login Configurations', () => {
       });
       const mockNextRequest = createMockNextRequest(req);
 
-      const response = await wristbandAuth.appRouter.login(mockNextRequest, { defaultTenantDomainName: 'global' });
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, { defaultTenantName: 'global' });
 
       // Validate Redirect response
       validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`);
@@ -516,7 +516,7 @@ describe('Custom Login Configurations', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       const response = await wristbandAuth.appRouter.login(mockNextRequest, {
-        defaultTenantDomainName: 'global',
+        defaultTenantName: 'global',
         defaultTenantCustomDomain: 'global.tenant.com',
       });
 
@@ -585,7 +585,7 @@ describe('Custom Login Configurations', () => {
       });
       const mockNextRequest = createMockNextRequest(req);
 
-      const response = await wristbandAuth.appRouter.login(mockNextRequest, { defaultTenantDomainName: 'global' });
+      const response = await wristbandAuth.appRouter.login(mockNextRequest, { defaultTenantName: 'global' });
 
       // Validate Redirect response
       validateRedirectResponse(response, `https://global.${wristbandApplicationVanityDomain}`);

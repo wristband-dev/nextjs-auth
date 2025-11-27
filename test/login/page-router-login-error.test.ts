@@ -40,8 +40,8 @@ describe('Login Errors', () => {
     const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
     try {
-      await wristbandAuth.pageRouter.login(mockReq, mockRes);
-      expect.fail('Error expected to be thrown.');
+      await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('More than one [tenant_domain] query parameter was encountered');
@@ -60,8 +60,8 @@ describe('Login Errors', () => {
     const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
     try {
-      await wristbandAuth.pageRouter.login(mockReq, mockRes);
-      expect.fail('Error expected to be thrown.');
+      await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('More than one [tenant_custom_domain] query parameter was encountered');
@@ -80,8 +80,8 @@ describe('Login Errors', () => {
     const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
     try {
-      await wristbandAuth.pageRouter.login(mockReq, mockRes);
-      expect('').fail('Error expected to be thrown.');
+      await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('More than one [return_url] query parameter was encountered');
@@ -100,8 +100,8 @@ describe('Login Errors', () => {
     const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
     try {
-      await wristbandAuth.pageRouter.login(mockReq, mockRes);
-      expect('').fail('Error expected to be thrown.');
+      await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('More than one [login_hint] query parameter was encountered');
@@ -124,8 +124,8 @@ describe('Login Errors', () => {
     };
 
     try {
-      await wristbandAuth.pageRouter.login(mockReq, mockRes, { customState });
-      expect('').fail('Error expected to be thrown.');
+      await wristbandAuth.pagesRouter.login(mockReq, mockRes, { customState });
+      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe(

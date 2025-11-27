@@ -1,22 +1,22 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
+import { base64ToURLSafe, generateRandomString, sha256Base64 } from '../crypto';
 import { LoginState, LoginStateMapConfig } from '../../types';
-import { base64ToURLSafe, generateRandomString, sha256Base64 } from './common-utils';
 
-export function parseTenantSubdomain(req: NextApiRequest, parseTenantFromRootDomain: string): string {
-  const { host } = req.headers;
+export function parseTenantSubdomain(request: NextApiRequest, parseTenantFromRootDomain: string): string {
+  const { host } = request.headers;
   return host!.substring(host!.indexOf('.') + 1) === parseTenantFromRootDomain
     ? host!.substring(0, host!.indexOf('.'))
     : '';
 }
 
-export function resolveTenantDomainName(req: NextApiRequest, parseTenantFromRootDomain: string): string {
+export function resolveTenantName(request: NextApiRequest, parseTenantFromRootDomain: string): string {
   if (parseTenantFromRootDomain) {
-    return parseTenantSubdomain(req, parseTenantFromRootDomain) || '';
+    return parseTenantSubdomain(request, parseTenantFromRootDomain) || '';
   }
 
-  const { tenant_domain: tenantDomainParam } = req.query;
+  const { tenant_domain: tenantDomainParam } = request.query;
 
   if (!!tenantDomainParam && typeof tenantDomainParam !== 'string') {
     throw new TypeError('More than one [tenant_domain] query parameter was encountered');
@@ -25,8 +25,8 @@ export function resolveTenantDomainName(req: NextApiRequest, parseTenantFromRoot
   return tenantDomainParam || '';
 }
 
-export function resolveTenantCustomDomainParam(req: NextApiRequest): string {
-  const { tenant_custom_domain: tenantCustomDomainParam } = req.query;
+export function resolveTenantCustomDomainParam(request: NextApiRequest): string {
+  const { tenant_custom_domain: tenantCustomDomainParam } = request.query;
 
   if (!!tenantCustomDomainParam && typeof tenantCustomDomainParam !== 'string') {
     throw new TypeError('More than one [tenant_custom_domain] query parameter was encountered');
@@ -36,11 +36,11 @@ export function resolveTenantCustomDomainParam(req: NextApiRequest): string {
 }
 
 export function createLoginState(
-  req: NextApiRequest,
+  request: NextApiRequest,
   redirectUri: string,
   config: LoginStateMapConfig = {}
 ): LoginState {
-  const { return_url: returnUrlParam } = req.query;
+  const { return_url: returnUrlParam } = request.query;
 
   if (!!returnUrlParam && typeof returnUrlParam !== 'string') {
     throw new TypeError('More than one [return_url] query parameter was encountered');
@@ -58,13 +58,13 @@ export function createLoginState(
 }
 
 export function createLoginStateCookie(
-  req: NextApiRequest,
-  res: NextApiResponse,
+  request: NextApiRequest,
+  response: NextApiResponse,
   state: string,
   encryptedLoginState: string,
   dangerouslyDisableSecureCookies: boolean
 ) {
-  const { cookies } = req;
+  const { cookies } = request;
 
   // The max amount of concurrent login state cookies we allow is 3.  If there are already 3 cookies,
   // then we clear the one with the oldest creation timestamp to make room for the new one.
@@ -108,26 +108,26 @@ export function createLoginStateCookie(
   const resolvedCookieValue: string = `${newCookieHeaderValue}${dangerouslyDisableSecureCookies ? '' : '; Secure'}`;
 
   responseCookieArray.push(resolvedCookieValue);
-  res.setHeader('Set-Cookie', responseCookieArray);
+  response.setHeader('Set-Cookie', responseCookieArray);
 }
 
 export async function getAuthorizeUrl(
-  req: NextApiRequest,
+  request: NextApiRequest,
   config: {
     clientId: string;
     codeVerifier: string;
     defaultTenantCustomDomain?: string;
-    defaultTenantDomainName?: string;
+    defaultTenantName?: string;
     redirectUri: string;
     scopes: string[];
     state: string;
     tenantCustomDomain?: string;
-    tenantDomainName?: string;
+    tenantName?: string;
     isApplicationCustomDomainActive?: boolean;
     wristbandApplicationVanityDomain: string;
   }
 ): Promise<string> {
-  const { login_hint: loginHint } = req.query;
+  const { login_hint: loginHint } = request.query;
 
   if (!!loginHint && typeof loginHint !== 'string') {
     throw new TypeError('More than one [login_hint] query parameter was encountered');
@@ -154,25 +154,25 @@ export async function getAuthorizeUrl(
   // 2a) tenant subdomain
   // 2b) tenant_domain query param
   // 3)  defaultTenantCustomDomain login config
-  // 4)  defaultTenantDomainName login config
+  // 4)  defaultTenantName login config
   if (config.tenantCustomDomain) {
     return `https://${config.tenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
   }
-  if (config.tenantDomainName) {
-    return `https://${config.tenantDomainName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
+  if (config.tenantName) {
+    return `https://${config.tenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
   }
   if (config.defaultTenantCustomDomain) {
     return `https://${config.defaultTenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
   }
-  return `https://${config.defaultTenantDomainName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
+  return `https://${config.defaultTenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
 }
 
 export function getAndClearLoginStateCookie(
-  req: NextApiRequest,
-  res: NextApiResponse,
+  request: NextApiRequest,
+  response: NextApiResponse,
   dangerouslyDisableSecureCookies: boolean
 ): string {
-  const { cookies, query } = req;
+  const { cookies, query } = request;
   const { state } = query;
   const paramState = state ? state.toString() : '';
 
@@ -188,7 +188,7 @@ export function getAndClearLoginStateCookie(
     const cookieName = matchingLoginCookieNames[0];
     loginStateCookie = cookies[cookieName]!;
     // Delete the login state cookie.
-    res.setHeader('Set-Cookie', [
+    response.setHeader('Set-Cookie', [
       `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`,
     ]);
   }

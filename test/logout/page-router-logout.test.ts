@@ -76,9 +76,9 @@ describe('Multi Tenant Logout', () => {
         const mockReq = req as unknown as NextApiRequest;
         const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-        const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
           tenantCustomDomain: 'priority1.custom.com',
-          tenantDomainName: 'ignored',
+          tenantName: 'ignored',
           refreshToken: 'refreshToken',
           redirectUrl: 'https://example.com',
         });
@@ -87,8 +87,8 @@ describe('Multi Tenant Logout', () => {
       });
     });
 
-    describe('Priority 2: logoutConfig.tenantDomainName', () => {
-      test('tenantDomainName config with default separator', async () => {
+    describe('Priority 2: logoutConfig.tenantName', () => {
+      test('tenantName config with default separator', async () => {
         wristbandAuth = createWristbandAuth({
           clientId: CLIENT_ID,
           clientSecret: CLIENT_SECRET,
@@ -107,8 +107,8 @@ describe('Multi Tenant Logout', () => {
         const mockReq = req as unknown as NextApiRequest;
         const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-        const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-          tenantDomainName: 'priority2tenant',
+        const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+          tenantName: 'priority2tenant',
           refreshToken: 'refreshToken',
         });
 
@@ -120,7 +120,7 @@ describe('Multi Tenant Logout', () => {
         );
       });
 
-      test('tenantDomainName config with custom domain separator', async () => {
+      test('tenantName config with custom domain separator', async () => {
         wristbandAuth = createWristbandAuth({
           clientId: CLIENT_ID,
           clientSecret: CLIENT_SECRET,
@@ -140,8 +140,8 @@ describe('Multi Tenant Logout', () => {
         const mockReq = req as unknown as NextApiRequest;
         const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-        const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-          tenantDomainName: 'priority2tenant',
+        const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+          tenantName: 'priority2tenant',
         });
 
         validateRedirectResponse(
@@ -173,7 +173,7 @@ describe('Multi Tenant Logout', () => {
         const mockReq = req as unknown as NextApiRequest;
         const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-        const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
           refreshToken: 'refreshToken',
         });
 
@@ -199,7 +199,7 @@ describe('Multi Tenant Logout', () => {
         const mockReq = req as unknown as NextApiRequest;
         const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-        const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
           redirectUrl: 'https://redirect.example.com',
         });
 
@@ -233,7 +233,7 @@ describe('Multi Tenant Logout', () => {
           const mockReq = req as unknown as NextApiRequest;
           const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-          const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes);
+          const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
 
           validateRedirectResponse(mockRes, logoutUrl, `https://priority4a-${wristbandApplicationVanityDomain}`, null);
         });
@@ -263,7 +263,7 @@ describe('Multi Tenant Logout', () => {
           const mockReq = req as unknown as NextApiRequest;
           const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-          const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes);
+          const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
 
           validateRedirectResponse(mockRes, logoutUrl, `https://priority4a.${wristbandApplicationVanityDomain}`, null);
         });
@@ -289,7 +289,7 @@ describe('Multi Tenant Logout', () => {
           const mockReq = req as unknown as NextApiRequest;
           const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-          const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes);
+          const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
 
           validateRedirectResponse(mockRes, logoutUrl, `https://priority4b-${wristbandApplicationVanityDomain}`, null);
         });
@@ -314,7 +314,7 @@ describe('Multi Tenant Logout', () => {
           const mockReq = req as unknown as NextApiRequest;
           const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-          const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes);
+          const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
 
           validateRedirectResponse(mockRes, logoutUrl, `https://priority4b.${wristbandApplicationVanityDomain}`, null);
         });
@@ -341,7 +341,7 @@ describe('Multi Tenant Logout', () => {
         const mockReq = req as unknown as NextApiRequest;
         const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-        const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes);
+        const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
 
         expect(logoutUrl).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
       });
@@ -367,7 +367,7 @@ describe('Multi Tenant Logout', () => {
         const mockReq = req as unknown as NextApiRequest;
         const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-        const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes);
+        const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
 
         expect(logoutUrl).toBe(`${customLoginUrl}?client_id=${CLIENT_ID}`);
       });
@@ -395,7 +395,7 @@ describe('Multi Tenant Logout', () => {
         const mockReq = req as unknown as NextApiRequest;
         const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-        const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+        const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
           redirectUrl,
         });
 
@@ -424,8 +424,8 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-        tenantDomainName: 'test-tenant',
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+        tenantName: 'test-tenant',
       });
 
       // Should not call revoke since no refresh token
@@ -464,8 +464,8 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-        tenantDomainName: 'test-tenant',
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+        tenantName: 'test-tenant',
         refreshToken: 'invalid-token',
       });
 
@@ -508,8 +508,8 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-        tenantDomainName: 'test-tenant',
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+        tenantName: 'test-tenant',
         refreshToken: 'valid-token',
       });
 
@@ -541,8 +541,8 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-        tenantDomainName: 'test-tenant',
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+        tenantName: 'test-tenant',
         refreshToken: 'valid-token',
         redirectUrl: 'https://success.com',
       });
@@ -579,8 +579,8 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-        tenantDomainName: 'test-tenant',
+      await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+        tenantName: 'test-tenant',
       });
 
       expect(mockRes.getHeader('Cache-Control')).toBe('no-store');
@@ -614,7 +614,7 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes);
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
 
       // Should fallback to app login since no tenant can be resolved
       expect(logoutUrl).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
@@ -645,9 +645,9 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
         tenantCustomDomain: 'config.custom.com', // Should win (priority 1)
-        tenantDomainName: 'config_tenant',
+        tenantName: 'config_tenant',
         refreshToken: 'token',
         redirectUrl: 'https://redirect.com',
       });
@@ -677,8 +677,8 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-        tenantDomainName: 'test-tenant',
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+        tenantName: 'test-tenant',
         state: 'test-state-123',
       });
 
@@ -705,8 +705,8 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-        tenantDomainName: 'test-tenant',
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+        tenantName: 'test-tenant',
       });
 
       expect(logoutUrl).not.toContain('state=');
@@ -734,7 +734,7 @@ describe('Multi Tenant Logout', () => {
 
       const longState = 'a'.repeat(513);
 
-      await expect(wristbandAuth.pageRouter.logout(mockReq, mockRes, { state: longState })).rejects.toThrow(
+      await expect(wristbandAuth.pagesRouter.logout(mockReq, mockRes, { state: longState })).rejects.toThrow(
         'The [state] logout config cannot exceed 512 characters.'
       );
     });
@@ -760,8 +760,8 @@ describe('Multi Tenant Logout', () => {
 
       const maxState = 'a'.repeat(512);
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-        tenantDomainName: 'test-tenant',
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+        tenantName: 'test-tenant',
         state: maxState,
       });
 
@@ -790,8 +790,8 @@ describe('Multi Tenant Logout', () => {
 
       const stateWithSpecialChars = 'state-with-special-chars!@#$%^&*()';
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-        tenantDomainName: 'test-tenant',
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+        tenantName: 'test-tenant',
         state: stateWithSpecialChars,
       });
 
@@ -818,8 +818,8 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
-        tenantDomainName: 'test-tenant',
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+        tenantName: 'test-tenant',
         state: '',
       });
 
@@ -846,7 +846,7 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
         tenantCustomDomain: 'config.custom.com',
         state: 'priority-test-state',
         redirectUrl: 'https://redirect.com',
@@ -875,7 +875,7 @@ describe('Multi Tenant Logout', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
         state: 'fallback-state',
       });
 
@@ -905,7 +905,7 @@ describe('Multi Tenant Logout', () => {
 
       const redirectUrl = 'https://redirect.priority.com';
 
-      const logoutUrl = await wristbandAuth.pageRouter.logout(mockReq, mockRes, {
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
         redirectUrl,
         state: 'ignored-state',
       });
