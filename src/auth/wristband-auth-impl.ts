@@ -12,6 +12,7 @@ import { AppRouterAuthHandler } from './handlers/app-router-auth-handler';
 import { PagesRouterAuthHandler } from './handlers/pages-router-auth-handler';
 import { getSessionFromRequest } from '../session';
 import {
+  AuthFailureReason,
   AuthStrategy,
   AuthStrategyResult,
   NextJsCookieStore,
@@ -163,43 +164,35 @@ export class WristbandAuthImpl implements WristbandAuth {
       const isWristbandAuthEndpoint = isSessionEndpoint || isTokenEndpoint;
 
       // For session/token endpoints, ONLY use SESSION strategy (prevents JWT from breaking them)
-      const strategiesToTry = isWristbandAuthEndpoint ? [AuthStrategy.SESSION] : normalizedConfig.authStrategies;
+      const strategiesToTry: AuthStrategy[] = isWristbandAuthEndpoint ? ['SESSION'] : normalizedConfig.authStrategies;
 
       // Try all auth strategies in the sequential order in which they were provided.
-      let result: AuthStrategyResult<T> = { success: false };
+      let result: AuthStrategyResult<T> = { authenticated: false, reason: 'not_authenticated' };
 
       for (let i = 0; i < strategiesToTry.length; i += 1) {
         // eslint-disable-next-line no-await-in-loop
         result = await this.tryAuthStrategy<T>(request, strategiesToTry[i], normalizedConfig, isProtectedApiRoute);
 
-        if (result.success) {
+        if (result.authenticated) {
           break;
         }
       }
 
       // If no strategy succeeded, handle the auth faiure accordingly.
-      if (!result.success) {
-        let failureResponse: NextResponse;
-
-        if (isProtectedApiRoute) {
-          // CSRF failures return 403 responses
-          const status = result.csrfFailed ? 403 : 401;
-          const errorMessage = result.csrfFailed ? 'Forbidden' : 'Unauthorized';
-          failureResponse = NextResponse.json({ error: errorMessage }, { status });
-        } else {
-          // From here, we know it's a protected page route. Fall back to default function if user didn't provide one.
-          const loginUrl = await this.configResolver.getLoginUrl();
-          const onPageUnauthenticatedHandler = resolveOnPageUnauthenticated(normalizedConfig, loginUrl);
-          failureResponse = await onPageUnauthenticatedHandler(request);
-        }
-
+      if (!result.authenticated) {
+        const failureResponse = await this.getAuthFailureResponse(
+          request,
+          result.reason,
+          isProtectedApiRoute,
+          normalizedConfig
+        );
         return previousResponse ? copyResponseHeaders(previousResponse, failureResponse) : failureResponse;
       }
 
       const finalResponse: NextResponse = previousResponse || NextResponse.next();
 
       // Save session/CSRF cookie headers only if we used SESSION strategy
-      if (result.usedStrategy === AuthStrategy.SESSION && result.session) {
+      if (result.usedStrategy === 'SESSION' && result.session) {
         const sessionResponse = await result.session.saveToResponse(new Response());
         return copyResponseHeaders(sessionResponse, finalResponse);
       }
@@ -230,17 +223,16 @@ export class WristbandAuthImpl implements WristbandAuth {
    * Attempts to authenticate a request using a single configured auth strategy.
    *
    * This evaluates the provided strategy in isolation and reports whether it
-   * succeeded, whether CSRF validation failed, and returns any resolved session
-   * data. It does not throw for normal authentication failures; instead it
-   * encodes outcomes in the returned object so the caller can orchestrate
-   * fallback strategies.
+   * succeeded or failed with a specific reason. Normal authentication failures
+   * are returned as structured results rather than thrown, allowing the caller
+   * to orchestrate fallback strategies and proper HTTP error responses.
    *
    * @template T - Session data type extending SessionData
    * @param request - The incoming Next.js request to authenticate.
    * @param strategy - The auth strategy to apply for this attempt.
    * @param normalizedConfig - The fully normalized middleware configuration.
    * @param isProtectedApiRoute - Indicates whether the current path is a protected API route.
-   * @returns A structured result describing success, session resolution, strategy used, and CSRF failure state.
+   * @returns A structured result describing authentication outcome, session (if successful), strategy used, and failure reason (if failed).
    */
   private async tryAuthStrategy<T extends SessionData>(
     request: NextRequest,
@@ -248,20 +240,21 @@ export class WristbandAuthImpl implements WristbandAuth {
     normalizedConfig: NormalizedMiddlewareConfig,
     isProtectedApiRoute: boolean
   ): Promise<AuthStrategyResult<T>> {
-    if (strategy === AuthStrategy.SESSION) {
+    if (strategy === 'SESSION') {
       const { csrfTokenHeaderName, sessionOptions } = normalizedConfig.sessionConfig;
+
       try {
         const session = await getSessionFromRequest<T>(request, sessionOptions!);
 
         if (!session.isAuthenticated) {
-          return { success: false };
+          return { authenticated: false, reason: 'not_authenticated' };
         }
 
         // CSRF validation (only for API routes)
         if (isProtectedApiRoute && sessionOptions?.enableCsrfProtection) {
           const csrfValid = isValidCsrf(request, session.csrfToken, csrfTokenHeaderName);
           if (!csrfValid) {
-            return { success: false, csrfFailed: true };
+            return { authenticated: false, reason: 'csrf_failed' };
           }
         }
 
@@ -275,43 +268,88 @@ export class WristbandAuthImpl implements WristbandAuth {
               session.expiresAt = newTokenData.expiresAt;
             }
           } catch (error) {
-            console.error('[Wristband Middleware] Token refresh failed:', error);
-            return { success: false };
+            return { authenticated: false, reason: 'token_refresh_failed' };
           }
         }
 
-        return { success: true, session, usedStrategy: AuthStrategy.SESSION };
+        return { authenticated: true, session, usedStrategy: 'SESSION' };
       } catch (error) {
-        return { success: false };
+        return { authenticated: false, reason: 'unexpected_error' };
       }
     }
 
-    if (strategy === AuthStrategy.JWT) {
+    if (strategy === 'JWT') {
       try {
         const jwtValidator = this.getJwtValidator(normalizedConfig.jwtConfig);
 
         const authHeader = request.headers.get('authorization');
         if (!authHeader) {
-          return { success: false };
+          return { authenticated: false, reason: 'not_authenticated' };
         }
 
         const bearerToken = jwtValidator.extractBearerToken(authHeader);
         if (!bearerToken) {
-          return { success: false };
+          return { authenticated: false, reason: 'not_authenticated' };
         }
 
         const validationResult = await jwtValidator.validate(bearerToken);
         if (!validationResult.isValid) {
-          return { success: false };
+          return { authenticated: false, reason: 'not_authenticated' };
         }
 
-        return { success: true, usedStrategy: AuthStrategy.JWT };
+        return { authenticated: true, usedStrategy: 'JWT' };
       } catch (error) {
-        console.error('[Wristband Middleware] JWT auth failed, trying next strategy:', error);
-        return { success: false };
+        return { authenticated: false, reason: 'unexpected_error' };
       }
     }
 
-    return { success: false };
+    // Should never reach here
+    return { authenticated: false, reason: 'unexpected_error' };
+  }
+
+  /**
+   * Creates the appropriate failure response based on the authentication failure reason
+   * and whether the request is for an API route or page route.
+   *
+   * @param request - The incoming request
+   * @param reason - Why authentication failed
+   * @param isProtectedApiRoute - Whether this is a protected API route
+   * @param normalizedConfig - The normalized middleware configuration
+   * @returns NextResponse with appropriate status code or redirect
+   */
+  private async getAuthFailureResponse(
+    request: NextRequest,
+    reason: AuthFailureReason,
+    isProtectedApiRoute: boolean,
+    normalizedConfig: NormalizedMiddlewareConfig
+  ): Promise<NextResponse> {
+    if (isProtectedApiRoute) {
+      // Return appropriate HTTP status based on failure reason
+      let status: number;
+      let errorMessage: string;
+
+      switch (reason) {
+        case 'unexpected_error':
+          status = 500;
+          errorMessage = 'Internal Server Error';
+          break;
+        case 'csrf_failed':
+          status = 403;
+          errorMessage = 'Forbidden';
+          break;
+        case 'not_authenticated':
+        case 'token_refresh_failed':
+        default:
+          status = 401;
+          errorMessage = 'Unauthorized';
+      }
+
+      return NextResponse.json({ error: errorMessage }, { status });
+    }
+
+    // Protected page route - invoke the unauthenticated handler
+    const loginUrl = await this.configResolver.getLoginUrl();
+    const onPageUnauthenticatedHandler = resolveOnPageUnauthenticated(normalizedConfig, loginUrl);
+    return onPageUnauthenticatedHandler(request, reason);
   }
 }

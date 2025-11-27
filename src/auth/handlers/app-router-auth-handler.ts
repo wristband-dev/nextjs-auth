@@ -330,7 +330,7 @@ export class AppRouterAuthHandler {
 
       // Check if user is authenticated
       if (!isAuthenticated) {
-        return { authenticated: false, session: null, reason: 'not_authenticated' };
+        return { authenticated: false, reason: 'not_authenticated' };
       }
 
       // Refresh token if expired
@@ -351,7 +351,7 @@ export class AppRouterAuthHandler {
             session.expiresAt = newTokenData.expiresAt;
           }
         } catch (error) {
-          return { authenticated: false, session: null, reason: 'token_refresh_failed' };
+          return { authenticated: false, reason: 'token_refresh_failed' };
         }
       }
 
@@ -361,7 +361,7 @@ export class AppRouterAuthHandler {
       // Authentication successful
       return { authenticated: true, session };
     } catch (error) {
-      return { authenticated: false, session: null, reason: 'unexpected_error' };
+      return { authenticated: false, reason: 'unexpected_error' };
     }
   }
 }

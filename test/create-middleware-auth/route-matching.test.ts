@@ -9,7 +9,7 @@ import {
   resolveOnPageUnauthenticated,
   copyResponseHeaders,
 } from '../../src/utils/middleware';
-import { AuthConfig, AuthMiddlewareConfig, AuthStrategy } from '../../src/types';
+import { AuthConfig, AuthMiddlewareConfig } from '../../src/types';
 
 jest.mock('../../src/session');
 jest.mock('../../src/utils/middleware', () => {
@@ -68,7 +68,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
     mockOnPageUnauthenticated = jest.fn().mockResolvedValue(NextResponse.redirect('https://test.com/login'));
 
     mockMiddlewareConfig = {
-      authStrategies: [AuthStrategy.SESSION],
+      authStrategies: ['SESSION'],
       sessionConfig: {
         sessionOptions: {
           secrets: ['test-secret'],
@@ -83,7 +83,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
     wristbandAuth = new WristbandAuthImpl(mockAuthConfig);
 
     defaultNormalizedConfig = {
-      authStrategies: [AuthStrategy.SESSION],
+      authStrategies: ['SESSION'],
       sessionConfig: {
         sessionOptions: mockMiddlewareConfig.sessionConfig!.sessionOptions,
         sessionEndpoint: '/api/auth/session',
@@ -371,7 +371,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
 
       // Use JWT-only strategy
       const jwtOnlyConfig: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.JWT],
+        authStrategies: ['JWT'],
         jwtConfig: {
           jwksCacheMaxSize: 20,
           jwksCacheTtl: 3600000,
@@ -380,7 +380,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
       };
 
       const jwtOnlyNormalizedConfig = {
-        authStrategies: [AuthStrategy.JWT],
+        authStrategies: ['JWT'],
         sessionConfig: {
           sessionOptions: undefined,
           sessionEndpoint: '/api/auth/session',
@@ -416,7 +416,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
 
       // Use JWT-only strategy
       const jwtOnlyConfig: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.JWT],
+        authStrategies: ['JWT'],
         jwtConfig: {
           jwksCacheMaxSize: 20,
           jwksCacheTtl: 3600000,
@@ -425,7 +425,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
       };
 
       const jwtOnlyNormalizedConfig = {
-        authStrategies: [AuthStrategy.JWT],
+        authStrategies: ['JWT'],
         sessionConfig: {
           sessionOptions: undefined,
           sessionEndpoint: '/api/auth/session',
@@ -460,7 +460,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
       mockIsProtectedPage.mockReturnValue(false);
 
       const customConfig: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: {
             secrets: ['test-secret'],
@@ -472,7 +472,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
       };
 
       const customNormalizedConfig = {
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: customConfig.sessionConfig!.sessionOptions,
           sessionEndpoint: '/api/custom/session',
@@ -510,7 +510,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
       mockIsProtectedPage.mockReturnValue(false);
 
       const customConfig: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: {
             secrets: ['test-secret'],
@@ -522,7 +522,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
       };
 
       const customNormalizedConfig = {
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: customConfig.sessionConfig!.sessionOptions,
           sessionEndpoint: '/api/auth/session',

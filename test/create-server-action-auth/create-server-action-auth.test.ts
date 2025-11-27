@@ -270,7 +270,7 @@ describe('appRouter.createServerActionAuth()', () => {
       const result: ServerActionAuthResult = await requireServerActionAuth(mockCookieStore);
 
       expect(result.authenticated).toBe(false);
-      expect(result.session).toBeNull();
+      expect(result.session).toBeUndefined();
       expect(result.reason).toBe('token_refresh_failed');
 
       // Verify session was NOT saved after failed refresh
@@ -317,7 +317,7 @@ describe('appRouter.createServerActionAuth()', () => {
       const result: ServerActionAuthResult = await requireServerActionAuth(mockCookieStore);
 
       expect(result.authenticated).toBe(false);
-      expect(result.session).toBeNull();
+      expect(result.session).toBeUndefined();
       expect(result.reason).toBe('not_authenticated');
 
       // Verify session was NOT saved
@@ -339,7 +339,7 @@ describe('appRouter.createServerActionAuth()', () => {
       const result: ServerActionAuthResult = await requireServerActionAuth(mockCookieStore);
 
       expect(result.authenticated).toBe(false);
-      expect(result.session).toBeNull();
+      expect(result.session).toBeUndefined();
       expect(result.reason).toBe('not_authenticated');
 
       // Verify no session operations performed
@@ -358,7 +358,7 @@ describe('appRouter.createServerActionAuth()', () => {
       const result: ServerActionAuthResult = await requireServerActionAuth(mockCookieStore);
 
       expect(result.authenticated).toBe(false);
-      expect(result.session).toBeNull();
+      expect(result.session).toBeUndefined();
       expect(result.reason).toBe('unexpected_error');
 
       // Verify no session save attempted
@@ -384,7 +384,7 @@ describe('appRouter.createServerActionAuth()', () => {
       const result: ServerActionAuthResult = await requireServerActionAuth(mockCookieStore);
 
       expect(result.authenticated).toBe(false);
-      expect(result.session).toBeNull();
+      expect(result.session).toBeUndefined();
       expect(result.reason).toBe('unexpected_error');
 
       consoleErrorSpy.mockRestore();
@@ -399,7 +399,7 @@ describe('appRouter.createServerActionAuth()', () => {
       const result: ServerActionAuthResult = await requireServerActionAuth(mockCookieStore);
 
       expect(result.authenticated).toBe(false);
-      expect(result.session).toBeNull();
+      expect(result.session).toBeUndefined();
       expect(result.reason).toBe('unexpected_error');
 
       consoleErrorSpy.mockRestore();

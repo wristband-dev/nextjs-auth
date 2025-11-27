@@ -10,7 +10,7 @@ import {
   resolveOnPageUnauthenticated,
   copyResponseHeaders,
 } from '../../src/utils/middleware';
-import { AuthConfig, AuthMiddlewareConfig, AuthStrategy, TokenData } from '../../src/types';
+import { AuthConfig, AuthMiddlewareConfig, TokenData } from '../../src/types';
 
 jest.mock('../../src/session');
 jest.mock('../../src/utils/middleware', () => {
@@ -69,7 +69,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     mockOnPageUnauthenticated = jest.fn().mockResolvedValue(NextResponse.redirect('https://test.com/login'));
 
     mockMiddlewareConfig = {
-      authStrategies: [AuthStrategy.SESSION],
+      authStrategies: ['SESSION'],
       sessionConfig: {
         sessionOptions: {
           secrets: ['test-secret'],
@@ -84,7 +84,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     wristbandAuth = new WristbandAuthImpl(mockAuthConfig);
 
     defaultNormalizedConfig = {
-      authStrategies: [AuthStrategy.SESSION],
+      authStrategies: ['SESSION'],
       sessionConfig: {
         sessionOptions: mockMiddlewareConfig.sessionConfig!.sessionOptions,
         sessionEndpoint: '/api/auth/session',
@@ -136,7 +136,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
   });
 
   describe('Session Retrieval Errors', () => {
-    it('should return 401 for protected API when session retrieval fails (no previous response)', async () => {
+    it('should return 500 for protected API when session retrieval fails (no previous response)', async () => {
       mockRequest = new NextRequest('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session read failed'));
@@ -145,11 +145,13 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
       const result = await middleware(mockRequest);
 
       expect(result).toBeInstanceOf(NextResponse);
-      expect(result.status).toBe(401);
+      expect(result.status).toBe(500); // ← Changed from 401 to 500
+      const body = await result.json();
+      expect(body.error).toBe('Internal Server Error');
       expect(mockCopyResponseHeaders).not.toHaveBeenCalled();
     });
 
-    it('should return 401 for protected API when session retrieval fails (with previous response)', async () => {
+    it('should return 500 for protected API when session retrieval fails (with previous response)', async () => {
       mockRequest = new NextRequest('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session read failed'));
@@ -159,7 +161,9 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
       const result = await middleware(mockRequest, previousResponse);
 
       expect(result).toBeInstanceOf(NextResponse);
-      expect(result.status).toBe(401);
+      expect(result.status).toBe(500); // ← Changed from 401 to 500
+      const body = await result.json();
+      expect(body.error).toBe('Internal Server Error');
       expect(mockCopyResponseHeaders).toHaveBeenCalledWith(previousResponse, expect.any(NextResponse));
     });
 
@@ -175,7 +179,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
         defaultNormalizedConfig,
         'https://test.com/api/auth/login'
       );
-      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest);
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'unexpected_error'); // ← Added reason
       expect(result).toEqual(NextResponse.redirect('https://test.com/login'));
       expect(mockCopyResponseHeaders).not.toHaveBeenCalled();
     });
@@ -246,7 +250,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
 
-      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest);
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated'); // ← Added reason
       expect(result).toEqual(NextResponse.redirect('https://test.com/login'));
       expect(mockCopyResponseHeaders).not.toHaveBeenCalled();
     });
@@ -638,7 +642,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
 
-      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest);
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'token_refresh_failed'); // ← Added reason
       expect(result).toEqual(NextResponse.redirect('https://test.com/login'));
       expect(mockCopyResponseHeaders).not.toHaveBeenCalled();
     });
@@ -822,6 +826,182 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
         mockRequest,
         mockMiddlewareConfig.sessionConfig!.sessionOptions
       );
+    });
+  });
+
+  describe('Session Strategy Error Reasons', () => {
+    it('should return 401 with not_authenticated reason when session is not authenticated', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+
+      const mockSession = {
+        isAuthenticated: false,
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(result.status).toBe(401);
+      const body = await result.json();
+      expect(body.error).toBe('Unauthorized');
+    });
+
+    it('should return 401 with token_refresh_failed reason when token refresh fails for API', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+      const expiredTime = Date.now() - 1000;
+
+      const mockSession = {
+        isAuthenticated: true,
+        csrfToken: 'test-csrf-token',
+        refreshToken: 'test-refresh-token',
+        expiresAt: expiredTime,
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+      jest.spyOn(wristbandAuth, 'refreshTokenIfExpired').mockRejectedValue(new Error('Token refresh failed'));
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(result.status).toBe(401);
+      const body = await result.json();
+      expect(body.error).toBe('Unauthorized');
+    });
+
+    it('should return 500 with unexpected_error reason when session retrieval throws for API', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+
+      mockGetSessionFromRequest.mockRejectedValue(new Error('Session service crashed'));
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(result.status).toBe(500);
+      const body = await result.json();
+      expect(body.error).toBe('Internal Server Error');
+    });
+
+    it('should return 403 with csrf_failed reason when CSRF validation fails', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+
+      const configWithCsrf = {
+        ...defaultNormalizedConfig,
+        sessionConfig: {
+          ...defaultNormalizedConfig.sessionConfig,
+          sessionOptions: {
+            ...defaultNormalizedConfig.sessionConfig.sessionOptions,
+            enableCsrfProtection: true,
+          },
+        },
+      };
+      mockNormalizeMiddlewareConfig.mockReturnValue(configWithCsrf);
+
+      const mockSession = {
+        isAuthenticated: true,
+        csrfToken: 'test-csrf-token',
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+      mockIsValidCsrf.mockReturnValue(false);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(result.status).toBe(403);
+      const body = await result.json();
+      expect(body.error).toBe('Forbidden');
+    });
+
+    it('should pass not_authenticated reason to onPageUnauthenticated when session not authenticated', async () => {
+      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockIsProtectedPage.mockReturnValue(true);
+
+      const mockSession = {
+        isAuthenticated: false,
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      await middleware(mockRequest);
+
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated');
+    });
+
+    it('should pass token_refresh_failed reason to onPageUnauthenticated when refresh fails', async () => {
+      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockIsProtectedPage.mockReturnValue(true);
+      const expiredTime = Date.now() - 1000;
+
+      const mockSession = {
+        isAuthenticated: true,
+        csrfToken: 'test-csrf-token',
+        refreshToken: 'test-refresh-token',
+        expiresAt: expiredTime,
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+      jest.spyOn(wristbandAuth, 'refreshTokenIfExpired').mockRejectedValue(new Error('Refresh failed'));
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      await middleware(mockRequest);
+
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'token_refresh_failed');
+    });
+
+    it('should pass unexpected_error reason to onPageUnauthenticated when session throws', async () => {
+      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockIsProtectedPage.mockReturnValue(true);
+
+      mockGetSessionFromRequest.mockRejectedValue(new Error('Session crashed'));
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      await middleware(mockRequest);
+
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'unexpected_error');
+    });
+
+    it('should verify error message text matches HTTP status code', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+
+      // Test 401
+      const mockSession401 = { isAuthenticated: false };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession401 as any);
+      const result401 = await wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig)(mockRequest);
+      expect(result401.status).toBe(401);
+      const body401 = await result401.json();
+      expect(body401.error).toBe('Unauthorized');
+
+      // Test 403
+      const configWithCsrf = {
+        ...defaultNormalizedConfig,
+        sessionConfig: {
+          ...defaultNormalizedConfig.sessionConfig,
+          sessionOptions: {
+            ...defaultNormalizedConfig.sessionConfig.sessionOptions,
+            enableCsrfProtection: true,
+          },
+        },
+      };
+      mockNormalizeMiddlewareConfig.mockReturnValue(configWithCsrf);
+      const mockSession403 = {
+        isAuthenticated: true,
+        csrfToken: 'test-csrf',
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession403 as any);
+      mockIsValidCsrf.mockReturnValue(false);
+      const result403 = await wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig)(mockRequest);
+      expect(result403.status).toBe(403);
+      const body403 = await result403.json();
+      expect(body403.error).toBe('Forbidden');
+
+      // Test 500
+      mockGetSessionFromRequest.mockRejectedValue(new Error('Crash'));
+      const result500 = await wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig)(mockRequest);
+      expect(result500.status).toBe(500);
+      const body500 = await result500.json();
+      expect(body500.error).toBe('Internal Server Error');
     });
   });
 });

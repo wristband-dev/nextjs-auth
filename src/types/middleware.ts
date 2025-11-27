@@ -12,18 +12,35 @@ export interface NextJsCookieStore {
 }
 
 /**
- * Authentication strategy enum for Wristband auth.
+ * Authentication strategy for Wristband auth.
+ *
+ * Available strategies:
+ * - `'SESSION'` - Session-based authentication using cookies
+ * - `'JWT'` - JWT bearer token authentication
  */
-export enum AuthStrategy {
-  /**
-   * Session-based authentication using cookies
-   */
-  SESSION = 'SESSION',
-  /**
-   * JWT bearer token authentication
-   */
-  JWT = 'JWT',
-}
+export type AuthStrategy = 'SESSION' | 'JWT';
+
+/**
+ * Reasons why authentication can fail in middleware or Server Actions.
+ *
+ * @property not_authenticated - No valid session or JWT token found
+ * @property csrf_failed - CSRF token validation failed (SESSION strategy only)
+ * @property token_refresh_failed - Token refresh attempt failed (SESSION strategy only)
+ * @property unexpected_error - Unexpected error occurred during authentication
+ */
+export type AuthFailureReason = 'not_authenticated' | 'csrf_failed' | 'token_refresh_failed' | 'unexpected_error';
+
+/**
+ * Handler invoked when a protected page is accessed without valid authentication.
+ *
+ * @param request - The incoming request to the protected page
+ * @param reason - Why authentication failed
+ * @returns Response to send to the client (typically a redirect to login)
+ */
+export type UnauthenticatedPageHandler = (
+  request: NextRequest,
+  reason: AuthFailureReason
+) => NextResponse | Promise<NextResponse>;
 
 /**
  * Configuration for Wristband auth middleware.
@@ -33,21 +50,21 @@ export interface AuthMiddlewareConfig {
    * Authentication strategies to use, in order of precedence.
    * At least one strategy is required.
    *
-   * - [AuthStrategy.SESSION]: Only session-based auth
-   * - [AuthStrategy.JWT]: Only JWT bearer token auth
-   * - [AuthStrategy.SESSION, AuthStrategy.JWT]: Try session first, fallback to JWT
-   * - [AuthStrategy.JWT, AuthStrategy.SESSION]: Try JWT first, fallback to session
+   * - ['SESSION']: Only session-based auth
+   * - ['JWT']: Only JWT bearer token auth
+   * - ['SESSION', 'JWT']: Try session first, fallback to JWT
+   * - ['JWT', 'SESSION']: Try JWT first, fallback to session
    *
    * @example
    * ```typescript
-   * authStrategies: [AuthStrategy.SESSION, AuthStrategy.JWT]
+   * authStrategies: [SESSION, JWT]
    * ```
    */
   authStrategies: AuthStrategy[];
 
   /**
    * Configuration specific to SESSION authentication strategy.
-   * REQUIRED if AuthStrategy.SESSION is included in authStrategies.
+   * Required if SESSION is included in authStrategies.
    */
   sessionConfig?: {
     /**
@@ -116,12 +133,31 @@ export interface AuthMiddlewareConfig {
   protectedApis?: string[];
 
   /**
-   * Callback when a protected page request is unauthenticated.
-   * Use this to redirect to login or handle however you want.
-   * Default: A function that automatically redirects unauthenticated users to the login URL
-   *          as defined in your config for WristbandAuth.
+   * Callback invoked when a protected page is accessed without valid authentication.
+   *
+   * Use this to customize the response when authentication fails. By default, users are
+   * redirected to the login URL (as defined in your WristbandAuth config) with a `return_url`
+   * parameter so they can be redirected back after logging in.
+   *
+   * @param request - The incoming request to the protected page
+   * @param reason - Why authentication failed
+   *
+   * @example
+   * ```typescript
+   * onPageUnauthenticated: (request, reason) => {
+   *   const loginUrl = new URL('/login', request.url);
+   *   loginUrl.searchParams.set('return_url', request.url);
+   *
+   *   // Optionally pass the error reason
+   *   if (reason === 'csrf_failed') {
+   *     loginUrl.searchParams.set('error', 'invalid_request');
+   *   }
+   *
+   *   return NextResponse.redirect(loginUrl);
+   * }
+   * ```
    */
-  onPageUnauthenticated?: (req: NextRequest) => NextResponse | Promise<NextResponse>;
+  onPageUnauthenticated?: UnauthenticatedPageHandler;
 }
 
 /**
@@ -155,25 +191,20 @@ export type ReadOnlySession<T extends SessionData> = RestrictedSession<T> & Serv
  * const result = await requireAuth(cookieStore);
  * if (result.authenticated) {
  *   console.log(result.session.userId); // ✅ TypeScript knows session exists
- *   // result.reason is undefined
+ *   // result.reason is never (compile error if accessed)
  * }
  *
  * // Failure case - reason explains why
  * if (!result.authenticated) {
- *   console.log(result.reason); // 'not_authenticated' | 'token_refresh_failed' | 'error'
- *   // result.session is null
+ *   console.log(result.reason); // 'not_authenticated' | 'token_refresh_failed' | 'unexpected_error'
+ *   // result.session is never (compile error if accessed)
  *   return { message: 'Please log in', authError: true };
  * }
  * ```
- *
- * @property {boolean} authenticated - Whether authentication succeeded
- * @property {MutableSession<T> | null} session - The authenticated session (only present when authenticated is true)
- * @property {'not_authenticated' | 'token_refresh_failed' | 'unexpected_error'} [reason] - Why authentication failed
- *      (only present when authenticated is false)
  */
 export type ServerActionAuthResult<T extends SessionData = SessionData> =
   | { authenticated: true; session: MutableSession<T>; reason?: never }
-  | { authenticated: false; session: null; reason: 'not_authenticated' | 'token_refresh_failed' | 'unexpected_error' };
+  | { authenticated: false; session?: never; reason: AuthFailureReason };
 
 // ====================================================== //
 // ================== INTERNAL TYPES ==================== //
@@ -212,32 +243,39 @@ export interface NormalizedMiddlewareConfig {
   /** API route patterns requiring authentication */
   protectedApis: string[];
   /** Callback for handling unauthenticated page requests. */
-  onPageUnauthenticated?: (req: NextRequest) => NextResponse | Promise<NextResponse>;
+  onPageUnauthenticated?: UnauthenticatedPageHandler;
 }
 
 /**
  * Describes the outcome of running a single authentication strategy.
  *
- * This captures whether authentication succeeded, the resolved session
- * when successful, which strategy produced the result, and whether the
- * attempt failed due to CSRF validation. Callers can use this structure
- * to orchestrate sequential fallback across multiple strategies.
+ * A discriminated union that captures whether authentication succeeded or failed,
+ * and provides specific failure reasons to enable proper error handling and HTTP
+ * status code selection.
  *
  * @template T - The application-defined session data shape.
  */
-export type AuthStrategyResult<T extends SessionData> = {
-  /** Whether the strategy successfully authenticated the request */
-  success: boolean;
-
-  /** The resolved session when authentication succeeds. Only present for the SESSION strategy */
-  session?: Session<T> & T;
-
-  /** The strategy that produced a successful authentication (if any). */
-  usedStrategy?: AuthStrategy;
-
-  /** Indicates CSRF failure for CSRF-enforcing strategies. */
-  csrfFailed?: boolean;
-};
+export type AuthStrategyResult<T extends SessionData> =
+  | {
+      /** Authentication succeeded */
+      authenticated: true;
+      /** The resolved session (only present for SESSION strategy) */
+      session?: Session<T> & T;
+      /** The strategy that produced successful authentication */
+      usedStrategy: AuthStrategy;
+      /** Never present on success */
+      reason?: never;
+    }
+  | {
+      /** Authentication failed */
+      authenticated: false;
+      /** Never present on failure */
+      session?: never;
+      /** Never present on failure */
+      usedStrategy?: never;
+      /** Why authentication failed */
+      reason: AuthFailureReason;
+    };
 
 /**
  * Symbol used to mark sessions from Server Components as read-only.

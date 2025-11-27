@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { AuthMiddlewareConfig, AuthStrategy, NormalizedMiddlewareConfig } from '../types';
+import { AuthMiddlewareConfig, AuthStrategy, NormalizedMiddlewareConfig, UnauthenticatedPageHandler } from '../types';
 
 const DEFAULT_CSRF_HEADER_NAME: string = 'X-CSRF-TOKEN';
 const DEFAULT_PROTECTED_APIS: string[] = [];
@@ -8,6 +8,8 @@ const DEFAULT_PROTECTED_PAGES: string[] = [];
 const DEFAULT_LOGIN_ENDPOINT: string = '/api/auth/login';
 const DEFAULT_SESSION_ENDPOINT: string = '/api/auth/session';
 const DEFAULT_TOKEN_ENDPOINT: string = '/api/auth/token';
+
+const VALID_AUTH_STRATEGIES = new Set<AuthStrategy>(['SESSION', 'JWT']);
 
 // Skip x-middleware-next - internal Next.js routing signal
 const X_MIDDLEWARE_NEXT_HEADER: string = 'x-middleware-next';
@@ -17,22 +19,51 @@ const X_MIDDLEWARE_NEXT_HEADER: string = 'x-middleware-next';
  *
  * @param config - User-provided middleware configuration
  * @throws {TypeError} If authStrategies is empty
+ * @throws {TypeError} If authStrategies contains invalid values
+ * @throws {TypeError} If authStrategies contains duplicates
+ * @throws {TypeError} If authStrategies contains too many strategies
  * @throws {TypeError} If SESSION strategy is used but sessionConfig or sessionOptions are missing
  */
 function validateMiddlewareConfig(config: AuthMiddlewareConfig): void {
   // Validate authStrategies is not empty
   if (!config.authStrategies || config.authStrategies.length === 0) {
-    throw new TypeError('authStrategies must contain at least one AuthStrategy');
+    throw new TypeError('authStrategies must contain at least one strategy');
+  }
+
+  // Validate in one pass: no invalid values, no duplicates
+  const seen = new Set<AuthStrategy>();
+  const invalidStrategies: string[] = [];
+
+  config.authStrategies.forEach((strategy) => {
+    // Check for invalid strategy
+    if (!VALID_AUTH_STRATEGIES.has(strategy as AuthStrategy)) {
+      invalidStrategies.push(strategy);
+      return; // Skip to next iteration
+    }
+
+    // Check for duplicate
+    if (seen.has(strategy)) {
+      throw new TypeError(`authStrategies contains duplicate strategy: '${strategy}'`);
+    }
+
+    seen.add(strategy);
+  });
+
+  // Report all invalid strategies at once
+  if (invalidStrategies.length > 0) {
+    throw new TypeError(
+      `Invalid auth strategies: '${invalidStrategies.join("', '")}'. Valid strategies are: 'SESSION', 'JWT'`
+    );
   }
 
   // Validate sessionConfig is provided if SESSION strategy is used
-  if (config.authStrategies.includes(AuthStrategy.SESSION)) {
+  if (config.authStrategies.includes('SESSION')) {
     if (!config.sessionConfig) {
-      throw new TypeError('sessionConfig is required when using AuthStrategy.SESSION');
+      throw new TypeError('sessionConfig is required when using SESSION strategy');
     }
 
     if (!config.sessionConfig?.sessionOptions) {
-      throw new TypeError('sessionConfig.sessionOptions is required when using AuthStrategy.SESSION');
+      throw new TypeError('sessionConfig.sessionOptions is required when using SESSION strategy');
     }
   }
 }
@@ -47,7 +78,7 @@ function validateMiddlewareConfig(config: AuthMiddlewareConfig): void {
  * @example
  * ```typescript
  * const normalized = normalizeMiddlewareConfig({
- *   authStrategies: [AuthStrategy.SESSION],
+ *   authStrategies: ['SESSION'],
  *   sessionConfig: {
  *     sessionOptions: { secrets: 'my-secret', enableCsrfProtection: true },
  *   },
@@ -143,7 +174,7 @@ function extractLoginPath(loginUrl: string): string {
 export function resolveOnPageUnauthenticated(
   config: NormalizedMiddlewareConfig,
   loginUrl: string
-): (req: NextRequest) => NextResponse | Promise<NextResponse> {
+): UnauthenticatedPageHandler {
   // If user provided a custom handler, use it
   if (config.onPageUnauthenticated) {
     return config.onPageUnauthenticated;
@@ -151,9 +182,9 @@ export function resolveOnPageUnauthenticated(
 
   // Otherwise, create default handler that redirects to login with return_url
   const loginPath = extractLoginPath(loginUrl);
-  return (req: NextRequest) => {
-    const redirectUrl = new URL(loginPath, req.url);
-    redirectUrl.searchParams.set('return_url', req.url);
+  return (request: NextRequest) => {
+    const redirectUrl = new URL(loginPath, request.url);
+    redirectUrl.searchParams.set('return_url', request.url);
     return NextResponse.redirect(redirectUrl, { status: 302 });
   };
 }
@@ -235,7 +266,7 @@ export function createRouteMatcher(patterns: string[]): (pathname: string) => bo
  */
 export function isProtectedApi(pathname: string, config: NormalizedMiddlewareConfig): boolean {
   // Only protect session and token endpoints if SESSION strategy is being used
-  if (config.authStrategies.includes(AuthStrategy.SESSION)) {
+  if (config.authStrategies.includes('SESSION')) {
     if (pathname === config.sessionConfig.sessionEndpoint || pathname === config.sessionConfig.tokenEndpoint) {
       return true;
     }

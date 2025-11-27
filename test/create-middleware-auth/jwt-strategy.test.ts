@@ -11,7 +11,7 @@ import {
   resolveOnPageUnauthenticated,
   copyResponseHeaders,
 } from '../../src/utils/middleware';
-import { AuthConfig, AuthMiddlewareConfig, AuthStrategy } from '../../src/types';
+import { AuthConfig, AuthMiddlewareConfig } from '../../src/types';
 
 jest.mock('../../src/session');
 jest.mock('../../src/utils/middleware', () => {
@@ -75,7 +75,7 @@ describe('WristbandAuth Middleware - JWT Strategy', () => {
     mockOnPageUnauthenticated = jest.fn().mockResolvedValue(NextResponse.redirect('https://test.com/login'));
 
     mockMiddlewareConfig = {
-      authStrategies: [AuthStrategy.JWT],
+      authStrategies: ['JWT'],
       jwtConfig: {
         jwksCacheMaxSize: 20,
         jwksCacheTtl: 3600000,
@@ -88,7 +88,7 @@ describe('WristbandAuth Middleware - JWT Strategy', () => {
     wristbandAuth = new WristbandAuthImpl(mockAuthConfig);
 
     defaultNormalizedConfig = {
-      authStrategies: [AuthStrategy.JWT],
+      authStrategies: ['JWT'],
       sessionConfig: {
         sessionOptions: undefined,
         sessionEndpoint: '/api/auth/session',
@@ -202,7 +202,7 @@ describe('WristbandAuth Middleware - JWT Strategy', () => {
       expect(result.status).toBe(401);
     });
 
-    it('should handle JWT validation errors gracefully', async () => {
+    it('should handle unexpected JWT validation errors', async () => {
       mockRequest = new NextRequest('https://test.com/api/v1/users', {
         headers: { Authorization: 'Bearer malformed-jwt-token' },
       });
@@ -213,7 +213,7 @@ describe('WristbandAuth Middleware - JWT Strategy', () => {
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
 
-      expect(result.status).toBe(401);
+      expect(result.status).toBe(500);
     });
   });
 
@@ -234,7 +234,7 @@ describe('WristbandAuth Middleware - JWT Strategy', () => {
 
     it('should create JWT validator with custom config', async () => {
       const customConfig: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.JWT],
+        authStrategies: ['JWT'],
         jwtConfig: {
           jwksCacheMaxSize: 50,
           jwksCacheTtl: 7200000,
@@ -364,7 +364,7 @@ describe('WristbandAuth Middleware - JWT Strategy', () => {
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
 
-      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest);
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated'); // ← Added reason parameter
       expect(result).toEqual(NextResponse.redirect('https://test.com/login'));
     });
   });
@@ -415,6 +415,76 @@ describe('WristbandAuth Middleware - JWT Strategy', () => {
       expect(result.headers.get('x-custom-header')).toBe('custom-value');
       // copyResponseHeaders should have been called
       expect(mockCopyResponseHeaders).toHaveBeenCalledWith(previousResponse, expect.any(NextResponse));
+    });
+  });
+
+  describe('JWT Authentication Error Reasons', () => {
+    it('should return 401 with not_authenticated reason when no auth header', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(result.status).toBe(401);
+      const body = await result.json();
+      expect(body.error).toBe('Unauthorized');
+    });
+
+    it('should return 401 with not_authenticated reason when JWT validation fails', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users', {
+        headers: { Authorization: 'Bearer invalid-token' },
+      });
+      mockIsProtectedApi.mockReturnValue(true);
+      mockJwtValidator.extractBearerToken.mockReturnValue('invalid-token');
+      mockJwtValidator.validate.mockResolvedValue({ isValid: false });
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(result.status).toBe(401);
+      const body = await result.json();
+      expect(body.error).toBe('Unauthorized');
+    });
+
+    it('should return 500 with unexpected_error reason when JWT validation throws', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users', {
+        headers: { Authorization: 'Bearer malformed-token' },
+      });
+      mockIsProtectedApi.mockReturnValue(true);
+      mockJwtValidator.extractBearerToken.mockReturnValue('malformed-token');
+      mockJwtValidator.validate.mockRejectedValue(new Error('JWT service down'));
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(result.status).toBe(500);
+      const body = await result.json();
+      expect(body.error).toBe('Internal Server Error');
+    });
+
+    it('should pass not_authenticated reason to onPageUnauthenticated for missing auth header', async () => {
+      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockIsProtectedPage.mockReturnValue(true);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      await middleware(mockRequest);
+
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated');
+    });
+
+    it('should pass unexpected_error reason to onPageUnauthenticated when JWT validator throws', async () => {
+      mockRequest = new NextRequest('https://test.com/dashboard', {
+        headers: { Authorization: 'Bearer bad-token' },
+      });
+      mockIsProtectedPage.mockReturnValue(true);
+      mockJwtValidator.extractBearerToken.mockReturnValue('bad-token');
+      mockJwtValidator.validate.mockRejectedValue(new Error('Validator crashed'));
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      await middleware(mockRequest);
+
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'unexpected_error');
     });
   });
 });

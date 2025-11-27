@@ -9,7 +9,7 @@ import {
   resolveOnPageUnauthenticated,
   copyResponseHeaders,
 } from '../../src/utils/middleware';
-import { AuthConfig, AuthMiddlewareConfig, AuthStrategy } from '../../src/types';
+import { AuthConfig, AuthMiddlewareConfig } from '../../src/types';
 
 jest.mock('../../src/session');
 jest.mock('../../src/utils/middleware', () => {
@@ -68,7 +68,7 @@ describe('WristbandAuth Middleware - Chaining', () => {
     mockOnPageUnauthenticated = jest.fn().mockResolvedValue(NextResponse.redirect('https://test.com/login'));
 
     mockMiddlewareConfig = {
-      authStrategies: [AuthStrategy.SESSION],
+      authStrategies: ['SESSION'],
       sessionConfig: {
         sessionOptions: {
           secrets: ['test-secret'],
@@ -83,7 +83,7 @@ describe('WristbandAuth Middleware - Chaining', () => {
     wristbandAuth = new WristbandAuthImpl(mockAuthConfig);
 
     defaultNormalizedConfig = {
-      authStrategies: [AuthStrategy.SESSION],
+      authStrategies: ['SESSION'],
       sessionConfig: {
         sessionOptions: mockMiddlewareConfig.sessionConfig!.sessionOptions,
         sessionEndpoint: '/api/auth/session',
@@ -275,7 +275,7 @@ describe('WristbandAuth Middleware - Chaining', () => {
       const result = await middleware(mockRequest, previousResponse);
 
       // Should get redirect response from onPageUnauthenticated
-      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest);
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated'); // ← Added reason parameter
 
       // Previous headers should be preserved on the redirect response
       expect(result.headers.get('x-custom-header')).toBe('custom-value');
@@ -330,6 +330,122 @@ describe('WristbandAuth Middleware - Chaining', () => {
       expect(result).toBeInstanceOf(NextResponse);
       expect(mockGetSessionFromRequest).not.toHaveBeenCalled();
       expect(mockCopyResponseHeaders).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Middleware Chaining with Auth Failure Reasons', () => {
+    it('should pass not_authenticated reason to onPageUnauthenticated when no session', async () => {
+      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockIsProtectedPage.mockReturnValue(true);
+
+      const previousResponse = NextResponse.next();
+      previousResponse.headers.set('x-chain-id', '123');
+
+      const mockSession = {
+        isAuthenticated: false,
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+
+      const { copyResponseHeaders: realCopyResponseHeaders } = jest.requireActual('../../src/utils/middleware');
+      mockCopyResponseHeaders.mockImplementation(realCopyResponseHeaders);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      await middleware(mockRequest, previousResponse);
+
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated');
+    });
+
+    it('should pass csrf_failed reason and preserve previous headers when CSRF validation fails', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+
+      const previousResponse = NextResponse.next();
+      previousResponse.headers.set('x-request-id', 'req-456');
+
+      // Enable CSRF protection in config
+      const csrfConfig = {
+        ...defaultNormalizedConfig,
+        sessionConfig: {
+          ...defaultNormalizedConfig.sessionConfig,
+          sessionOptions: {
+            ...defaultNormalizedConfig.sessionConfig.sessionOptions,
+            enableCsrfProtection: true,
+          },
+        },
+      };
+      mockNormalizeMiddlewareConfig.mockReturnValue(csrfConfig);
+
+      const mockSession = {
+        isAuthenticated: true,
+        csrfToken: 'valid-csrf-token',
+        refreshToken: 'test-refresh-token',
+        expiresAt: Date.now() + 3600000,
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+      mockIsValidCsrf.mockReturnValue(false); // CSRF validation fails
+
+      const { copyResponseHeaders: realCopyResponseHeaders } = jest.requireActual('../../src/utils/middleware');
+      mockCopyResponseHeaders.mockImplementation(realCopyResponseHeaders);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest, previousResponse);
+
+      // Should return 403
+      expect(result.status).toBe(403);
+      const body = await result.json();
+      expect(body.error).toBe('Forbidden');
+
+      // Previous headers should be preserved
+      expect(result.headers.get('x-request-id')).toBe('req-456');
+    });
+
+    it('should pass token_refresh_failed reason and preserve headers when refresh fails', async () => {
+      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockIsProtectedPage.mockReturnValue(true);
+
+      const previousResponse = NextResponse.next();
+      previousResponse.headers.set('x-tracking-id', 'track-789');
+
+      const mockSession = {
+        isAuthenticated: true,
+        csrfToken: 'test-csrf-token',
+        refreshToken: 'expired-refresh-token',
+        expiresAt: Date.now() - 1000, // Expired
+        accessToken: 'old-token',
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+
+      // Mock refreshTokenIfExpired to throw
+      const mockRefreshTokenIfExpired = jest.spyOn(wristbandAuth, 'refreshTokenIfExpired' as any);
+      mockRefreshTokenIfExpired.mockRejectedValue(new Error('Refresh failed'));
+
+      const { copyResponseHeaders: realCopyResponseHeaders } = jest.requireActual('../../src/utils/middleware');
+      mockCopyResponseHeaders.mockImplementation(realCopyResponseHeaders);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      await middleware(mockRequest, previousResponse);
+
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'token_refresh_failed');
+
+      mockRefreshTokenIfExpired.mockRestore();
+    });
+
+    it('should pass unexpected_error reason when session retrieval throws', async () => {
+      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockIsProtectedPage.mockReturnValue(true);
+
+      const previousResponse = NextResponse.next();
+      previousResponse.headers.set('x-correlation-id', 'corr-999');
+
+      mockGetSessionFromRequest.mockRejectedValue(new Error('Session service crashed'));
+
+      const { copyResponseHeaders: realCopyResponseHeaders } = jest.requireActual('../../src/utils/middleware');
+      mockCopyResponseHeaders.mockImplementation(realCopyResponseHeaders);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      await middleware(mockRequest, previousResponse);
+
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'unexpected_error');
     });
   });
 });

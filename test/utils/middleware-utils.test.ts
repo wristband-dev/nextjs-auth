@@ -9,12 +9,12 @@ import {
   copyResponseHeaders,
   resolveOnPageUnauthenticated,
 } from '../../src/utils/middleware';
-import { AuthMiddlewareConfig, AuthStrategy } from '../../src/types';
+import { AuthMiddlewareConfig } from '../../src/types';
 
 describe('middleware-utils', () => {
   describe('normalizeMiddlewareConfig', () => {
     const minimalConfig: AuthMiddlewareConfig = {
-      authStrategies: [AuthStrategy.SESSION],
+      authStrategies: ['SESSION'],
       sessionConfig: {
         sessionOptions: {
           secrets: 'test-secret-must-be-at-least-32-characters-long',
@@ -25,7 +25,7 @@ describe('middleware-utils', () => {
     it('should apply default values for all optional fields', () => {
       const result = normalizeMiddlewareConfig(minimalConfig);
 
-      expect(result.authStrategies).toEqual([AuthStrategy.SESSION]);
+      expect(result.authStrategies).toEqual(['SESSION']);
       expect(result.protectedApis).toEqual([]);
       expect(result.protectedPages).toEqual([]);
       expect(result.sessionConfig.sessionEndpoint).toBe('/api/auth/session');
@@ -36,7 +36,7 @@ describe('middleware-utils', () => {
 
     it('should preserve user-provided values over defaults', () => {
       const customConfig: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.SESSION, AuthStrategy.JWT],
+        authStrategies: ['SESSION', 'JWT'],
         sessionConfig: {
           sessionOptions: {
             secrets: 'test-secret-must-be-at-least-32-characters-long',
@@ -56,7 +56,7 @@ describe('middleware-utils', () => {
 
       const result = normalizeMiddlewareConfig(customConfig);
 
-      expect(result.authStrategies).toEqual([AuthStrategy.SESSION, AuthStrategy.JWT]);
+      expect(result.authStrategies).toEqual(['SESSION', 'JWT']);
       expect(result.protectedApis).toEqual(['/api/custom(.*)']);
       expect(result.protectedPages).toEqual(['/dashboard(.*)']);
       expect(result.sessionConfig.sessionEndpoint).toBe('/custom/session');
@@ -74,7 +74,7 @@ describe('middleware-utils', () => {
       };
 
       const config: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions,
         },
@@ -88,7 +88,7 @@ describe('middleware-utils', () => {
     it('should preserve onPageUnauthenticated callback', () => {
       const callback = jest.fn();
       const config: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -102,7 +102,7 @@ describe('middleware-utils', () => {
 
     it('should handle CSRF enabled in sessionOptions', () => {
       const config: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: {
             secrets: 'test-secret-must-be-at-least-32-characters-long',
@@ -119,7 +119,7 @@ describe('middleware-utils', () => {
 
     it('should handle CSRF disabled in sessionOptions', () => {
       const config: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: {
             secrets: 'test-secret-must-be-at-least-32-characters-long',
@@ -135,7 +135,7 @@ describe('middleware-utils', () => {
 
     it('should handle JWT-only strategy', () => {
       const config: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.JWT],
+        authStrategies: ['JWT'],
         jwtConfig: {
           jwksCacheMaxSize: 30,
           jwksCacheTtl: 3600000,
@@ -144,7 +144,7 @@ describe('middleware-utils', () => {
 
       const result = normalizeMiddlewareConfig(config);
 
-      expect(result.authStrategies).toEqual([AuthStrategy.JWT]);
+      expect(result.authStrategies).toEqual(['JWT']);
       expect(result.sessionConfig.sessionOptions).toBeUndefined();
       expect(result.jwtConfig.jwksCacheMaxSize).toBe(30);
       expect(result.jwtConfig.jwksCacheTtl).toBe(3600000);
@@ -152,7 +152,7 @@ describe('middleware-utils', () => {
 
     it('should set sessionOptions to undefined when SESSION strategy is not used', () => {
       const config: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.JWT],
+        authStrategies: ['JWT'],
       };
 
       const result = normalizeMiddlewareConfig(config);
@@ -169,7 +169,7 @@ describe('middleware-utils', () => {
 
       expect(() => {
         return normalizeMiddlewareConfig(config);
-      }).toThrow('authStrategies must contain at least one AuthStrategy');
+      }).toThrow('authStrategies must contain at least one strategy');
     });
 
     it('should throw when authStrategies is missing', () => {
@@ -177,33 +177,33 @@ describe('middleware-utils', () => {
 
       expect(() => {
         return normalizeMiddlewareConfig(config);
-      }).toThrow('authStrategies must contain at least one AuthStrategy');
+      }).toThrow('authStrategies must contain at least one strategy');
     });
 
     it('should throw when SESSION strategy is used without sessionConfig', () => {
       const config: any = {
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
       };
 
       expect(() => {
         return normalizeMiddlewareConfig(config);
-      }).toThrow('sessionConfig is required when using AuthStrategy.SESSION');
+      }).toThrow(`sessionConfig is required when using SESSION strategy`);
     });
 
     it('should throw when SESSION strategy is used without sessionOptions', () => {
       const config: any = {
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {},
       };
 
       expect(() => {
         return normalizeMiddlewareConfig(config);
-      }).toThrow('sessionConfig.sessionOptions is required when using AuthStrategy.SESSION');
+      }).toThrow(`sessionConfig.sessionOptions is required when using SESSION strategy`);
     });
 
     it('should not throw when JWT strategy is used without sessionConfig', () => {
       const config: AuthMiddlewareConfig = {
-        authStrategies: [AuthStrategy.JWT],
+        authStrategies: ['JWT'],
       };
 
       expect(() => {
@@ -278,7 +278,7 @@ describe('middleware-utils', () => {
 
   describe('isProtectedApi', () => {
     const sessionConfig = normalizeMiddlewareConfig({
-      authStrategies: [AuthStrategy.SESSION],
+      authStrategies: ['SESSION'],
       sessionConfig: {
         sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
       },
@@ -294,7 +294,7 @@ describe('middleware-utils', () => {
 
     it('should NOT protect session endpoint when using JWT-only strategy', () => {
       const jwtOnlyConfig = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.JWT],
+        authStrategies: ['JWT'],
       });
 
       expect(isProtectedApi('/api/auth/session', jwtOnlyConfig)).toBe(false);
@@ -303,7 +303,7 @@ describe('middleware-utils', () => {
 
     it('should protect session endpoint when SESSION is one of multiple strategies', () => {
       const multiStrategyConfig = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.JWT, AuthStrategy.SESSION],
+        authStrategies: ['JWT', 'SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -326,7 +326,7 @@ describe('middleware-utils', () => {
 
     it('should work with custom protectedApis patterns', () => {
       const customConfig = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -341,7 +341,7 @@ describe('middleware-utils', () => {
 
     it('should work with custom session endpoint', () => {
       const customConfig = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
           sessionEndpoint: '/custom/session',
@@ -356,7 +356,7 @@ describe('middleware-utils', () => {
 
     it('should protect API routes when explicitly configured in protectedApis', () => {
       const customConfig = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -375,7 +375,7 @@ describe('middleware-utils', () => {
   describe('isProtectedPage', () => {
     it('should return false when no protected pages configured', () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -390,7 +390,7 @@ describe('middleware-utils', () => {
 
     it('should match protected page patterns', () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -410,7 +410,7 @@ describe('middleware-utils', () => {
 
     it('should support wildcard patterns', () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -430,7 +430,7 @@ describe('middleware-utils', () => {
 
     it('should support multiple patterns', () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -450,7 +450,7 @@ describe('middleware-utils', () => {
 
     describe('Server Action Bypass', () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -583,7 +583,7 @@ describe('middleware-utils', () => {
     it('should return custom handler if provided in config', () => {
       const customHandler = jest.fn();
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -597,7 +597,7 @@ describe('middleware-utils', () => {
 
     it('should create default handler that redirects to login with return_url', async () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -616,7 +616,7 @@ describe('middleware-utils', () => {
 
     it('should handle tenant subdomain placeholders in loginUrl', async () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -635,7 +635,7 @@ describe('middleware-utils', () => {
 
     it('should preserve current domain when creating redirect URL', async () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -652,7 +652,7 @@ describe('middleware-utils', () => {
 
     it('should encode return_url properly', async () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -668,7 +668,7 @@ describe('middleware-utils', () => {
 
     it('should work with different login paths', async () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -685,7 +685,7 @@ describe('middleware-utils', () => {
 
     it('should handle root path requests', async () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -701,7 +701,7 @@ describe('middleware-utils', () => {
 
     it('should use fallback path when loginUrl is malformed', async () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -717,7 +717,7 @@ describe('middleware-utils', () => {
 
     it('should throw when loginUrl is empty string', () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -733,7 +733,7 @@ describe('middleware-utils', () => {
 
     it('should throw when loginUrl is whitespace only', () => {
       const config = normalizeMiddlewareConfig({
-        authStrategies: [AuthStrategy.SESSION],
+        authStrategies: ['SESSION'],
         sessionConfig: {
           sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
         },
@@ -875,6 +875,153 @@ describe('middleware-utils', () => {
       expect(result.headers.get('x-middleware-next')).toBe(initialMiddlewareNext);
       // Other headers should still be copied
       expect(result.headers.get('x-custom')).toBe('value');
+    });
+  });
+
+  describe('validateMiddlewareConfig - string literal validation', () => {
+    it('should throw when authStrategies contains invalid strategy', () => {
+      const config: any = {
+        authStrategies: ['SESSION', 'OAUTH'],
+        sessionConfig: {
+          sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
+        },
+      };
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config);
+      }).toThrow("Invalid auth strategies: 'OAUTH'. Valid strategies are: 'SESSION', 'JWT'");
+    });
+
+    it('should throw when authStrategies contains multiple invalid strategies', () => {
+      const config: any = {
+        authStrategies: ['SESSION', 'OAUTH', 'SAML'],
+        sessionConfig: {
+          sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
+        },
+      };
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config);
+      }).toThrow("Invalid auth strategies: 'OAUTH', 'SAML'. Valid strategies are: 'SESSION', 'JWT'");
+    });
+
+    it('should throw when authStrategies contains only invalid strategies', () => {
+      const config: any = {
+        authStrategies: ['OAUTH', 'SAML'],
+      };
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config);
+      }).toThrow("Invalid auth strategies: 'OAUTH', 'SAML'. Valid strategies are: 'SESSION', 'JWT'");
+    });
+
+    it('should throw when authStrategies contains duplicate SESSION strategy', () => {
+      const config: any = {
+        authStrategies: ['SESSION', 'SESSION'],
+        sessionConfig: {
+          sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
+        },
+      };
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config);
+      }).toThrow("authStrategies contains duplicate strategy: 'SESSION'");
+    });
+
+    it('should throw when authStrategies contains duplicate JWT strategy', () => {
+      const config: any = {
+        authStrategies: ['JWT', 'SESSION', 'JWT'],
+      };
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config);
+      }).toThrow("authStrategies contains duplicate strategy: 'JWT'");
+    });
+
+    it('should throw when authStrategies contains duplicates of both strategies', () => {
+      const config: any = {
+        authStrategies: ['SESSION', 'JWT', 'SESSION'],
+        sessionConfig: {
+          sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
+        },
+      };
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config);
+      }).toThrow("authStrategies contains duplicate strategy: 'SESSION'");
+    });
+
+    it('should accept valid single strategy', () => {
+      const config: AuthMiddlewareConfig = {
+        authStrategies: ['SESSION'],
+        sessionConfig: {
+          sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
+        },
+      };
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config);
+      }).not.toThrow();
+    });
+
+    it('should accept valid multiple strategies without duplicates', () => {
+      const config: AuthMiddlewareConfig = {
+        authStrategies: ['SESSION', 'JWT'],
+        sessionConfig: {
+          sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
+        },
+      };
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config);
+      }).not.toThrow();
+    });
+
+    it('should accept strategies in any order', () => {
+      const config1: AuthMiddlewareConfig = {
+        authStrategies: ['SESSION', 'JWT'],
+        sessionConfig: {
+          sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
+        },
+      };
+
+      const config2: AuthMiddlewareConfig = {
+        authStrategies: ['JWT', 'SESSION'],
+        sessionConfig: {
+          sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
+        },
+      };
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config1);
+      }).not.toThrow();
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config2);
+      }).not.toThrow();
+    });
+
+    it('should be case-sensitive for strategy names', () => {
+      const config: any = {
+        authStrategies: ['session', 'jwt'],
+      };
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config);
+      }).toThrow("Invalid auth strategies: 'session', 'jwt'. Valid strategies are: 'SESSION', 'JWT'");
+    });
+
+    it('should detect invalid strategy even when valid ones are present', () => {
+      const config: any = {
+        authStrategies: ['SESSION', 'JWT', 'INVALID'],
+        sessionConfig: {
+          sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
+        },
+      };
+
+      expect(() => {
+        return normalizeMiddlewareConfig(config);
+      }).toThrow("Invalid auth strategies: 'INVALID'. Valid strategies are: 'SESSION', 'JWT'");
     });
   });
 });

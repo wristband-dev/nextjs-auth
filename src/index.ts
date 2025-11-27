@@ -22,6 +22,7 @@ import {
   ReadOnlySession,
   ServerActionAuthResult,
   TokenData,
+  UnauthenticatedPageHandler,
   UserInfo,
   UserInfoRole,
 } from './types';
@@ -32,7 +33,7 @@ import {
 export {
   type AuthConfig,
   type AuthMiddlewareConfig,
-  AuthStrategy,
+  type AuthStrategy,
   type CallbackData,
   type CallbackResult,
   CallbackResultType,
@@ -50,6 +51,7 @@ export {
   saveSessionWithCookies,
   type ServerActionAuthResult,
   type TokenData,
+  type UnauthenticatedPageHandler,
   type UserInfo,
   type UserInfoRole,
   type WristbandAuth,
