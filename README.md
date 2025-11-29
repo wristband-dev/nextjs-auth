@@ -47,6 +47,10 @@ Learn more about Wristband's authentication patterns:
 - [Backend Server Integration Pattern](https://docs.wristband.dev/docs/backend-server-integration)
 - [Login Workflow In Depth](https://docs.wristband.dev/docs/login-workflow)
 
+> **💡 Learn by Example**
+>
+> Want to see the SDK in action? Check out our [Next.js demo applications](#wristband-multi-tenant-nextjs-demo-apps). The demos showcase real-world authentication patterns and best practices.
+
 <br>
 
 ---
@@ -2764,23 +2768,23 @@ When a request matches a protected route, the middleware tries each auth strateg
 
 | MiddlewareAuth Config | Type | Required | Default | Description |
 | --------------------- | ---- | -------- | ------- | ----------- |
-| authStrategies | `AuthStrategy[]` | Yes | N/A | Array of authentication strategies to try in sequential order. At least one strategy is required. The middleware will attempt each strategy until one succeeds.<br><br> Available strategies: <br>- `SESSION` (cookie-based sessions)<br>- `JWT` (bearer token authentication) |
-| sessionConfig | object | Required if using `SESSION` strategy | N/A | Configuration object for session-based authentication. Must be provided when `SESSION` is included in authStrategies. Contains session options, CSRF settings, and endpoint paths. |
-| jwtConfig | object | No | `undefined` | Optional configuration object for JWT bearer token authentication. Contains caching settings for JSON Web Key Sets (JWKS) used to verify JWT signatures. This is only needed if you are using the `JWT` strategy and don't want to rely on default config values. |
-| protectedApis | string[] | No | `[]` (no API routes protected, **except** the Session and Token Endpoints which are automatically protected when using the `SESSION` strategy) | Array of regex patterns defining which API routes require authentication. Routes matching these patterns return HTTP 401 if authentication fails. Patterns support exact paths (`'/api/users'`), wildcards (`'/api/v1(.*)'`), and named parameters (`'/api/users/:id'`). The default is an empty list meaning <br><br> Example: [`'/api/v1(.*)'`, `'/api/v2/orders/:id'`] protects all v1 APIs and specific v2 order routes.<br><br> Important: Session and Token Endpoints are automatically protected when using the `SESSION` strategy and don't need to be listed here. |
+| authStrategies | `AuthStrategy[]` | Yes | N/A | Array of authentication strategies to try in sequential order. At least one strategy is required. The middleware will attempt each strategy until one succeeds.<br><br> Available strategies: <br>- `'SESSION'` (cookie-based sessions)<br>- `'JWT'` (bearer token authentication) |
+| sessionConfig | object | Required if using `'SESSION'` strategy | N/A | Configuration object for session-based authentication. Must be provided when `'SESSION'` is included in authStrategies. Contains session options, CSRF settings, and endpoint paths. |
+| jwtConfig | object | No | `undefined` | Optional configuration object for JWT bearer token authentication. Contains caching settings for JSON Web Key Sets (JWKS) used to verify JWT signatures. This is only needed if you are using the `'JWT'` strategy and don't want to rely on default config values. |
+| protectedApis | string[] | No | `[]` (no API routes protected, **except** the Session and Token Endpoints which are automatically protected when using the `'SESSION'` strategy) | Array of regex patterns defining which API routes require authentication. Routes matching these patterns return HTTP 401 if authentication fails. Patterns support exact paths (`'/api/users'`), wildcards (`'/api/v1(.*)'`), and named parameters (`'/api/users/:id'`). The default is an empty list meaning <br><br> Example: [`'/api/v1(.*)'`, `'/api/v2/orders/:id'`] protects all v1 APIs and specific v2 order routes.<br><br> Important: Session and Token Endpoints are automatically protected when using the `'SESSION'` strategy and don't need to be listed here. |
 | protectedPages | string[] | No | `[]` (no pages protected) | Array of regex patterns defining which page routes require authentication. Pages matching these patterns redirect unauthenticated users to login (or call your custom handler). Patterns support exact paths (`'/dashboard'`), wildcards (`'/settings(.*)'`), and named parameters (`'/profile/:userId'`).<br><br> Example: [`'/'`, `'/dashboard'`, `'/settings(.*)'`] protects the home page, dashboard, and all settings subpages.<br><br> Note: Server Actions are automatically excluded from middleware protection - they must use `createServerActionAuth()` instead. |
 | onPageUnauthenticated | `(request: NextRequest, reason: AuthFailureReason) => NextResponse \| Promise<NextResponse>` | No | A function that redirects to your Login Endpoint. | Custom handler for unauthenticated requests to protected pages. Receives the `NextRequest` and an `AuthFailureReason` indicating why authentication failed (`not_authenticated`, `csrf_failed`, `token_refresh_failed`, or `unexpected_error`). Must return a `NextResponse` or a Promise that resolves to a `NextResponse`.<br><br> Example use cases: Display error messages for `unexpected_error`, different redirects based on failure type, etc. See examples below for custom implementations. |
 
 The middleware supports two authentication strategies that can be used independently or combined:
 
-- `SESSION`
-- `JWT`
+- `'SESSION'`
+- `'JWT'`
 
 <br>
 
 #### SESSION Strategy
 
-The `SESSION` strategy validates authentication using encrypted session cookies. This is the most common strategy for traditional web applications. The middleware performs these steps for protected routes:
+The `'SESSION'` strategy validates authentication using encrypted session cookies. This is the most common strategy for traditional web applications. The middleware performs these steps for protected routes:
 
 1. **Validates session cookie** - Checks for valid encrypted session (`session.isAuthenticated === true`)
 2. **Auto-protects auth endpoints** - Session and Token Endpoints are always automatically protected
@@ -2794,8 +2798,8 @@ The `SESSION` strategy validates authentication using encrypted session cookies.
 | SessionConfig | Type | Required | Default | Description |
 | ------------- | ---- | -------- | ------- | ----------- |
 | sessionOptions | `SessionOptions` | Yes | N/A | Core session configuration object. Defines encryption secrets, cookie settings, max age, and more. This is the same configuration used in your session helper functions. See [Session Configuration](#session-configuration) for all available options. Minimum required fields: `secrets` (min 32 chars) |
-| sessionEndpoint | string | No | `/api/auth/session` | Path to your Session Endpoint. Automatically protected when using `SESSION` strategy. |
-| tokenEndpoint | string | No | `/api/auth/token` | Path to your Token Endpoint. Automatically protected when using `SESSION` strategy |
+| sessionEndpoint | string | No | `/api/auth/session` | Path to your Session Endpoint. Automatically protected when using `'SESSION'` strategy. |
+| tokenEndpoint | string | No | `/api/auth/token` | Path to your Token Endpoint. Automatically protected when using `'SESSION'` strategy |
 | csrfTokenHeaderName | string | No | `X-CSRF-TOKEN` | HTTP header name containing the CSRF token. Only used when `sessionOptions.enableCsrfProtection` is `true`. If enabled, your frontend must send the CSRF token in this header to your protected API Routes. |
 
 **Example: Basic Configuration**
@@ -2852,7 +2856,7 @@ export const requireMiddlewareAuth = wristbandAuth.createMiddlewareAuth({
 
 #### JWT Strategy
 
-The `JWT` strategy validates authentication using JWT bearer tokens from the `Authorization` request header. This strategy is powered by [@wristband/typescript-jwt](https://github.com/wristband-dev/typescript-jwt) and is useful for API-first applications or when your frontend stores access tokens and includes them in API requests. The middleware performs these steps for protected routes:
+The `'JWT'` strategy validates authentication using JWT bearer tokens from the `Authorization` request header. This strategy is powered by [@wristband/typescript-jwt](https://github.com/wristband-dev/typescript-jwt) and is useful for API-first applications or when your frontend stores access tokens and includes them in API requests. The middleware performs these steps for protected routes:
 
 1. **Extracts JWT token** - Gets token from `Authorization: Bearer <token>` header
 2. **Verifies signature** - Uses cached JWKS from Wristband to verify token signature
@@ -2861,7 +2865,7 @@ The `JWT` strategy validates authentication using JWT bearer tokens from the `Au
 5. **No session management** - Stateless authentication with no cookies or token refresh
 
 > [!NOTE]
-> **JWT and Page Routes:** The `JWT` strategy is designed with API routes in mind. While it technically works for protected pages, browsers don't naturally send JWT tokens in Authorization headers during page navigation. Use `SESSION` strategy for traditional web page protection.
+> **JWT and Page Routes:** The `'JWT'` strategy is designed with API routes in mind. While it technically works for protected pages, browsers don't naturally send JWT tokens in Authorization headers during page navigation. Use `'SESSION'` strategy for traditional web page protection.
 
 **JWT Configurations:**
 
@@ -2916,7 +2920,7 @@ When a protected page request fails authentication, you can customize the respon
 | Reason | Description | When It Occurs |
 | ------ | ----------- | -------------- |
 | `not_authenticated` | No valid session or JWT token found | User has no session cookie or authentication has expired |
-| `csrf_failed` | CSRF token validation failed | CSRF token in request doesn't match session (`SESSION` strategy only; API routes only) |
+| `csrf_failed` | CSRF token validation failed | CSRF token in request doesn't match session (`'SESSION'` strategy only; API routes only) |
 | `token_refresh_failed` | Token refresh attempt failed | Refresh token is invalid or Wristband token refresh request failed |
 | `unexpected_error` | Unexpected error during authentication | Session service crashed, JWT validator failed, or other infrastructure issues |
 
