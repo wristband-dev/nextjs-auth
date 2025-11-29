@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
 import { encryptLoginState } from '../../src/utils/crypto';
 import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
-import { LoginState, CallbackResult, CallbackResultType, CallbackData } from '../../src/types';
+import { LoginState, CallbackResult, CallbackData } from '../../src/types';
 import { createMockNextRequest, parseSetCookies } from '../test-utils';
 
 const CLIENT_ID = 'clientId';
@@ -111,8 +111,9 @@ describe('Multi Tenant Callback - App Router', () => {
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
 
       // First verify result and data
-      const { callbackData, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.COMPLETED);
+      const { callbackData, type, reason } = callbackResult;
+      expect(type).toBe('completed');
+      expect(reason).toBeUndefined();
       expect(callbackData).toBeTruthy();
 
       if (callbackData) {
@@ -190,8 +191,9 @@ describe('Multi Tenant Callback - App Router', () => {
 
       // Validate callback data contents
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-      const { callbackData, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.COMPLETED);
+      const { callbackData, type, reason } = callbackResult;
+      expect(type).toBe('completed');
+      expect(reason).toBeUndefined();
       expect(callbackData).toBeTruthy();
       if (callbackData) {
         expect(callbackData.tenantName).toBe('devs4you');
@@ -243,8 +245,9 @@ describe('Multi Tenant Callback - App Router', () => {
 
       // Validate callback data contents
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-      const { callbackData, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.COMPLETED);
+      const { callbackData, type, reason } = callbackResult;
+      expect(type).toBe('completed');
+      expect(reason).toBeUndefined();
       expect(callbackData).toBeTruthy();
       if (callbackData) {
         expect(callbackData.tenantName).toBe('devs4you');
@@ -291,7 +294,7 @@ describe('Multi Tenant Callback - App Router', () => {
       // login state cookie is missing, which should redirect to app-level login.
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
       const { callbackData, redirectUrl, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
+      expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
@@ -325,7 +328,7 @@ describe('Multi Tenant Callback - App Router', () => {
       // login state cookie is missing, which should redirect to app-level login.
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
       const { callbackData, redirectUrl, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
+      expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
@@ -364,7 +367,7 @@ describe('Multi Tenant Callback - App Router', () => {
 
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
       const { callbackData, redirectUrl, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
+      expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
@@ -404,7 +407,7 @@ describe('Multi Tenant Callback - App Router', () => {
 
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
       const { callbackData, redirectUrl, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
+      expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
@@ -440,7 +443,7 @@ describe('Multi Tenant Callback - App Router', () => {
 
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
       const { callbackData, redirectUrl, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
+      expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
@@ -477,7 +480,7 @@ describe('Multi Tenant Callback - App Router', () => {
 
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
       const { callbackData, redirectUrl, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
+      expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
@@ -519,7 +522,7 @@ describe('Multi Tenant Callback - App Router', () => {
 
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
       const { callbackData, redirectUrl, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
+      expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
@@ -559,7 +562,7 @@ describe('Multi Tenant Callback - App Router', () => {
 
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
       const { callbackData, redirectUrl, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
+      expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
@@ -596,7 +599,7 @@ describe('Multi Tenant Callback - App Router', () => {
 
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
       const { callbackData, redirectUrl, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
+      expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
@@ -639,7 +642,7 @@ describe('Multi Tenant Callback - App Router', () => {
 
       const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
       const { callbackData, redirectUrl, type } = callbackResult;
-      expect(type).toBe(CallbackResultType.REDIRECT_REQUIRED);
+      expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response

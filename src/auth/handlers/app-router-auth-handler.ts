@@ -9,7 +9,6 @@ import {
   CallbackResult,
   LoginConfig,
   LogoutConfig,
-  CallbackResultType,
   LoginState,
   TokenResponse,
   UserInfo,
@@ -157,7 +156,7 @@ export class AppRouterAuthHandler {
     // Make sure the login state cookie exists, extract it, and set it to be cleared by the server.
     const loginStateCookie: AppRouterLoginStateCookie | null = getLoginStateCookie(request);
     if (!loginStateCookie) {
-      return { type: CallbackResultType.REDIRECT_REQUIRED, redirectUrl: tenantLoginUrl };
+      return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'missing_login_state' };
     }
 
     const loginState: LoginState = await decryptLoginState(loginStateCookie.value, loginStateSecret);
@@ -165,11 +164,11 @@ export class AppRouterAuthHandler {
 
     // Check for any potential error conditions
     if (paramState !== cookieState) {
-      return { type: CallbackResultType.REDIRECT_REQUIRED, redirectUrl: tenantLoginUrl };
+      return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'invalid_login_state' };
     }
     if (error) {
       if (error.toLowerCase() === LOGIN_REQUIRED_ERROR) {
-        return { type: CallbackResultType.REDIRECT_REQUIRED, redirectUrl: tenantLoginUrl };
+        return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'login_required' };
       }
       throw new WristbandError(error, errorDescription || '');
     }
@@ -184,7 +183,7 @@ export class AppRouterAuthHandler {
       tokenResponse = await this.wristbandService.getTokens(code, redirectUri, codeVerifier);
     } catch (err: unknown) {
       if (err instanceof InvalidGrantError) {
-        return { type: CallbackResultType.REDIRECT_REQUIRED, redirectUrl: tenantLoginUrl };
+        return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'invalid_grant' };
       }
       throw new WristbandError('unexpected_error', 'Unexpected error', err instanceof Error ? err : undefined);
     }
@@ -215,7 +214,7 @@ export class AppRouterAuthHandler {
       tenantName: resolvedTenantName,
       userinfo,
     };
-    return { type: CallbackResultType.COMPLETED, callbackData };
+    return { type: 'completed', callbackData };
   }
 
   async logout(request: NextRequest, logoutConfig: LogoutConfig = {}): Promise<NextResponse> {

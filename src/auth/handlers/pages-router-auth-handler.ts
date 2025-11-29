@@ -3,7 +3,6 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import {
   LoginConfig,
   CallbackData,
-  CallbackResultType,
   LogoutConfig,
   LoginState,
   CallbackResult,
@@ -147,7 +146,7 @@ export class PagesRouterAuthHandler {
     // Make sure the login state cookie exists, extract it, and set it to be cleared by the server.
     const loginStateCookie: string = getAndClearLoginStateCookie(request, response, dangerouslyDisableSecureCookies);
     if (!loginStateCookie) {
-      return { type: CallbackResultType.REDIRECT_REQUIRED, redirectUrl: tenantLoginUrl };
+      return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'missing_login_state' };
     }
 
     const loginState: LoginState = await decryptLoginState(loginStateCookie, loginStateSecret);
@@ -155,11 +154,11 @@ export class PagesRouterAuthHandler {
 
     // Check for any potential error conditions
     if (paramState !== cookieState) {
-      return { type: CallbackResultType.REDIRECT_REQUIRED, redirectUrl: tenantLoginUrl };
+      return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'invalid_login_state' };
     }
     if (error) {
       if (error.toLowerCase() === LOGIN_REQUIRED_ERROR) {
-        return { type: CallbackResultType.REDIRECT_REQUIRED, redirectUrl: tenantLoginUrl };
+        return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'login_required' };
       }
       throw new WristbandError(error, errorDescription || '');
     }
@@ -174,7 +173,7 @@ export class PagesRouterAuthHandler {
       tokenResponse = await this.wristbandService.getTokens(code, redirectUri, codeVerifier);
     } catch (err: unknown) {
       if (err instanceof InvalidGrantError) {
-        return { type: CallbackResultType.REDIRECT_REQUIRED, redirectUrl: tenantLoginUrl };
+        return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'invalid_grant' };
       }
       throw new WristbandError('unexpected_error', 'Unexpected error', err instanceof Error ? err : undefined);
     }
@@ -204,7 +203,7 @@ export class PagesRouterAuthHandler {
       tenantName: resolvedTenantName,
       userinfo,
     };
-    return { type: CallbackResultType.COMPLETED, callbackData };
+    return { type: 'completed', callbackData };
   }
 
   async logout(

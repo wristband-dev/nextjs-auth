@@ -1,6 +1,3 @@
-/* eslint-disable no-underscore-dangle */
-/* eslint-disable import/no-extraneous-dependencies */
-
 import httpMocks, { createMocks, MockResponse } from 'node-mocks-http';
 
 import { NextApiRequest, NextApiResponse } from 'next';
@@ -236,6 +233,63 @@ describe('Callback Errors', () => {
     }
   });
 
+  test('State mismatch returns redirect with invalid_login_state reason', async () => {
+    // Mock login state with different state value
+    const loginState: LoginState = {
+      codeVerifier: 'codeVerifier',
+      redirectUri: REDIRECT_URI,
+      state: 'expected_state',
+    };
+    const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+    // Create mock request and response
+    const { req, res } = createMocks({
+      method: 'GET',
+      url: `${REDIRECT_URI}`,
+      query: { state: 'wrong_state', code: 'code', tenant_domain: 'devs4you' },
+      cookies: { 'login#wrong_state#1234567890': encryptedLoginState },
+    });
+    const mockReq = req as unknown as NextApiRequest;
+    const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+    const result = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+
+    expect(result.type).toBe('redirect_required');
+    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_domain=devs4you`);
+    expect(result.reason).toBe('invalid_login_state');
+  });
+
+  test('Login required error returns redirect with login_required reason', async () => {
+    // Mock login state
+    const loginState: LoginState = {
+      codeVerifier: 'codeVerifier',
+      redirectUri: REDIRECT_URI,
+      state: 'state',
+    };
+    const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+    // Create mock request and response
+    const { req, res } = createMocks({
+      method: 'GET',
+      url: `${REDIRECT_URI}`,
+      query: {
+        state: 'state',
+        error: 'login_required',
+        error_description: 'Session expired',
+        tenant_domain: 'devs4you',
+      },
+      cookies: { 'login#state#1234567890': encryptedLoginState },
+    });
+    const mockReq = req as unknown as NextApiRequest;
+    const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+    const result = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+
+    expect(result.type).toBe('redirect_required');
+    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_domain=devs4you`);
+    expect(result.reason).toBe('login_required');
+  });
+
   test('InvalidGrantError during token exchange redirects to login', async () => {
     // Mock login state
     const loginState: LoginState = {
@@ -274,8 +328,9 @@ describe('Callback Errors', () => {
 
     const result = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
 
-    expect(result.type).toBe('REDIRECT_REQUIRED');
+    expect(result.type).toBe('redirect_required');
     expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_domain=devs4you`);
+    expect(result.reason).toBe('invalid_grant');
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
@@ -327,6 +382,23 @@ describe('Callback Errors', () => {
     }
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('Missing login state cookie returns redirect with missing_login_state reason', async () => {
+    // Create mock request and response with no cookies
+    const { req, res } = createMocks({
+      method: 'GET',
+      url: `${REDIRECT_URI}`,
+      query: { state: 'state', code: 'code', tenant_domain: 'devs4you' },
+    });
+    const mockReq = req as unknown as NextApiRequest;
+    const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+    const result = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+
+    expect(result.type).toBe('redirect_required');
+    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_domain=devs4you`);
+    expect(result.reason).toBe('missing_login_state');
   });
 
   describe('Redirect to Application-level Login', () => {

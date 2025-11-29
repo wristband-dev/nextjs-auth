@@ -50,32 +50,54 @@ export type LoginConfig = {
 };
 
 /**
- * Enum representing different possible results from the execution of the callback handler.
+ * String literal type representing different possible results from the execution of the callback handler.
+ *
+ * @remarks
+ * - `'completed'`: Indicates that the callback is successfully completed and data is available for creating a session.
+ * - `'redirect_required'`: Indicates that a redirect is required, generally to a login route or page.
  */
-export enum CallbackResultType {
-  /**
-   * Indicates that the callback is successfully completed and data is available for creating a session.
-   */
-  COMPLETED = 'COMPLETED',
-  /**
-   * Indicates that a redirect is required, generally to a login route or page.
-   */
-  REDIRECT_REQUIRED = 'REDIRECT_REQUIRED',
-}
+export type CallbackResultType = 'completed' | 'redirect_required';
+
+/**
+ * Reason why callback processing failed and requires a redirect to retry authentication.
+ *
+ * @remarks
+ * - `missing_login_state`: Login state cookie was not found (cookie expired or bookmarked callback URL)
+ * - `invalid_login_state`: Login state validation failed (possible CSRF attack or cookie tampering)
+ * - `login_required`: Wristband returned a login_required error (session expired or max_age elapsed)
+ * - `invalid_grant`: Authorization code was invalid, expired, or already used
+ */
+export type CallbackFailureReason = 'missing_login_state' | 'invalid_login_state' | 'login_required' | 'invalid_grant';
 
 /**
  * Represents the result of the callback execution after authentication. It can contain the set of callback
  * data necessary for creating an authenticated session.
- * @typedef {Object} CallbackResult
- * @property {CallbackData} [callbackData] The callback data received after authentication (COMPLETED only).
- * @property {string} [redirectUrl] The URL to redirect to (REDIRECT_REQUIRED only).
- * @property {CallbackResultType} type Enum representing the end result of callback execution.
+ *
+ * This is a discriminated union type based on the `type` field:
+ * - When `type` is `'completed'`, `callbackData` is present and `redirectUrl` is never present
+ * - When `type` is `'redirect_required'`, `redirectUrl` is present and `callbackData` is never present
  */
-export interface CallbackResult {
-  callbackData?: CallbackData;
-  redirectUrl?: string;
-  type: CallbackResultType;
-}
+export type CallbackResult =
+  | {
+      /** The callback data received after authentication */
+      callbackData: CallbackData;
+      /** Never present when type is completed */
+      reason?: never;
+      /** Never present when type is completed */
+      redirectUrl?: never;
+      /** Indicates successful completion with callback data */
+      type: 'completed';
+    }
+  | {
+      /** Never present when type is redirect_required */
+      callbackData?: never;
+      /** Why the redirect is required */
+      reason: CallbackFailureReason;
+      /** The URL to redirect to */
+      redirectUrl: string;
+      /** Indicates a redirect is required */
+      type: 'redirect_required';
+    };
 
 /**
  * Represents the token data received after authentication.

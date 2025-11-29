@@ -29,6 +29,7 @@
 - [UserInfo Type Changes](#userinfo-type-changes)
 - [LoginConfig Property Rename](#loginconfig-property-rename)
 - [CallbackData Property Changes](#callbackdata-property-changes)
+- [CallbackResultType Changes](#callbackresulttype-changes)
 - [LogoutConfig Property Rename](#logoutconfig-property-rename)
 - [Optional: Built-in Session Management](#optional-built-in-session-management)
 
@@ -150,6 +151,43 @@ const tenantName = callbackData.tenantName;
 // Access userinfo with new camelCase properties
 const userId = callbackData.userinfo.userId;
 const tenantId = callbackData.userinfo.tenantId;
+```
+
+<br>
+
+## CallbackResultType Changes
+
+The `CallbackResultType` enum has been replaced with a string literal union type for better TypeScript ergonomics and consistency with modern TypeScript patterns.
+
+**Before (v3.x):**
+```typescript
+import { CallbackResultType } from '@wristband/nextjs-auth';
+
+const callbackResult = await wristbandAuth.appRouter.callback(req);
+const { type } = callbackResult;
+
+if (type === CallbackResultType.REDIRECT_REQUIRED) {
+  return await wristbandAuth.appRouter.createCallbackResponse(req, redirectUrl);
+}
+
+if (type === CallbackResultType.COMPLETED) {
+  // Handle successful authentication
+}
+```
+
+**After (v4.x):**
+```typescript
+// No need to import CallbackResultType anymore
+const callbackResult = await wristbandAuth.appRouter.callback(req);
+const { type } = callbackResult;
+
+if (type === 'redirect_required') {
+  return await wristbandAuth.appRouter.createCallbackResponse(req, redirectUrl);
+}
+
+if (type === 'completed') {
+  // Handle successful authentication
+}
 ```
 
 <br>

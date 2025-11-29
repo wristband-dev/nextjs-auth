@@ -1,6 +1,3 @@
-/* eslint-disable no-underscore-dangle */
-/* eslint-disable import/no-extraneous-dependencies */
-
 import httpMocks, { createMocks } from 'node-mocks-http';
 
 import { LoginState } from '../../src/types';
@@ -206,6 +203,52 @@ describe('Callback Errors', () => {
     }
   });
 
+  test('State mismatch returns redirect with invalid_login_state reason', async () => {
+    // Mock login state with different state value
+    const loginState: LoginState = {
+      codeVerifier: 'codeVerifier',
+      redirectUri: REDIRECT_URI,
+      state: 'expected_state', // ← This is INSIDE the encrypted cookie
+    };
+    const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+    // Create mock request with mismatched state
+    const req = httpMocks.createRequest({
+      url: `${REDIRECT_URI}?state=wrong_state&code=code&tenant_domain=devs4you`,
+      headers: { cookie: `login#wrong_state#1234567890=${encryptedLoginState}` },
+    });
+    const mockNextRequest = createMockNextRequest(req);
+
+    const result = await wristbandAuth.appRouter.callback(mockNextRequest);
+
+    expect(result.type).toBe('redirect_required');
+    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_domain=devs4you`);
+    expect(result.reason).toBe('invalid_login_state');
+  });
+
+  test('Login required error returns redirect with login_required reason', async () => {
+    // Mock login state
+    const loginState: LoginState = {
+      codeVerifier: 'codeVerifier',
+      redirectUri: REDIRECT_URI,
+      state: 'state',
+    };
+    const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+    // Create mock request with login_required error
+    const req = httpMocks.createRequest({
+      url: `${REDIRECT_URI}?state=state&error=login_required&error_description=Session%20expired&tenant_domain=devs4you`,
+      headers: { cookie: `login#state#state=${encryptedLoginState}` },
+    });
+    const mockNextRequest = createMockNextRequest(req);
+
+    const result = await wristbandAuth.appRouter.callback(mockNextRequest);
+
+    expect(result.type).toBe('redirect_required');
+    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_domain=devs4you`);
+    expect(result.reason).toBe('login_required');
+  });
+
   test('InvalidGrantError during token exchange redirects to login', async () => {
     // Mock login state
     const loginState: LoginState = {
@@ -241,8 +284,9 @@ describe('Callback Errors', () => {
 
     const result = await wristbandAuth.appRouter.callback(mockNextRequest);
 
-    expect(result.type).toBe('REDIRECT_REQUIRED');
+    expect(result.type).toBe('redirect_required');
     expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_domain=devs4you`);
+    expect(result.reason).toBe('invalid_grant');
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 

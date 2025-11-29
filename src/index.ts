@@ -36,7 +36,7 @@ export {
   type AuthStrategy,
   type CallbackData,
   type CallbackResult,
-  CallbackResultType,
+  type CallbackResultType,
   createWristbandAuth,
   destroySessionWithCookies,
   getMutableSessionFromCookies,
