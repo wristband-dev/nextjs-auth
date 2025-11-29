@@ -1215,10 +1215,10 @@ The SDK will validate that the incoming state matches the Login State Cookie, an
 
 | CallbackResult Field | Type | Description |
 | -------------------- | ---- | ----------- |
-| callbackData | CallbackData or `undefined` | The callback data received after authentication (`completed` result only). |
+| callbackData | CallbackData or `undefined` | The callback data received after authentication (`'completed'` result only). |
 | reason | CallbackFailureReason or `undefined` | The reason why the callback did not complete successfully (`'redirect_required'` only). |
-| redirectUrl | string or `undefined` | The URL that the user should redirected to (`redirect_required` only). |
-| type | CallbackResultType | String literal representing the end result of callback execution.<br><br> Possible values: `completed` or `redirect_required`. |
+| redirectUrl | string or `undefined` | The URL that the user should redirected to (`'redirect_required'` only). |
+| type | CallbackResultType | String literal representing the end result of callback execution.<br><br> Possible values: `'completed'` or `'redirect_required'`. |
 
 <br>
 
@@ -1226,8 +1226,8 @@ The `CallbackResultType` can be one of the following string literal values:
 
 | CallbackResultType | Description |
 | ------------------ | ----------- |
-| `completed` | Indicates that the callback is successfully completed and data is available for creating a session. |
-| `redirect_required` | Indicates that a redirect is required, generally to a login route or page. |
+| `'completed'` | Indicates that the callback is successfully completed and data is available for creating a session. |
+| `'redirect_required'` | Indicates that a redirect is required, generally to a login route or page. |
 
 <br>
 
@@ -1236,13 +1236,13 @@ When the callback returns a `'redirect_required'` result, the `reason` field ind
 | CallbackFailureReason | Description |
 | --------------------- | ----------- |
 | `'missing_login_state'` | Login state cookie was not found (cookie expired or bookmarked callback URL). |
-| `'invalid_login_state'` | Login state validation failed (security check to prevent CSRF attacks). |
+| `'invalid_login_state'` | Login state validation failed (possible CSRF attack or cookie tampering) |
 | `'login_required'` | Wristband returned a login_required error (session expired or max_age elapsed). |
 | `'invalid_grant'` | Authorization code was invalid, expired, or already used. |
 
 <br>
 
-When the callback returns a `completed` result, all of the token and userinfo data also gets returned. This enables your application to create an application session for the user and then redirect them back into your application. The `CallbackData` is defined as follows:
+When the callback returns a `'completed'` result, all of the token and userinfo data also gets returned. This enables your application to create an application session for the user and then redirect them back into your application. The `CallbackData` is defined as follows:
 
 | CallbackData Field | Type | Description |
 | ------------------ | ---- | ----------- |
