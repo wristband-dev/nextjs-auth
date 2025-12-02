@@ -28,7 +28,7 @@ import {
 } from '../../utils/auth/app-router-utils';
 import { refreshExpiredToken } from '../../utils/auth/common-utils';
 import { decryptLoginState, encryptLoginState } from '../../utils/crypto';
-import { LOGIN_REQUIRED_ERROR, REDIRECT_RESPONSE_INIT, TENANT_DOMAIN_TOKEN } from '../../utils/constants';
+import { LOGIN_REQUIRED_ERROR, REDIRECT_RESPONSE_INIT, TENANT_PLACEHOLDER_REGEX } from '../../utils/constants';
 import { WristbandService } from '../../wristband-service';
 
 export class AppRouterAuthHandler {
@@ -138,17 +138,17 @@ export class AppRouterAuthHandler {
     const resolvedTenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
     if (!resolvedTenantName) {
       throw new WristbandError(
-        parseTenantFromRootDomain ? 'missing_tenant_subdomain' : 'missing_tenant_domain',
+        parseTenantFromRootDomain ? 'missing_tenant_subdomain' : 'missing_tenant_name',
         parseTenantFromRootDomain
           ? 'Callback request URL is missing a tenant subdomain'
-          : 'Callback request is missing the [tenant_domain] query parameter from Wristband'
+          : 'Callback request is missing the [tenant_name] query parameter from Wristband'
       );
     }
 
     // Construct the tenant login URL in the event we have to redirect to the login endpoint
     let tenantLoginUrl: string = parseTenantFromRootDomain
-      ? loginUrl.replace(TENANT_DOMAIN_TOKEN, resolvedTenantName)
-      : `${loginUrl}?tenant_domain=${resolvedTenantName}`;
+      ? loginUrl.replace(TENANT_PLACEHOLDER_REGEX, resolvedTenantName)
+      : `${loginUrl}?tenant_name=${resolvedTenantName}`;
     if (tenantCustomDomainParam) {
       tenantLoginUrl = `${tenantLoginUrl}${parseTenantFromRootDomain ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
     }
@@ -267,7 +267,7 @@ export class AppRouterAuthHandler {
     }
 
     // 4a) If tenant subdomains are enabled, get the tenant domain from the host.
-    // 4b) Otherwise, if tenant subdomains are not enabled, then look for it in the tenant_domain query param.
+    // 4b) Otherwise, if tenant subdomains are not enabled, then look for it in the tenant_name query param.
     if (tenantName) {
       return NextResponse.redirect(
         `https://${tenantName}${separator}${wristbandApplicationVanityDomain}${logoutPath}`,

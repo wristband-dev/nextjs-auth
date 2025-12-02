@@ -604,7 +604,7 @@ describe('middleware-utils', () => {
       });
 
       const onPageUnauthenticated = resolveOnPageUnauthenticated(config, 'https://example.com/api/auth/login');
-      const response = await onPageUnauthenticated(mockRequest);
+      const response = await onPageUnauthenticated(mockRequest, 'not_authenticated');
 
       expect(response).toBeInstanceOf(NextResponse);
       expect(response.status).toBe(302);
@@ -624,13 +624,13 @@ describe('middleware-utils', () => {
 
       const onPageUnauthenticated = resolveOnPageUnauthenticated(
         config,
-        'https://{tenant_domain}.app.com/api/auth/login'
+        'https://{tenant_name}.app.com/api/auth/login'
       );
-      const response = await onPageUnauthenticated(mockRequest);
+      const response = await onPageUnauthenticated(mockRequest, 'not_authenticated');
 
       const location = response.headers.get('location');
       expect(location).toContain('/api/auth/login');
-      expect(location).not.toContain('{tenant_domain}');
+      expect(location).not.toContain('{tenant_name}');
     });
 
     it('should preserve current domain when creating redirect URL', async () => {
@@ -643,7 +643,7 @@ describe('middleware-utils', () => {
 
       const customRequest = new NextRequest('https://tenant1.myapp.com/settings');
       const onPageUnauthenticated = resolveOnPageUnauthenticated(config, 'https://example.com/auth/login');
-      const response = await onPageUnauthenticated(customRequest);
+      const response = await onPageUnauthenticated(customRequest, 'not_authenticated');
 
       const location = response.headers.get('location');
       expect(location).toContain('tenant1.myapp.com');
@@ -660,7 +660,7 @@ describe('middleware-utils', () => {
 
       const requestWithQueryParams = new NextRequest('https://example.com/dashboard?foo=bar&baz=qux');
       const onPageUnauthenticated = resolveOnPageUnauthenticated(config, 'https://example.com/api/auth/login');
-      const response = await onPageUnauthenticated(requestWithQueryParams);
+      const response = await onPageUnauthenticated(requestWithQueryParams, 'not_authenticated');
 
       const location = response.headers.get('location');
       expect(location).toContain('return_url=https%3A%2F%2Fexample.com%2Fdashboard%3Ffoo%3Dbar%26baz%3Dqux');
@@ -675,11 +675,11 @@ describe('middleware-utils', () => {
       });
 
       const onPageUnauthenticated1 = resolveOnPageUnauthenticated(config, 'https://example.com/login');
-      const response1 = await onPageUnauthenticated1(mockRequest);
+      const response1 = await onPageUnauthenticated1(mockRequest, 'not_authenticated');
       expect(response1.headers.get('location')).toContain('/login?');
 
       const onPageUnauthenticated2 = resolveOnPageUnauthenticated(config, 'https://example.com/auth/v2/login');
-      const response2 = await onPageUnauthenticated2(mockRequest);
+      const response2 = await onPageUnauthenticated2(mockRequest, 'not_authenticated');
       expect(response2.headers.get('location')).toContain('/auth/v2/login?');
     });
 
@@ -693,8 +693,7 @@ describe('middleware-utils', () => {
 
       const rootRequest = new NextRequest('https://example.com/');
       const onPageUnauthenticated = resolveOnPageUnauthenticated(config, 'https://example.com/api/auth/login');
-      const response = await onPageUnauthenticated(rootRequest);
-
+      const response = await onPageUnauthenticated(rootRequest, 'not_authenticated');
       const location = response.headers.get('location');
       expect(location).toContain('return_url=https%3A%2F%2Fexample.com%2F');
     });
@@ -708,7 +707,7 @@ describe('middleware-utils', () => {
       });
 
       const onPageUnauthenticated = resolveOnPageUnauthenticated(config, 'not-a-valid-url');
-      const response = await onPageUnauthenticated(mockRequest);
+      const response = await onPageUnauthenticated(mockRequest, 'not_authenticated');
 
       const location = response.headers.get('location');
       expect(location).toContain('/api/auth/login');

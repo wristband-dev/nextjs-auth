@@ -7,7 +7,7 @@ import {
   createLoginStateCookie,
   getAuthorizeUrl,
   getAndClearLoginStateCookie,
-} from '../../../src/utils/auth/page-router-utils';
+} from '../../../src/utils/auth/pages-router-utils';
 import { LoginStateMapConfig } from '../../../src/types';
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
 import * as commonUtils from '../../../src/utils/crypto';
@@ -64,13 +64,67 @@ describe('Page Router Utils', () => {
       const result = parseTenantSubdomain(req, 'example.com');
       expect(result).toBe('');
     });
+
+    it('should strip port from host header', () => {
+      const req = {
+        headers: { host: 'tenant1.example.com:3000' },
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('tenant1');
+    });
+
+    it('should strip port from host header with complex subdomain', () => {
+      const req = {
+        headers: { host: 'my-tenant-123.example.com:8080' },
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('my-tenant-123');
+    });
+
+    it('should handle host without port (no change)', () => {
+      const req = {
+        headers: { host: 'tenant1.example.com' },
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('tenant1');
+    });
+
+    it('should return empty string when root domain does not match after stripping port', () => {
+      const req = {
+        headers: { host: 'tenant1.otherdomain.com:3000' },
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('');
+    });
+
+    it('should strip port when accessing root domain directly', () => {
+      const req = {
+        headers: { host: 'example.com:3000' },
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('');
+    });
+
+    it('should return empty string when host header is missing', () => {
+      const req = {
+        headers: {},
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('');
+    });
   });
 
   describe('resolveTenantName', () => {
     it('should return tenant subdomain when parseTenantFromRootDomain is provided', () => {
       const req = {
         headers: { host: 'tenant1.example.com' },
-        query: { tenant_domain: 'query-tenant' },
+        query: { tenant_name: 'query-tenant' },
       } as unknown as NextApiRequest;
 
       const result = resolveTenantName(req, 'example.com');
@@ -80,24 +134,24 @@ describe('Page Router Utils', () => {
     it('should return empty string when no subdomain found and parseTenantFromRootDomain is provided', () => {
       const req = {
         headers: { host: 'example.com' },
-        query: { tenant_domain: 'query-tenant' },
+        query: { tenant_name: 'query-tenant' },
       } as unknown as NextApiRequest;
 
       const result = resolveTenantName(req, 'example.com');
       expect(result).toBe('');
     });
 
-    it('should return tenant_domain query param when parseTenantFromRootDomain is empty', () => {
+    it('should return tenant_name query param when parseTenantFromRootDomain is empty', () => {
       const req = {
         headers: { host: 'tenant1.example.com' },
-        query: { tenant_domain: 'query-tenant' },
+        query: { tenant_name: 'query-tenant' },
       } as unknown as NextApiRequest;
 
       const result = resolveTenantName(req, '');
       expect(result).toBe('query-tenant');
     });
 
-    it('should return empty string when no tenant_domain query param and no parseTenantFromRootDomain', () => {
+    it('should return empty string when no tenant_name query param and no parseTenantFromRootDomain', () => {
       const req = {
         headers: { host: 'example.com' },
         query: {},
@@ -107,15 +161,45 @@ describe('Page Router Utils', () => {
       expect(result).toBe('');
     });
 
-    it('should throw error when multiple tenant_domain query params are provided', () => {
+    it('should throw error when multiple tenant_name query params are provided', () => {
       const req = {
         headers: { host: 'example.com' },
-        query: { tenant_domain: ['tenant1', 'tenant2'] },
+        query: { tenant_name: ['tenant1', 'tenant2'] },
       } as unknown as NextApiRequest;
 
       expect(() => {
         return resolveTenantName(req, '');
-      }).toThrow('More than one [tenant_domain] query parameter was encountered');
+      }).toThrow('More than one [tenant_name] query parameter was encountered');
+    });
+
+    it('should strip port when resolving tenant from subdomain', () => {
+      const req = {
+        headers: { host: 'tenant1.example.com:3000' },
+        query: {},
+      } as NextApiRequest;
+
+      const result = resolveTenantName(req, 'example.com');
+      expect(result).toBe('tenant1');
+    });
+
+    it('should prioritize subdomain over query param even with port in host', () => {
+      const req = {
+        headers: { host: 'subdomain-tenant.example.com:3000' },
+        query: { tenant_name: 'query-tenant' },
+      } as unknown as NextApiRequest;
+
+      const result = resolveTenantName(req, 'example.com');
+      expect(result).toBe('subdomain-tenant');
+    });
+
+    it('should return empty string when subdomain not found even with port', () => {
+      const req = {
+        headers: { host: 'example.com:3000' },
+        query: { tenant_name: 'query-tenant' },
+      } as unknown as NextApiRequest;
+
+      const result = resolveTenantName(req, 'example.com');
+      expect(result).toBe('');
     });
   });
 

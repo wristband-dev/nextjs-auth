@@ -28,11 +28,11 @@ describe('Login Errors', () => {
     });
   });
 
-  test('Multiple tenant_domain params', async () => {
+  test('Multiple tenant_name params', async () => {
     // Create mock request
     const { req } = createMocks({
       method: 'GET',
-      url: `${loginUrl}?tenant_domain=tenant1&tenant_domain=tenant2`,
+      url: `${loginUrl}?tenant_name=tenant1&tenant_name=tenant2`,
     });
     const mockNextRequest = createMockNextRequest(req);
 
@@ -41,7 +41,7 @@ describe('Login Errors', () => {
       fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
-      expect(error.message).toBe('More than one [tenant_domain] query parameter was encountered');
+      expect(error.message).toBe('More than one [tenant_name] query parameter was encountered');
     }
   });
 
@@ -66,7 +66,7 @@ describe('Login Errors', () => {
     // Create mock request
     const { req } = createMocks({
       method: 'GET',
-      url: `${loginUrl}?tenant_domain=tenant1&return_url=url1&return_url=url2`,
+      url: `${loginUrl}?tenant_name=tenant1&return_url=url1&return_url=url2`,
     });
     const mockNextRequest = createMockNextRequest(req);
 
@@ -83,7 +83,7 @@ describe('Login Errors', () => {
     // Create mock request
     const { req } = createMocks({
       method: 'GET',
-      url: `${loginUrl}?tenant_domain=tenant1&login_hint=hint1&login_hint=hint2`,
+      url: `${loginUrl}?tenant_name=tenant1&login_hint=hint1&login_hint=hint2`,
     });
     const mockNextRequest = createMockNextRequest(req);
 
@@ -100,7 +100,7 @@ describe('Login Errors', () => {
     // Create mock request
     const { req } = createMocks({
       method: 'GET',
-      url: `${loginUrl}?tenant_domain=test`,
+      url: `${loginUrl}?tenant_name=test`,
     });
     const mockNextRequest = createMockNextRequest(req);
 

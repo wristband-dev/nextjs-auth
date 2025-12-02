@@ -16,8 +16,17 @@ function parseCookies(cookieHeader: string | null): Record<string, string> {
 
 export function parseTenantSubdomain(request: NextRequest, parseTenantFromRootDomain: string): string {
   const host = request.headers.get('host');
-  return host!.substring(host!.indexOf('.') + 1) === parseTenantFromRootDomain
-    ? host!.substring(0, host!.indexOf('.'))
+
+  // Should never happen (defensive measure)
+  if (!host) {
+    return '';
+  }
+
+  // Strip off the port if it exists
+  const hostname = host.split(':')[0];
+
+  return hostname.substring(hostname.indexOf('.') + 1) === parseTenantFromRootDomain
+    ? hostname.substring(0, hostname.indexOf('.'))
     : '';
 }
 
@@ -26,13 +35,13 @@ export function resolveTenantName(request: NextRequest, parseTenantFromRootDomai
     return parseTenantSubdomain(request, parseTenantFromRootDomain) || '';
   }
 
-  const tenantDomainParam = request.nextUrl.searchParams.getAll('tenant_domain');
+  const tenantNameParam = request.nextUrl.searchParams.getAll('tenant_name');
 
-  if (tenantDomainParam.length > 1) {
-    throw new TypeError('More than one [tenant_domain] query parameter was encountered');
+  if (tenantNameParam.length > 1) {
+    throw new TypeError('More than one [tenant_name] query parameter was encountered');
   }
 
-  return tenantDomainParam[0] || '';
+  return tenantNameParam[0] || '';
 }
 
 export function resolveTenantCustomDomainParam(request: NextRequest): string {
@@ -150,7 +159,7 @@ export async function getAuthorizeUrl(
   // Domain priority order resolution:
   // 1)  tenant_custom_domain query param
   // 2a) tenant subdomain
-  // 2b) tenant_domain query param
+  // 2b) tenant_name query param
   // 3)  defaultTenantCustomDomain login config
   // 4)  defaultTenantName login config
   if (config.tenantCustomDomain) {

@@ -38,7 +38,7 @@ export type AuthConfig = {
  * @property {string} [defaultTenantCustomDomain] An optional default tenant custom domain to use for the login request in the
  * event the tenant custom domain cannot be found in the "tenant_custom_domain" request query parameter.
  * @property {string} [defaultTenantName] An optional default tenant name to use for the login request in the
- * event the tenant domain cannot be found in either the subdomain or the "tenant_domain" request query parameter (depending on
+ * event the tenant name cannot be found in either the subdomain or the "tenant_name" request query parameter (depending on
  * your subdomain configuration).
  * @property {string} [returnUrl] The URL to return to after authentication is completed. If a value is provided, then it takes precence over the `return_url` request query parameter.
  */
@@ -276,9 +276,9 @@ export type LogoutConfig = {
  * @typedef {Object} SdkConfiguration
  * @property {string|null} customApplicationLoginPageUrl Custom Application-Level Login Page URL (i.e. Tenant Discovery Page URL). This value is only needed if you are self-hosting the application login page. When null, the SDK will use your Wristband-hosted Application-Level Login page URL.
  * @property {boolean} isApplicationCustomDomainActive Indicates whether your Wristband application is configured with an application-level custom domain that is active. This tells the SDK which URL format to use when constructing the Wristband Authorize Endpoint URL.
- * @property {string} loginUrl The URL of your application's login endpoint that redirects to Wristband to initialize the login flow. If using tenant subdomains, this value must contain the `{tenant_domain}` token.
+ * @property {string} loginUrl The URL of your application's login endpoint that redirects to Wristband to initialize the login flow. If using tenant subdomains, this value must contain the `{tenant_name}` placeholder.
  * @property {string|null} loginUrlTenantDomainSuffix The domain suffix used when constructing login URLs with tenant subdomains. This value is null when tenant subdomains are not being used.
- * @property {string} redirectUri The URI that Wristband will redirect to after authenticating a user. This should point to your application's callback endpoint. If using tenant subdomains, this value must contain the `{tenant_domain}` token.
+ * @property {string} redirectUri The URI that Wristband will redirect to after authenticating a user. This should point to your application's callback endpoint. If using tenant subdomains, this value must contain the `{tenant_name}` placeholder.
  */
 export type SdkConfiguration = {
   customApplicationLoginPageUrl: string | null;

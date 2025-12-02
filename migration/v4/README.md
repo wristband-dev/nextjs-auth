@@ -26,6 +26,7 @@
 ## Table of Contents
 
 - [WristbandAuth API Rename](#wristbandauth-api-rename)
+- [Tenant Domain Query Parameter and URL Placeholder Rename](#tenant-domain-query-parameter-and-url-placeholder-rename)
 - [UserInfo Type Changes](#userinfo-type-changes)
 - [LoginConfig Property Rename](#loginconfig-property-rename)
 - [CallbackData Property Changes](#callbackdata-property-changes)
@@ -54,6 +55,56 @@ const callbackResult = await wristbandAuth.pagesRouter.callback(req, res);
 ```
 
 This change ensures consistency with Next.js documentation and terminology, which refers to this routing paradigm as the "Pages Router" (plural).
+
+<br>
+
+## Tenant Domain Query Parameter and URL Placeholder Rename
+
+The `tenant_domain` query parameter has been renamed to `tenant_name` as part of a broader standardization across the Wristband platform. Additionally, the `{tenant_domain}` URL placeholder in `loginUrl` and `redirectUri` configurations has been deprecated in favor of `{tenant_name}`.
+
+**Query Parameter Changes:**
+
+**Before (v3.x):**
+```typescript
+// Frontend redirect to login
+window.location.href = '/api/auth/login?tenant_domain=customer01';
+
+// Logout with tenant domain
+window.location.href = '/api/auth/logout?tenant_domain=customer01';
+```
+
+**After (v4.x):**
+```typescript
+// Frontend redirect to login
+window.location.href = '/api/auth/login?tenant_name=customer01';
+
+// Logout with tenant name
+window.location.href = '/api/auth/logout?tenant_name=customer01';
+```
+
+**URL Placeholder Changes:**
+
+**Before (v3.x):**
+```typescript
+const wristbandAuth = createWristbandAuth({
+  // ... other config
+  loginUrl: "https://{tenant_domain}.yourapp.com/auth/login",
+  redirectUri: "https://{tenant_domain}.yourapp.com/auth/callback",
+});
+```
+
+**After (v4.x):**
+```typescript
+const wristbandAuth = createWristbandAuth({
+  // ... other config
+  loginUrl: "https://{tenant_name}.yourapp.com/auth/login",
+  redirectUri: "https://{tenant_name}.yourapp.com/auth/callback",
+});
+```
+
+> **⚠️ Important:**
+>
+> The old `{tenant_domain}` placeholder continue to work for backward compatibility, but it is now deprecated and will be removed in a future major version. All new code should use `{tenant_name}`.
 
 <br>
 

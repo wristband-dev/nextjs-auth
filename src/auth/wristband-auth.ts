@@ -37,7 +37,7 @@ export interface WristbandAuth {
      * - return_url: The location of where to send users after authenticating.
      * - tenant_custom_domain: The tenant custom domain for the tenant that the user belongs to, if applicable. Should be
      * used as the domain of the authorize URL when present.
-     * - tenant_domain: The domain name of the tenant the user belongs to. Should be used in the tenant vanity domain of
+     * - tenant_: The name of the tenant the user belongs to. Should be used in the tenant vanity domain of
      * the authorize URL when not utilizing tenant subdomains nor tenant custom domains.
      *
      * @param {NextRequest} request The request object.
@@ -59,7 +59,7 @@ export interface WristbandAuth {
      * - tenant_custom_domain: If the tenant has a tenant custom domain defined, then this query parameter will be part
      * of the incoming request to the Callback Endpoint. n the event a redirect to the Login Endpoint is required, then
      * this should be appended as a query parameter when redirecting to the Login Endpoint.
-     * - tenant_domain: The domain name of the tenant the user belongs to. In the event a redirect to the Login Endpoint
+     * - tenant_name: The name of the tenant the user belongs to. In the event a redirect to the Login Endpoint
      * is required and neither tenant subdomains nor tenant custom domains are not being utilized, then this should be
      * appended as a query parameter when redirecting to the Login Endpoint.
      *
@@ -155,7 +155,7 @@ export interface WristbandAuth {
      * - return_url: The location of where to send users after authenticating.
      * - tenant_custom_domain: The tenant custom domain for the tenant that the user belongs to, if applicable. Should be
      * used as the domain of the authorize URL when present.
-     * - tenant_domain: The domain name of the tenant the user belongs to. Should be used in the tenant vanity domain of
+     * - tenant_name: The name of the tenant the user belongs to. Should be used in the tenant vanity domain of
      * the authorize URL when not utilizing tenant subdomains nor tenant custom domains.
      *
      * @param {Request} request The request object.
@@ -178,7 +178,7 @@ export interface WristbandAuth {
      * - tenant_custom_domain: If the tenant has a tenant custom domain defined, then this query parameter will be part
      * of the incoming request to the Callback Endpoint. n the event a redirect to the Login Endpoint is required, then
      * this should be appended as a query parameter when redirecting to the Login Endpoint.
-     * - tenant_domain: The domain name of the tenant the user belongs to. In the event a redirect to the Login Endpoint
+     * - tenant_name: The name of the tenant the user belongs to. In the event a redirect to the Login Endpoint
      * is required and neither tenant subdomains nor tenant custom domains are not being utilized, then this should be
      * appended as a query parameter when redirecting to the Login Endpoint.
      *

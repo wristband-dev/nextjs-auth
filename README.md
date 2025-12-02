@@ -102,7 +102,7 @@ Learn more about Wristband's authentication patterns:
     - [session.saveToResponse()](#sessionsavetoresponseresponse)
     - [session.destroy()](#sessiondestroy)
     - [session.destroyToResponse()](#sessiondestroytoresponseresponse)
-    - [session.getSessionResponse()](#sessiongetsessionresponsemetadata)
+    - [session.getSessionResponse()](#sessiongetsessionresponse)
     - [session.getTokenResponse()](#sessiongettokenresponse)
   - [CSRF Protection](#csrf-protection)
 - [Authentication Middleware](#authentication-middleware)
@@ -583,7 +583,7 @@ In Next.js, middleware (or proxy in Next.js 16+) is the ideal place to centraliz
 
 **What middleware protects:**
 - ✅ **API Routes** (App and Pages Router) - All routes matching `protectedApis` patterns
-- ✅ **Session & Token Endpoints** - `/api/auth/session` and `/api/auth/token` are automatically protected when using `SESSION` strategy (customizable via `sessionConfig.sessionEndpoint` and `sessionConfig.tokenEndpoint` config)
+- ✅ **Session & Token Endpoints** - `/api/auth/session` and `/api/auth/token` are automatically protected when using `'SESSION'` strategy (customizable via `sessionConfig.sessionEndpoint` and `sessionConfig.tokenEndpoint` config)
 - ✅ **Pages** (Pages Router) - Server-rendered pages matching `protectedPages` patterns
 - ✅ **Server Components that are pages** (App Router) - Page components matching `protectedPages` patterns
 
@@ -667,11 +667,11 @@ export const config = {
 The middleware automatically:
 
 - ✅ **Validates authentication** - Checks each auth strategy in order until one succeeds
-- ✅ **Refreshes expired tokens** - When using `SESSION` strategy AND when `refreshToken` and `expiresAt` are present in session
-- ✅ **Extends session expiration** - Rolling session window on each authenticated request (`SESSION` strategy only)
+- ✅ **Refreshes expired tokens** - When using `'SESSION'` strategy AND when `refreshToken` and `expiresAt` are present in session
+- ✅ **Extends session expiration** - Rolling session window on each authenticated request (`'SESSION'` strategy only)
 - ✅ **Returns 401 for API Routes** - Unauthenticated requests to protected API routes
 - ✅ **Redirects pages to login** - Unauthenticated requests to protected pages (customizable via `onPageUnauthenticated`)
-- ✅ **Auto-protects auth endpoints** - Session and Token Endpoints protected by default (`SESSION` strategy only)
+- ✅ **Auto-protects auth endpoints** - Session and Token Endpoints protected by default (`'SESSION'` strategy only)
 - ✅ **Auto-bypasses Server Actions** - Server Action routes skip middleware protection (must manually check auth)
 
 <br>
@@ -1058,7 +1058,7 @@ The `login()` function can also take optional configuration if your application 
 | LoginConfig Field | Type | Required | Description |
 | ----------------- | ---- | -------- | ----------- |
 | customState | JSON | No | Additional state to be saved in the Login State Cookie. Upon successful completion of an auth request/login attempt, your Callback Endpoint will return this custom state (unmodified) as part of the return type. |
-| defaultTenantName | string | No | An optional default tenant name to use for the login request in the event the tenant domain cannot be found in either the subdomain or query parameters (depending on your subdomain configuration). |
+| defaultTenantName | string | No | An optional default tenant name to use for the login request in the event the tenant name cannot be found in either the subdomain or query parameters (depending on your subdomain configuration). |
 | defaultTenantCustomDomain | string | No | An optional default tenant custom domain to use for the login request in the event the tenant custom domain cannot be found in the query parameters. |
 | returnUrl | string | No | The URL to return to after authentication is completed. If a value is provided, then it takes precedence over the `return_url` request query parameter. |
 
@@ -1068,18 +1068,18 @@ Wristband supports various tenant domain configurations, including subdomains an
 
 1. `tenant_custom_domain` query parameter: If provided, this takes top priority.
 2. Tenant subdomain in the URL: Used if subdomains are enabled and the subdomain is present.
-3. `tenant_domain` query parameter: Evaluated if no tenant subdomain is detected.
+3. `tenant_name` query parameter: Evaluated if no tenant subdomain is detected.
 4. `defaultTenantCustomDomain` in LoginConfig: Used if none of the above are present.
 5. `defaultTenantDomain` in LoginConfig: Used as the final fallback.
 
 If none of these are specified, the SDK redirects users to the Application-Level Login (Tenant Discovery) Page.
 
-#### Tenant Domain Query Param
+#### Tenant Name Query Param
 
-If your application does not wish to utilize subdomains for each tenant, you can pass the `tenant_domain` query parameter to your Login Endpoint, and the SDK will be able to make the appropriate redirection to the Wristband Authorize Endpoint.
+If your application does not wish to utilize subdomains for each tenant, you can pass the `tenant_name` query parameter to your Login Endpoint, and the SDK will be able to make the appropriate redirection to the Wristband Authorize Endpoint.
 
 ```sh
-GET https://yourapp.io/api/auth/login?tenant_domain=customer01
+GET https://yourapp.io/api/auth/login?tenant_name=customer01
 ```
 
 Your AuthConfig would look like the following when creating an SDK instance without any subdomains:
@@ -1425,7 +1425,7 @@ Wristband supports various tenant domain configurations, including subdomains an
 2. `tenantName` in LogoutConfig: This takes the next priority if `tenantCustomDomain` is not present.
 3. `tenant_custom_domain` query parameter: Evaluated if present and there is also no LogoutConfig provided for either `tenantCustomDomain` or `tenantName`.
 4. Tenant subdomain in the URL: Used if none of the above are present, and `parseTenantFromRootDomain` is specified, and the subdomain is present in the host.
-5. `tenant_domain` query parameter: Used as the final fallback.
+5. `tenant_name` query parameter: Used as the final fallback.
 
 If none of these are specified, the SDK redirects users to the Application-Level Login (Tenant Discovery) Page.
 
@@ -1445,11 +1445,11 @@ await wristbandAuth.pagesRouter.logout(req, res, { refreshToken: '98yht308hf902h
 await wristbandAuth.appRouter.logout(req, { refreshToken: '98yht308hf902hc90wh09', tenantName: 'customer01' });
 ```
 
-...or you can alternatively pass the `tenant_domain` query parameter in your redirect request to your Logout Endpoint:
+...or you can alternatively pass the `tenant_name` query parameter in your redirect request to your Logout Endpoint:
 
 ```ts
 //
-// Logout Request URL -> "https://yourapp.io/auth/logout?client_id=123&tenant_domain=customer01"
+// Logout Request URL -> "https://yourapp.io/auth/logout?client_id=123&tenant_name=customer01"
 //
 // Pages Router
 await wristbandAuth.pagesRouter.logout(req, res, { refreshToken: '98yht308hf902hc90wh09' });
@@ -1523,7 +1523,7 @@ https://customer01.auth.yourapp.io/api/v1/logout?client_id=123&state=user_initia
 After logout completes, Wristband will redirect to your configured redirect URL (either your Login Endpoint by default, or a custom logout redirect URL if configured) with the `state` parameter included:
 
 ```sh
-https://yourapp.io/auth/login?tenant_domain=customer01&state=user_initiated_logout
+https://yourapp.io/auth/login?tenant_name=customer01&state=user_initiated_logout
 ```
 
 This is useful for tracking logout context, displaying post-logout messages, or handling different logout scenarios. The state value is limited to 512 characters and will be URL-encoded automatically.
@@ -1630,7 +1630,7 @@ const sessionOptions: SessionOptions = {
 | sameSite | `lax` \| `strict` \| `none` | No | `lax` | Cookie SameSite attribute. |
 | path | string | No | `/` | Cookie path. |
 | domain | string | No | `undefined` | Domain for the session cookie. When undefined, the cookie is only sent to the current domain. |
-| enableCsrfProtection | boolean | No | `false` | When enabled, a CSRF token is automatically generated after authentication (via  `session.save()` and other save functions) and is stored in the session. A separate CSRF cookie is also set in addition to the session cookie. If using `createMiddlewareAuth()`, that will also automatically enable CSRF token validaiton for protected API requests when using the `SESSION` strategy. |
+| enableCsrfProtection | boolean | No | `false` | When enabled, a CSRF token is automatically generated after authentication (via  `session.save()` and other save functions) and is stored in the session. A separate CSRF cookie is also set in addition to the session cookie. If using `createMiddlewareAuth()`, that will also automatically enable CSRF token validaiton for protected API requests when using the `'SESSION'` strategy. |
 | csrfCookieName | string | No | `CSRF-TOKEN` | Name of the CSRF cookie (only used when `enableCsrfProtection` is `true`). |
 | csrfCookieDomain | string | No | `undefined` | Domain for the CSRF cookie. Defaults to the `domain` value if not specified. |
 
@@ -2508,7 +2508,7 @@ export default async function sessionEndpoint(req: NextApiRequest, res: NextApiR
 ```
 
 > [!NOTE]
-> Ensure the Session Endpoint is protected with authentication middleware using the `SESSION` strategy!
+> Ensure the Session Endpoint is protected with authentication middleware using the `'SESSION'` strategy!
 
 <br>
 
@@ -2569,7 +2569,7 @@ export default async function tokenEndpoint(req: NextApiRequest, res: NextApiRes
 ```
 
 > [!NOTE]
-> Ensure the Token Endpoint is protected with authentication middleware using the `SESSION` strategy!
+> Ensure the Token Endpoint is protected with authentication middleware using the `'SESSION'` strategy!
 
 <br>
 
@@ -2591,23 +2591,21 @@ This dual-cookie approach ensures:
 
 #### Enabling CSRF Protection
 
-To enable CSRF protection, configure it in your session options and use the `SESSION` strategy in your [Authentication Middleware](#authentication-middleware):
+To enable CSRF protection, configure it in your session options and use the `'SESSION'` strategy in your [Authentication Middleware](#authentication-middleware):
 
 ```typescript
 // src/wristband.ts
-import { SessionOptions } from '@wristband/nextjs-auth';
 
-// 1. Enable CSRF in session configuration
-const sessionOptions: SessionOptions = {
-  secrets: 'your-secret-key-min-32-chars',
-  enableCsrfProtection: true,  // Enable CSRF token generation
-};
+// ...
 
-// 2. Enable CSRF validation in middleware
+// Enable CSRF in session options configuration
 export const requireMiddlewareAuth = wristbandAuth.createMiddlewareAuth({
   authStrategies: ['SESSION'],
   sessionConfig: {
-    sessionOptions,  // Enable CSRF token validation
+    sessionOptions: {
+      secrets: 'your-secret-key-min-32-chars',
+      enableCsrfProtection: true,  // Enable CSRF token generation & validation
+    },
     csrfTokenHeaderName: 'x-csrf-token',  // Header name to read token from
   },
   protectedApis: ['/api/v1(.*)'],

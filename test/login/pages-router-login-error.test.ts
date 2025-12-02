@@ -28,12 +28,12 @@ describe('Login Errors', () => {
     });
   });
 
-  test('Multiple tenant_domain params', async () => {
+  test('Multiple tenant_name params', async () => {
     // Create mock request and response
     const { req, res } = createMocks({
       method: 'GET',
       url: `${loginUrl}`,
-      query: { tenant_domain: ['tenant1', 'tenant2'] },
+      query: { tenant_name: ['tenant1', 'tenant2'] },
     });
     // Cast req and res to NextApiRequest and NextApiResponse
     const mockReq = req as unknown as NextApiRequest;
@@ -44,7 +44,7 @@ describe('Login Errors', () => {
       fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
-      expect(error.message).toBe('More than one [tenant_domain] query parameter was encountered');
+      expect(error.message).toBe('More than one [tenant_name] query parameter was encountered');
     }
   });
 
@@ -73,7 +73,7 @@ describe('Login Errors', () => {
     const { req, res } = createMocks({
       method: 'GET',
       url: `${loginUrl}`,
-      query: { tenant_domain: 'test', return_url: ['url1', 'url2'] },
+      query: { tenant_name: 'test', return_url: ['url1', 'url2'] },
     });
     // Cast req and res to NextApiRequest and NextApiResponse
     const mockReq = req as unknown as NextApiRequest;
@@ -93,7 +93,7 @@ describe('Login Errors', () => {
     const { req, res } = createMocks({
       method: 'GET',
       url: `${loginUrl}`,
-      query: { tenant_domain: 'test', login_hint: ['hint1', 'hint2'] },
+      query: { tenant_name: 'test', login_hint: ['hint1', 'hint2'] },
     });
     // Cast req and res to NextApiRequest and NextApiResponse
     const mockReq = req as unknown as NextApiRequest;
@@ -113,7 +113,7 @@ describe('Login Errors', () => {
     const { req, res } = createMocks({
       method: 'GET',
       url: `${loginUrl}`,
-      query: { tenant_domain: 'test' },
+      query: { tenant_name: 'test' },
     });
     // Cast req and res to NextApiRequest and NextApiResponse
     const mockReq = req as unknown as NextApiRequest;

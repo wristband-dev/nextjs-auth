@@ -114,7 +114,7 @@ export function normalizeMiddlewareConfig(config: AuthMiddlewareConfig): Normali
  * Extracts the pathname from a login URL, removing the protocol, host, and any tenant placeholders. This
  * is used to create a default redirect URL for the default for onPageUnauthenticated() middleware config.
  *
- * This handles URLs with tenant subdomains (containing `{tenant_domain}` or `{tenant_name}` placeholders)
+ * This handles URLs with tenant subdomains (containing `{tenant_name}` or `{tenant_domain}` placeholders)
  * by removing the placeholder and the dot separator that follows it.
  *
  * @param loginUrl - The full login URL from WristbandAuth config

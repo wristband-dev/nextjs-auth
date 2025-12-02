@@ -70,7 +70,7 @@ describe('Multi Tenant Logout', () => {
 
         const { req, res } = createMocks({
           method: 'GET',
-          url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=ignored.com&tenant_domain=ignored`,
+          url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=ignored.com&tenant_name=ignored`,
           headers: { host: `${parseTenantFromRootDomain}` },
         });
         const mockReq = req as unknown as NextApiRequest;
@@ -101,7 +101,7 @@ describe('Multi Tenant Logout', () => {
 
         const { req, res } = createMocks({
           method: 'GET',
-          url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=ignored.com&tenant_domain=ignored`,
+          url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=ignored.com&tenant_name=ignored`,
           headers: { host: `${parseTenantFromRootDomain}` },
         });
         const mockReq = req as unknown as NextApiRequest;
@@ -167,7 +167,7 @@ describe('Multi Tenant Logout', () => {
 
         const { req, res } = createMocks({
           method: 'GET',
-          url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=priority3.custom.com&tenant_domain=ignored`,
+          url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=priority3.custom.com&tenant_name=ignored`,
           headers: { host: `${parseTenantFromRootDomain}` },
         });
         const mockReq = req as unknown as NextApiRequest;
@@ -208,11 +208,14 @@ describe('Multi Tenant Logout', () => {
     });
 
     describe('Priority 4: tenant domain from request (subdomain or query param)', () => {
-      describe('4a: Tenant subdomains enabled', () => {
-        test('tenant subdomain from host header', async () => {
+      describe.each([
+        ['tenant_domain', '{tenant_domain}'],
+        ['tenant_name', '{tenant_name}'],
+      ])('4a: Tenant subdomains enabled with %s placeholder', (placeholderName, placeholder) => {
+        test(`tenant subdomain from host header using ${placeholderName}`, async () => {
           parseTenantFromRootDomain = 'business.invotastic.com';
-          loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-          redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
 
           wristbandAuth = createWristbandAuth({
             clientId: CLIENT_ID,
@@ -238,10 +241,10 @@ describe('Multi Tenant Logout', () => {
           validateRedirectResponse(mockRes, logoutUrl, `https://priority4a-${wristbandApplicationVanityDomain}`, null);
         });
 
-        test('tenant subdomain with custom domain separator', async () => {
+        test(`tenant subdomain with custom domain separator using ${placeholderName}`, async () => {
           parseTenantFromRootDomain = 'business.invotastic.com';
-          loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-          redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
 
           wristbandAuth = createWristbandAuth({
             clientId: CLIENT_ID,
@@ -270,7 +273,7 @@ describe('Multi Tenant Logout', () => {
       });
 
       describe('4b: Tenant subdomains disabled - query param', () => {
-        test('tenant_domain query parameter with default separator', async () => {
+        test('tenant_name query parameter with default separator', async () => {
           wristbandAuth = createWristbandAuth({
             clientId: CLIENT_ID,
             clientSecret: CLIENT_SECRET,
@@ -283,7 +286,7 @@ describe('Multi Tenant Logout', () => {
 
           const { req, res } = createMocks({
             method: 'GET',
-            url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_domain=priority4b`,
+            url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_name=priority4b`,
             headers: { host: `${parseTenantFromRootDomain}` },
           });
           const mockReq = req as unknown as NextApiRequest;
@@ -294,7 +297,7 @@ describe('Multi Tenant Logout', () => {
           validateRedirectResponse(mockRes, logoutUrl, `https://priority4b-${wristbandApplicationVanityDomain}`, null);
         });
 
-        test('tenant_domain query parameter with custom domain separator', async () => {
+        test('tenant_name query parameter with custom domain separator', async () => {
           wristbandAuth = createWristbandAuth({
             clientId: CLIENT_ID,
             clientSecret: CLIENT_SECRET,
@@ -308,7 +311,7 @@ describe('Multi Tenant Logout', () => {
 
           const { req, res } = createMocks({
             method: 'GET',
-            url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_domain=priority4b`,
+            url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_name=priority4b`,
             headers: { host: `${parseTenantFromRootDomain}` },
           });
           const mockReq = req as unknown as NextApiRequest;
@@ -588,11 +591,14 @@ describe('Multi Tenant Logout', () => {
     });
   });
 
-  describe('Edge Cases and Error Scenarios', () => {
-    test('empty tenant subdomain resolves correctly', async () => {
+  describe.each([
+    ['tenant_domain', '{tenant_domain}'],
+    ['tenant_name', '{tenant_name}'],
+  ])('Edge case with %s placeholder', (placeholderName, placeholder) => {
+    test(`empty tenant subdomain resolves correctly using ${placeholderName}`, async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -620,10 +626,10 @@ describe('Multi Tenant Logout', () => {
       expect(logoutUrl).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
     });
 
-    test('all config options provided - priority order maintained', async () => {
+    test(`all config options provided - priority order maintained using ${placeholderName}`, async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -639,7 +645,7 @@ describe('Multi Tenant Logout', () => {
 
       const { req, res } = createMocks({
         method: 'GET',
-        url: `https://subdomain.${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=query.custom.com&tenant_domain=query_tenant`,
+        url: `https://subdomain.${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=query.custom.com&tenant_name=query_tenant`,
         headers: { host: `subdomain.${parseTenantFromRootDomain}` },
       });
       const mockReq = req as unknown as NextApiRequest;
@@ -840,7 +846,7 @@ describe('Multi Tenant Logout', () => {
 
       const { req, res } = createMocks({
         method: 'GET',
-        url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=query.custom.com&tenant_domain=query_tenant`,
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=query.custom.com&tenant_name=query_tenant`,
         headers: { host: `${parseTenantFromRootDomain}` },
       });
       const mockReq = req as unknown as NextApiRequest;

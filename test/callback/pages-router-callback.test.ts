@@ -1,15 +1,16 @@
-import { createMocks } from 'node-mocks-http';
-import { NextResponse } from 'next/server';
+/* eslint-disable no-underscore-dangle */
+
+import { createMocks, MockResponse } from 'node-mocks-http';
+import { NextApiRequest, NextApiResponse } from 'next';
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
 import { encryptLoginState } from '../../src/utils/crypto';
 import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
 import { LoginState, CallbackResult, CallbackData } from '../../src/types';
-import { createMockNextRequest, parseSetCookies } from '../test-utils';
+import { parseSetCookies } from '../test-utils';
 
 const CLIENT_ID = 'clientId';
 const CLIENT_SECRET = 'clientSecret';
 const LOGIN_STATE_COOKIE_SECRET = '7ffdbecc-ab7d-4134-9307-2dfcc52f7475';
-const APP_HOME_URL = 'https://myapp.com/home';
 
 const mockTokens = {
   access_token: 'accessToken',
@@ -44,7 +45,7 @@ function validateMockCallbackData(callbackData: CallbackData) {
   expect(callbackData.userinfo.emailVerified).toBe(true);
 }
 
-describe('Multi Tenant Callback - App Router', () => {
+describe('Multi Tenant Callback - Page Router', () => {
   let wristbandAuth: WristbandAuth;
   let parseTenantFromRootDomain: string;
   let loginUrl: string;
@@ -101,16 +102,18 @@ describe('Multi Tenant Callback - App Router', () => {
       const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
 
       // Create mock request
-      const { req } = createMocks({
+      const { req, res } = createMocks({
         method: 'GET',
         url: `${redirectUri}?state=state&code=code&tenant_name=devs4you`,
-        headers: { host: `${parseTenantFromRootDomain}`, cookie: `login#state#1234567890=${encryptedLoginState}` },
+        headers: { host: `${parseTenantFromRootDomain}` },
+        cookies: { 'login#state#1234567890': encryptedLoginState },
       });
-      const mockNextRequest = createMockNextRequest(req);
+      // Cast req and res to NextApiRequest and NextApiResponse
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+      const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
 
-      // First verify result and data
       const { callbackData, type, reason } = callbackResult;
       expect(type).toBe('completed');
       expect(reason).toBeUndefined();
@@ -120,26 +123,16 @@ describe('Multi Tenant Callback - App Router', () => {
         validateMockCallbackData(callbackData);
       }
 
-      // Now verify the response
-      const response: NextResponse = await wristbandAuth.appRouter.createCallbackResponse(
-        mockNextRequest,
-        APP_HOME_URL
-      );
-
-      const { headers, status } = response;
-      const locationUrl: string = headers.get('location')!;
-      expect(status).toBe(302);
-      expect(locationUrl).toEqual(APP_HOME_URL);
-
       // Validate no-cache headers
-      expect(headers.get('Cache-Control')).toBe('no-store');
-      expect(headers.get('Pragma')).toBe('no-cache');
+      expect(mockRes.getHeader('Cache-Control')).toBe('no-store');
+      expect(mockRes.getHeader('Pragma')).toBe('no-cache');
 
-      // Validate login state cookie
-      const setCookieHeaders = response.headers.getSetCookie();
+      // Validate login state cookie is getting cleared
+      const setCookieHeaders = mockRes.getHeader('Set-Cookie');
       expect(setCookieHeaders).toBeTruthy();
-      expect(setCookieHeaders).toHaveLength(1);
-      const parsedCookies = parseSetCookies(setCookieHeaders);
+      expect(Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]).toHaveLength(1);
+
+      const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
       const loginStateCookie = parsedCookies[0];
       const cookieKey: string = loginStateCookie.name;
       expect(cookieKey).toBeTruthy();
@@ -183,18 +176,18 @@ describe('Multi Tenant Callback - App Router', () => {
         const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
 
         // Create mock request
-        const { req } = createMocks({
+        const { req, res } = createMocks({
           method: 'GET',
-          url: `${redirectUri}?state=state&code=code`,
-          headers: {
-            host: `devs4you.${parseTenantFromRootDomain}`,
-            cookie: `login#state#1234567890=${encryptedLoginState}`,
-          },
+          headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+          query: { state: 'state', code: 'code' },
+          cookies: { 'login#state#1234567890': encryptedLoginState },
         });
-        const mockNextRequest = createMockNextRequest(req);
+        // Cast req and res to NextApiRequest and NextApiResponse
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
         // Validate callback data contents
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+        const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
         const { callbackData, type, reason } = callbackResult;
         expect(type).toBe('completed');
         expect(reason).toBeUndefined();
@@ -204,16 +197,9 @@ describe('Multi Tenant Callback - App Router', () => {
           expect(callbackData.customState).toBeFalsy();
           expect(callbackData.returnUrl).toBeFalsy();
         }
-
-        // Now verify the response
-        const response: NextResponse = await wristbandAuth.appRouter.createCallbackResponse(
-          mockNextRequest,
-          APP_HOME_URL
-        );
-        const { headers, status } = response;
-        const locationUrl: string = headers.get('location')!;
-        expect(status).toBe(302);
-        expect(locationUrl).toBe(APP_HOME_URL);
+        // Validate response is not redirecting the user
+        const location: string = mockRes._getRedirectUrl();
+        expect(location).toBeFalsy();
       });
     });
 
@@ -242,18 +228,18 @@ describe('Multi Tenant Callback - App Router', () => {
         const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
 
         // Create mock request
-        const { req } = createMocks({
+        const { req, res } = createMocks({
           method: 'GET',
-          url: `${redirectUri}?state=state&code=code`,
-          headers: {
-            host: `devs4you.${parseTenantFromRootDomain}`,
-            cookie: `login#state#1234567890=${encryptedLoginState}`,
-          },
+          headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+          query: { state: 'state', code: 'code' },
+          cookies: { 'login#state#1234567890': encryptedLoginState },
         });
-        const mockNextRequest = createMockNextRequest(req);
+        // Cast req and res to NextApiRequest and NextApiResponse
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
         // Validate callback data contents
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+        const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
         const { callbackData, type, reason } = callbackResult;
         expect(type).toBe('completed');
         expect(reason).toBeUndefined();
@@ -263,16 +249,9 @@ describe('Multi Tenant Callback - App Router', () => {
           expect(callbackData.customState).toBeFalsy();
           expect(callbackData.returnUrl).toBeFalsy();
         }
-
-        // Now verify the response
-        const response: NextResponse = await wristbandAuth.appRouter.createCallbackResponse(
-          mockNextRequest,
-          APP_HOME_URL
-        );
-        const { headers, status } = response;
-        const locationUrl: string = headers.get('location')!;
-        expect(status).toBe(302);
-        expect(locationUrl).toBe(APP_HOME_URL);
+        // Validate response is not redirecting the user
+        const location: string = mockRes._getRedirectUrl();
+        expect(location).toBeFalsy();
       });
     });
   });
@@ -294,19 +273,20 @@ describe('Multi Tenant Callback - App Router', () => {
       });
 
       // Create mock request
-      const { req } = createMocks({
+      const { req, res } = createMocks({
         method: 'GET',
-        url: `${redirectUri}?state=state&code=code&tenant_name=devs4you`,
         headers: { host: `${parseTenantFromRootDomain}` },
+        query: { state: 'state', code: 'code', tenant_name: 'devs4you' },
       });
-      const mockNextRequest = createMockNextRequest(req);
+      // Cast req and res to NextApiRequest and NextApiResponse
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
       // login state cookie is missing, which should redirect to app-level login.
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+      const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
       const { callbackData, redirectUrl, type } = callbackResult;
       expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
-
       // Validate Redirect response
       expect(redirectUrl).toBe(`https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you`);
     });
@@ -332,21 +312,22 @@ describe('Multi Tenant Callback - App Router', () => {
         });
 
         // Create mock request
-        const { req } = createMocks({
+        const { req, res } = createMocks({
           method: 'GET',
-          url: `${redirectUri}?state=state&code=code`,
           headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+          query: { state: 'state', code: 'code' },
         });
-        const mockNextRequest = createMockNextRequest(req);
+        // Cast req and res to NextApiRequest and NextApiResponse
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
         // login state cookie is missing, which should redirect to app-level login.
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+        const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
         const { callbackData, redirectUrl, type } = callbackResult;
         expect(type).toBe('redirect_required');
         expect(callbackData).toBeFalsy();
-
         // Validate Redirect response
-        expect(redirectUrl).toBe(`https://devs4you.${parseTenantFromRootDomain}/api/auth/login`);
+        expect(redirectUrl).toEqual(`https://devs4you.${parseTenantFromRootDomain}/api/auth/login`);
       });
     });
 
@@ -370,23 +351,31 @@ describe('Multi Tenant Callback - App Router', () => {
       const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
 
       // Create mock request
-      const { req } = createMocks({
+      const { req, res } = createMocks({
         method: 'GET',
-        url: `${redirectUri}?state=state&code=code&tenant_name=devs4you&error=login_required&error_description=Login required`,
-        headers: {
-          host: `devs4you.${parseTenantFromRootDomain}`,
-          cookie: `login#state#1234567890=${encryptedLoginState}`,
+        query: {
+          state: 'state',
+          code: 'code',
+          tenant_name: 'devs4you',
+          error: 'login_required',
+          error_description: 'Login required',
         },
+        cookies: { 'login#state#1234567890': encryptedLoginState },
       });
-      const mockNextRequest = createMockNextRequest(req);
+      // Cast req and res to NextApiRequest and NextApiResponse
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+      const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
       const { callbackData, redirectUrl, type } = callbackResult;
       expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
-
       // Validate Redirect response
-      expect(redirectUrl).toBe(`https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you`);
+      const locationUrl: URL = new URL(redirectUrl!);
+      const { pathname, origin, searchParams } = locationUrl;
+      expect(origin).toEqual(`https://${parseTenantFromRootDomain}`);
+      expect(pathname).toEqual('/api/auth/login');
+      expect(searchParams.get('tenant_name')).toBe('devs4you');
     });
 
     describe.each([
@@ -414,23 +403,25 @@ describe('Multi Tenant Callback - App Router', () => {
         const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
 
         // Create mock request
-        const { req } = createMocks({
+        const { req, res } = createMocks({
           method: 'GET',
-          url: `${redirectUri}?state=state&code=code&tenant_name=devs4you&error=login_required&error_description=Login required`,
-          headers: {
-            host: `devs4you.${parseTenantFromRootDomain}`,
-            cookie: `login#state#1234567890=${encryptedLoginState}`,
-          },
+          headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+          query: { state: 'state', code: 'code', error: 'login_required', error_description: 'Login required' },
+          cookies: { 'login#state#1234567890': encryptedLoginState },
         });
-        const mockNextRequest = createMockNextRequest(req);
+        // Cast req and res to NextApiRequest and NextApiResponse
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+        const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
         const { callbackData, redirectUrl, type } = callbackResult;
         expect(type).toBe('redirect_required');
         expect(callbackData).toBeFalsy();
-
         // Validate Redirect response
-        expect(redirectUrl).toBe(`https://devs4you.${parseTenantFromRootDomain}/api/auth/login`);
+        const locationUrl: URL = new URL(redirectUrl!);
+        const { pathname, origin } = locationUrl;
+        expect(origin).toEqual(`https://devs4you.${parseTenantFromRootDomain}`);
+        expect(pathname).toEqual('/api/auth/login');
       });
     });
 
@@ -454,59 +445,25 @@ describe('Multi Tenant Callback - App Router', () => {
       const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
 
       // Create mock request
-      const { req } = createMocks({
+      const { req, res } = createMocks({
         method: 'GET',
-        url: `${redirectUri}?state=state&code=code&tenant_name=devs4you`,
-        headers: { host: `${parseTenantFromRootDomain}`, cookie: `login#state#1234567890=${encryptedLoginState}` },
+        query: { state: 'state', code: 'code', tenant_name: 'devs4you' },
+        cookies: { 'login#state#1234567890': encryptedLoginState },
       });
-      const mockNextRequest = createMockNextRequest(req);
+      // Cast req and res to NextApiRequest and NextApiResponse
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+      const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
       const { callbackData, redirectUrl, type } = callbackResult;
       expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
-
       // Validate Redirect response
-      expect(redirectUrl).toBe(`https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you`);
-    });
-
-    test('Cookie login state not matching query param state, without subdomains, with tenant custom domain', async () => {
-      parseTenantFromRootDomain = 'business.invotastic.com';
-      loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
-      wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        isApplicationCustomDomainActive: true,
-        wristbandApplicationVanityDomain,
-        autoConfigureEnabled: false,
-      });
-
-      // Mock login state
-      const loginState: LoginState = { codeVerifier: 'codeVerifier', redirectUri: redirectUri, state: 'bad_state' };
-      const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
-
-      // Create mock request
-      const { req } = createMocks({
-        method: 'GET',
-        url: `${redirectUri}?state=state&code=code&tenant_name=devs4you&tenant_custom_domain=custom.tenant.com`,
-        headers: { host: `${parseTenantFromRootDomain}`, cookie: `login#state#1234567890=${encryptedLoginState}` },
-      });
-      const mockNextRequest = createMockNextRequest(req);
-
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-      const { callbackData, redirectUrl, type } = callbackResult;
-      expect(type).toBe('redirect_required');
-      expect(callbackData).toBeFalsy();
-
-      // Validate Redirect response
-      expect(redirectUrl).toBe(
-        `https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you&tenant_custom_domain=custom.tenant.com`
-      );
+      const locationUrl: URL = new URL(redirectUrl!);
+      const { pathname, origin, searchParams } = locationUrl;
+      expect(origin).toEqual(`https://${parseTenantFromRootDomain}`);
+      expect(pathname).toEqual('/api/auth/login');
+      expect(searchParams.get('tenant_name')).toBe('devs4you');
     });
 
     describe.each([
@@ -534,23 +491,25 @@ describe('Multi Tenant Callback - App Router', () => {
         const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
 
         // Create mock request
-        const { req } = createMocks({
+        const { req, res } = createMocks({
           method: 'GET',
-          url: `${redirectUri}?state=state&code=code`,
-          headers: {
-            host: `devs4you.${parseTenantFromRootDomain}`,
-            cookie: `login#state#1234567890=${encryptedLoginState}`,
-          },
+          headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+          query: { state: 'state', code: 'code' },
+          cookies: { 'login#state#1234567890': encryptedLoginState },
         });
-        const mockNextRequest = createMockNextRequest(req);
+        // Cast req and res to NextApiRequest and NextApiResponse
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+        const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
         const { callbackData, redirectUrl, type } = callbackResult;
         expect(type).toBe('redirect_required');
         expect(callbackData).toBeFalsy();
-
         // Validate Redirect response
-        expect(redirectUrl).toBe(`https://devs4you.${parseTenantFromRootDomain}/api/auth/login`);
+        const locationUrl: URL = new URL(redirectUrl!);
+        const { pathname, origin } = locationUrl;
+        expect(origin).toEqual(`https://devs4you.${parseTenantFromRootDomain}`);
+        expect(pathname).toEqual('/api/auth/login');
       });
     });
 
@@ -575,20 +534,22 @@ describe('Multi Tenant Callback - App Router', () => {
       const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
 
       // Create mock request
-      const { req } = createMocks({
+      const { req, res } = createMocks({
         method: 'GET',
-        url: `${redirectUri}?state=state&code=code&tenant_name=devs4you&tenant_custom_domain=custom.tenant.com`,
-        headers: { host: `${parseTenantFromRootDomain}`, cookie: `login#state#1234567890=${encryptedLoginState}` },
+        headers: { host: `${parseTenantFromRootDomain}` },
+        query: { state: 'state', code: 'code', tenant_name: 'devs4you', tenant_custom_domain: 'custom.tenant.com' },
+        cookies: { 'login#state#1234567890': encryptedLoginState },
       });
-      const mockNextRequest = createMockNextRequest(req);
+      // Cast req and res to NextApiRequest and NextApiResponse
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+      const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
       const { callbackData, redirectUrl, type } = callbackResult;
       expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
-
       // Validate Redirect response
-      expect(redirectUrl).toBe(
+      expect(redirectUrl).toEqual(
         `https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you&tenant_custom_domain=custom.tenant.com`
       );
     });
@@ -619,23 +580,22 @@ describe('Multi Tenant Callback - App Router', () => {
         const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
 
         // Create mock request
-        const { req } = createMocks({
+        const { req, res } = createMocks({
           method: 'GET',
-          url: `${redirectUri}?state=state&code=code&tenant_name=devs4you&tenant_custom_domain=custom.tenant.com`,
-          headers: {
-            host: `devs4you.${parseTenantFromRootDomain}`,
-            cookie: `login#state#1234567890=${encryptedLoginState}`,
-          },
+          headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+          query: { state: 'state', code: 'code', tenant_name: 'devs4you', tenant_custom_domain: 'custom.tenant.com' },
+          cookies: { 'login#state#1234567890': encryptedLoginState },
         });
-        const mockNextRequest = createMockNextRequest(req);
+        // Cast req and res to NextApiRequest and NextApiResponse
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+        const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
         const { callbackData, redirectUrl, type } = callbackResult;
         expect(type).toBe('redirect_required');
         expect(callbackData).toBeFalsy();
-
         // Validate Redirect response
-        expect(redirectUrl).toBe(
+        expect(redirectUrl).toEqual(
           `https://devs4you.${parseTenantFromRootDomain}/api/auth/login?tenant_custom_domain=custom.tenant.com`
         );
       });

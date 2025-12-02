@@ -102,7 +102,7 @@ describe('pagesRouter.login()', () => {
       // Create mock request and response
       const { req, res } = createMocks({
         method: 'GET',
-        url: `${loginUrl}?tenant_domain=devs4you`,
+        url: `${loginUrl}?tenant_name=devs4you`,
         headers: { host: `${parseTenantFromRootDomain}` },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
@@ -137,7 +137,7 @@ describe('pagesRouter.login()', () => {
       // Create mock request and response
       const { req, res } = createMocks({
         method: 'GET',
-        url: `${loginUrl}?tenant_domain=devs4you`,
+        url: `${loginUrl}?tenant_name=devs4you`,
         headers: { host: `${parseTenantFromRootDomain}` },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
@@ -326,7 +326,7 @@ describe('pagesRouter.login()', () => {
         method: 'GET',
         url: `${loginUrl}`,
         headers: { host: `${parseTenantFromRootDomain}` },
-        query: { tenant_domain: 'devs4you', tenant_custom_domain: 'tenant.custom.com' },
+        query: { tenant_name: 'devs4you', tenant_custom_domain: 'tenant.custom.com' },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
@@ -491,7 +491,7 @@ describe('pagesRouter.login()', () => {
   });
 
   describe('Redirect to Application-level Login/Tenant Discovery', () => {
-    test('Unresolved tenant_domain and tenant_custom_domain query params', async () => {
+    test('Unresolved tenant_name and tenant_custom_domain query params', async () => {
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
         clientSecret: CLIENT_SECRET,
@@ -502,7 +502,7 @@ describe('pagesRouter.login()', () => {
         autoConfigureEnabled: false,
       });
 
-      // tenant_domain and tenant_custom_domain query param is missing, which should redirect to app-level login.
+      // tenant_name and tenant_custom_domain query param is missing, which should redirect to app-level login.
       // Create mock request and response
       const { req, res } = createMocks({
         method: 'GET',

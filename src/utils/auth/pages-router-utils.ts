@@ -6,8 +6,17 @@ import { LoginState, LoginStateMapConfig } from '../../types';
 
 export function parseTenantSubdomain(request: NextApiRequest, parseTenantFromRootDomain: string): string {
   const { host } = request.headers;
-  return host!.substring(host!.indexOf('.') + 1) === parseTenantFromRootDomain
-    ? host!.substring(0, host!.indexOf('.'))
+
+  // Should never happen (defensive measure)
+  if (!host) {
+    return '';
+  }
+
+  // Strip off the port if it exists
+  const hostname = host.split(':')[0];
+
+  return hostname.substring(hostname.indexOf('.') + 1) === parseTenantFromRootDomain
+    ? hostname.substring(0, hostname.indexOf('.'))
     : '';
 }
 
@@ -16,13 +25,13 @@ export function resolveTenantName(request: NextApiRequest, parseTenantFromRootDo
     return parseTenantSubdomain(request, parseTenantFromRootDomain) || '';
   }
 
-  const { tenant_domain: tenantDomainParam } = request.query;
+  const { tenant_name: tenantNameParam } = request.query;
 
-  if (!!tenantDomainParam && typeof tenantDomainParam !== 'string') {
-    throw new TypeError('More than one [tenant_domain] query parameter was encountered');
+  if (!!tenantNameParam && typeof tenantNameParam !== 'string') {
+    throw new TypeError('More than one [tenant_name] query parameter was encountered');
   }
 
-  return tenantDomainParam || '';
+  return tenantNameParam || '';
 }
 
 export function resolveTenantCustomDomainParam(request: NextApiRequest): string {
@@ -152,7 +161,7 @@ export async function getAuthorizeUrl(
   // Domain priority order resolution:
   // 1)  tenant_custom_domain query param
   // 2a) tenant subdomain
-  // 2b) tenant_domain query param
+  // 2b) tenant_name query param
   // 3)  defaultTenantCustomDomain login config
   // 4)  defaultTenantName login config
   if (config.tenantCustomDomain) {

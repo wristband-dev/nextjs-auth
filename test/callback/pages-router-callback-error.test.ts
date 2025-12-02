@@ -34,7 +34,7 @@ describe('Callback Errors', () => {
     let { req, res } = createMocks({
       method: 'GET',
       url: `${REDIRECT_URI}`,
-      query: { code: 'code', tenant_domain: 'devs4you' },
+      query: { code: 'code', tenant_name: 'devs4you' },
     });
     // Cast req and res to NextApiRequest and NextApiResponse
     let mockReq = req as unknown as NextApiRequest;
@@ -79,7 +79,7 @@ describe('Callback Errors', () => {
     let { req, res } = createMocks({
       method: 'GET',
       url: `${REDIRECT_URI}`,
-      query: { state: 'state', tenant_domain: 'devs4you' },
+      query: { state: 'state', tenant_name: 'devs4you' },
       cookies: { 'login#state#1234567890': encryptedLoginState },
     });
     // Cast req and res to NextApiRequest and NextApiResponse
@@ -156,12 +156,12 @@ describe('Callback Errors', () => {
     }
   });
 
-  test('Invalid tenant_domain query param', async () => {
+  test('Invalid tenant_name query param', async () => {
     // Create mock request and response
     const { req, res } = createMocks({
       method: 'GET',
       url: `${REDIRECT_URI}`,
-      query: { state: 'state', tenant_domain: ['a', 'b'] },
+      query: { state: 'state', tenant_name: ['a', 'b'] },
       cookies: { 'login#state#1234567890': 'blah' },
     });
     // Cast req and res to NextApiRequest and NextApiResponse
@@ -174,7 +174,7 @@ describe('Callback Errors', () => {
       fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
-      expect(error.message).toBe('More than one [tenant_domain] query parameter was encountered');
+      expect(error.message).toBe('More than one [tenant_name] query parameter was encountered');
     }
   });
 
@@ -215,7 +215,7 @@ describe('Callback Errors', () => {
     const { req, res } = createMocks({
       method: 'GET',
       url: `${REDIRECT_URI}`,
-      query: { state: 'state', tenant_domain: 'devs4you', error: 'BAD', error_description: 'Really bad' },
+      query: { state: 'state', tenant_name: 'devs4you', error: 'BAD', error_description: 'Really bad' },
       cookies: { 'login#state#1234567890': encryptedLoginState },
     });
     // Cast req and res to NextApiRequest and NextApiResponse
@@ -246,7 +246,7 @@ describe('Callback Errors', () => {
     const { req, res } = createMocks({
       method: 'GET',
       url: `${REDIRECT_URI}`,
-      query: { state: 'wrong_state', code: 'code', tenant_domain: 'devs4you' },
+      query: { state: 'wrong_state', code: 'code', tenant_name: 'devs4you' },
       cookies: { 'login#wrong_state#1234567890': encryptedLoginState },
     });
     const mockReq = req as unknown as NextApiRequest;
@@ -255,7 +255,7 @@ describe('Callback Errors', () => {
     const result = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
 
     expect(result.type).toBe('redirect_required');
-    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_domain=devs4you`);
+    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_name=devs4you`);
     expect(result.reason).toBe('invalid_login_state');
   });
 
@@ -276,7 +276,7 @@ describe('Callback Errors', () => {
         state: 'state',
         error: 'login_required',
         error_description: 'Session expired',
-        tenant_domain: 'devs4you',
+        tenant_name: 'devs4you',
       },
       cookies: { 'login#state#1234567890': encryptedLoginState },
     });
@@ -286,7 +286,7 @@ describe('Callback Errors', () => {
     const result = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
 
     expect(result.type).toBe('redirect_required');
-    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_domain=devs4you`);
+    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_name=devs4you`);
     expect(result.reason).toBe('login_required');
   });
 
@@ -303,7 +303,7 @@ describe('Callback Errors', () => {
     const { req, res } = createMocks({
       method: 'GET',
       url: `${REDIRECT_URI}`,
-      query: { state: 'state', code: 'invalid_code', tenant_domain: 'devs4you' },
+      query: { state: 'state', code: 'invalid_code', tenant_name: 'devs4you' },
       cookies: { 'login#state#state': encryptedLoginState },
     });
     const mockReq = req as unknown as NextApiRequest;
@@ -329,7 +329,7 @@ describe('Callback Errors', () => {
     const result = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
 
     expect(result.type).toBe('redirect_required');
-    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_domain=devs4you`);
+    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_name=devs4you`);
     expect(result.reason).toBe('invalid_grant');
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
@@ -347,7 +347,7 @@ describe('Callback Errors', () => {
     const { req, res } = createMocks({
       method: 'GET',
       url: `${REDIRECT_URI}`,
-      query: { state: 'state', code: 'code', tenant_domain: 'devs4you' },
+      query: { state: 'state', code: 'code', tenant_name: 'devs4you' },
       cookies: { 'login#state#state': encryptedLoginState },
     });
     const mockReq = req as unknown as NextApiRequest;
@@ -389,7 +389,7 @@ describe('Callback Errors', () => {
     const { req, res } = createMocks({
       method: 'GET',
       url: `${REDIRECT_URI}`,
-      query: { state: 'state', code: 'code', tenant_domain: 'devs4you' },
+      query: { state: 'state', code: 'code', tenant_name: 'devs4you' },
     });
     const mockReq = req as unknown as NextApiRequest;
     const mockRes = res as unknown as MockResponse<NextApiResponse>;
@@ -397,11 +397,14 @@ describe('Callback Errors', () => {
     const result = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
 
     expect(result.type).toBe('redirect_required');
-    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_domain=devs4you`);
+    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_name=devs4you`);
     expect(result.reason).toBe('missing_login_state');
   });
 
-  describe('Redirect to Application-level Login', () => {
+  describe.each([
+    ['tenant_domain', '{tenant_domain}'],
+    ['tenant_name', '{tenant_name}'],
+  ])('Redirect to Application-level Login with %s placeholder', (placeholderName, placeholder) => {
     test('Missing login state cookie, without subdomains, without tenant domain query param', async () => {
       const parseTenantFromRootDomain = 'business.invotastic.com';
       const loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
@@ -423,7 +426,6 @@ describe('Callback Errors', () => {
         url: `${REDIRECT_URI}`,
         query: { state: 'state', code: 'code' },
       });
-      // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
@@ -432,17 +434,17 @@ describe('Callback Errors', () => {
         fail('Error expected to be thrown.');
       } catch (error: any) {
         expect(error instanceof WristbandError).toBe(true);
-        expect(error.code).toBe('missing_tenant_domain');
+        expect(error.code).toBe('missing_tenant_name');
         expect(error.errorDescription).toBe(
-          'Callback request is missing the [tenant_domain] query parameter from Wristband'
+          'Callback request is missing the [tenant_name] query parameter from Wristband'
         );
       }
     });
 
-    test('Missing login state cookie, with subdomains, and without URL subdomain', async () => {
+    test(`Missing login state cookie, with subdomains using ${placeholderName}, and without URL subdomain`, async () => {
       const parseTenantFromRootDomain = 'business.invotastic.com';
-      const loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      const redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      const loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+      const redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
       const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -463,7 +465,6 @@ describe('Callback Errors', () => {
         query: { state: 'state', code: 'code' },
         headers: { host: parseTenantFromRootDomain },
       });
-      // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
