@@ -10,7 +10,7 @@ import {
 } from '../test-utils';
 import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
 import { LoginState } from '../../src/types';
-import { decryptLoginState } from '../../src/utils/auth/common-utils';
+import { decryptLoginState } from '../../src/utils/crypto';
 
 describe('appRouter.login()', () => {
   let wristbandAuth: WristbandAuth;
@@ -41,7 +41,7 @@ describe('appRouter.login()', () => {
       // Create mock request
       const { req } = createMocks({
         method: 'GET',
-        url: `${loginUrl}?tenant_domain=devs4you`,
+        url: `${loginUrl}?tenant_name=devs4you`,
         headers: { host: `${parseTenantFromRootDomain}` },
       });
       const mockNextRequest = createMockNextRequest(req);
@@ -119,7 +119,7 @@ describe('appRouter.login()', () => {
       // Create mock request
       const { req } = createMocks({
         method: 'GET',
-        url: `${loginUrl}?tenant_domain=devs4you`,
+        url: `${loginUrl}?tenant_name=devs4you`,
         headers: { host: `${parseTenantFromRootDomain}` },
       });
       const mockNextRequest = createMockNextRequest(req);

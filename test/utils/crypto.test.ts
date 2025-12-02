@@ -7,7 +7,7 @@ import {
   sha256Base64,
   encryptLoginState,
   decryptLoginState,
-} from '../../src/utils/auth/common-utils';
+} from '../../src/utils/crypto';
 import { LoginState } from '../../src/types';
 
 // Mock iron-webcrypto

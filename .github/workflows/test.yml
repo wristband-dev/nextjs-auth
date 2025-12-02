@@ -15,9 +15,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
-        node: [18.x, 20.x]
+        node: [20.x, 22.x, 24.x]
     name: Use Node.js ${{ matrix.node-version }}
     steps:
       - uses: actions/checkout@v4

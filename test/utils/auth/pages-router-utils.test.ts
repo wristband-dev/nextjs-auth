@@ -1,19 +1,19 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import {
   parseTenantSubdomain,
-  resolveTenantDomainName,
+  resolveTenantName,
   resolveTenantCustomDomainParam,
   createLoginState,
   createLoginStateCookie,
   getAuthorizeUrl,
   getAndClearLoginStateCookie,
-} from '../../src/utils/auth/page-router-utils';
-import { LoginStateMapConfig } from '../../src/types';
-import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
-import * as commonUtils from '../../src/utils/auth/common-utils';
+} from '../../../src/utils/auth/pages-router-utils';
+import { LoginStateMapConfig } from '../../../src/types';
+import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
+import * as commonUtils from '../../../src/utils/crypto';
 
 // Mock common utils
-jest.mock('../../src/utils/auth/common-utils');
+jest.mock('../../../src/utils/crypto');
 const mockGenerateRandomString = commonUtils.generateRandomString as jest.MockedFunction<
   typeof commonUtils.generateRandomString
 >;
@@ -64,58 +64,142 @@ describe('Page Router Utils', () => {
       const result = parseTenantSubdomain(req, 'example.com');
       expect(result).toBe('');
     });
+
+    it('should strip port from host header', () => {
+      const req = {
+        headers: { host: 'tenant1.example.com:3000' },
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('tenant1');
+    });
+
+    it('should strip port from host header with complex subdomain', () => {
+      const req = {
+        headers: { host: 'my-tenant-123.example.com:8080' },
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('my-tenant-123');
+    });
+
+    it('should handle host without port (no change)', () => {
+      const req = {
+        headers: { host: 'tenant1.example.com' },
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('tenant1');
+    });
+
+    it('should return empty string when root domain does not match after stripping port', () => {
+      const req = {
+        headers: { host: 'tenant1.otherdomain.com:3000' },
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('');
+    });
+
+    it('should strip port when accessing root domain directly', () => {
+      const req = {
+        headers: { host: 'example.com:3000' },
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('');
+    });
+
+    it('should return empty string when host header is missing', () => {
+      const req = {
+        headers: {},
+      } as NextApiRequest;
+
+      const result = parseTenantSubdomain(req, 'example.com');
+      expect(result).toBe('');
+    });
   });
 
-  describe('resolveTenantDomainName', () => {
+  describe('resolveTenantName', () => {
     it('should return tenant subdomain when parseTenantFromRootDomain is provided', () => {
       const req = {
         headers: { host: 'tenant1.example.com' },
-        query: { tenant_domain: 'query-tenant' },
+        query: { tenant_name: 'query-tenant' },
       } as unknown as NextApiRequest;
 
-      const result = resolveTenantDomainName(req, 'example.com');
+      const result = resolveTenantName(req, 'example.com');
       expect(result).toBe('tenant1');
     });
 
     it('should return empty string when no subdomain found and parseTenantFromRootDomain is provided', () => {
       const req = {
         headers: { host: 'example.com' },
-        query: { tenant_domain: 'query-tenant' },
+        query: { tenant_name: 'query-tenant' },
       } as unknown as NextApiRequest;
 
-      const result = resolveTenantDomainName(req, 'example.com');
+      const result = resolveTenantName(req, 'example.com');
       expect(result).toBe('');
     });
 
-    it('should return tenant_domain query param when parseTenantFromRootDomain is empty', () => {
+    it('should return tenant_name query param when parseTenantFromRootDomain is empty', () => {
       const req = {
         headers: { host: 'tenant1.example.com' },
-        query: { tenant_domain: 'query-tenant' },
+        query: { tenant_name: 'query-tenant' },
       } as unknown as NextApiRequest;
 
-      const result = resolveTenantDomainName(req, '');
+      const result = resolveTenantName(req, '');
       expect(result).toBe('query-tenant');
     });
 
-    it('should return empty string when no tenant_domain query param and no parseTenantFromRootDomain', () => {
+    it('should return empty string when no tenant_name query param and no parseTenantFromRootDomain', () => {
       const req = {
         headers: { host: 'example.com' },
         query: {},
       } as NextApiRequest;
 
-      const result = resolveTenantDomainName(req, '');
+      const result = resolveTenantName(req, '');
       expect(result).toBe('');
     });
 
-    it('should throw error when multiple tenant_domain query params are provided', () => {
+    it('should throw error when multiple tenant_name query params are provided', () => {
       const req = {
         headers: { host: 'example.com' },
-        query: { tenant_domain: ['tenant1', 'tenant2'] },
+        query: { tenant_name: ['tenant1', 'tenant2'] },
       } as unknown as NextApiRequest;
 
       expect(() => {
-        return resolveTenantDomainName(req, '');
-      }).toThrow('More than one [tenant_domain] query parameter was encountered');
+        return resolveTenantName(req, '');
+      }).toThrow('More than one [tenant_name] query parameter was encountered');
+    });
+
+    it('should strip port when resolving tenant from subdomain', () => {
+      const req = {
+        headers: { host: 'tenant1.example.com:3000' },
+        query: {},
+      } as NextApiRequest;
+
+      const result = resolveTenantName(req, 'example.com');
+      expect(result).toBe('tenant1');
+    });
+
+    it('should prioritize subdomain over query param even with port in host', () => {
+      const req = {
+        headers: { host: 'subdomain-tenant.example.com:3000' },
+        query: { tenant_name: 'query-tenant' },
+      } as unknown as NextApiRequest;
+
+      const result = resolveTenantName(req, 'example.com');
+      expect(result).toBe('subdomain-tenant');
+    });
+
+    it('should return empty string when subdomain not found even with port', () => {
+      const req = {
+        headers: { host: 'example.com:3000' },
+        query: { tenant_name: 'query-tenant' },
+      } as unknown as NextApiRequest;
+
+      const result = resolveTenantName(req, 'example.com');
+      expect(result).toBe('');
     });
   });
 
@@ -417,7 +501,7 @@ describe('Page Router Utils', () => {
       const req = { query: {} } as NextApiRequest;
       const config = {
         ...baseConfig,
-        tenantDomainName: 'tenant1',
+        tenantName: 'tenant1',
         isApplicationCustomDomainActive: true,
       };
 
@@ -430,7 +514,7 @@ describe('Page Router Utils', () => {
       const req = { query: {} } as NextApiRequest;
       const config = {
         ...baseConfig,
-        tenantDomainName: 'tenant1',
+        tenantName: 'tenant1',
         isApplicationCustomDomainActive: false,
       };
 
@@ -455,7 +539,7 @@ describe('Page Router Utils', () => {
       const req = { query: {} } as NextApiRequest;
       const config = {
         ...baseConfig,
-        defaultTenantDomainName: 'default-tenant',
+        defaultTenantName: 'default-tenant',
         isApplicationCustomDomainActive: false,
       };
 
@@ -501,9 +585,9 @@ describe('Page Router Utils', () => {
       const configWithAll = {
         ...baseConfig,
         tenantCustomDomain: 'tenant.custom.com',
-        tenantDomainName: 'tenant1',
+        tenantName: 'tenant1',
         defaultTenantCustomDomain: 'default.custom.com',
-        defaultTenantDomainName: 'default-tenant',
+        defaultTenantName: 'default-tenant',
       };
 
       const result = await getAuthorizeUrl(req, configWithAll);

@@ -7,7 +7,7 @@ import { createWristbandAuth, WristbandAuth } from '../../src/index';
 import { CLIENT_ID, CLIENT_SECRET, LOGIN_STATE_COOKIE_SECRET, parseSetCookies } from '../test-utils';
 import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
 import { LoginState } from '../../src/types';
-import { decryptLoginState, encryptLoginState } from '../../src/utils/auth/common-utils';
+import { decryptLoginState, encryptLoginState } from '../../src/utils/crypto';
 
 function validateRedirectResponse(
   mockRes: MockResponse<NextApiResponse>,
@@ -73,7 +73,7 @@ async function validateLoginStateCookie(
   expect(loginState.returnUrl).toBeUndefined();
 }
 
-describe('pageRouter.login()', () => {
+describe('pagesRouter.login()', () => {
   let wristbandAuth: WristbandAuth;
   let parseTenantFromRootDomain: string;
   let loginUrl: string;
@@ -102,7 +102,7 @@ describe('pageRouter.login()', () => {
       // Create mock request and response
       const { req, res } = createMocks({
         method: 'GET',
-        url: `${loginUrl}?tenant_domain=devs4you`,
+        url: `${loginUrl}?tenant_name=devs4you`,
         headers: { host: `${parseTenantFromRootDomain}` },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
@@ -110,7 +110,7 @@ describe('pageRouter.login()', () => {
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
       // Call login with the mock request and response
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate location header
       validateRedirectResponse(
@@ -137,7 +137,7 @@ describe('pageRouter.login()', () => {
       // Create mock request and response
       const { req, res } = createMocks({
         method: 'GET',
-        url: `${loginUrl}?tenant_domain=devs4you`,
+        url: `${loginUrl}?tenant_name=devs4you`,
         headers: { host: `${parseTenantFromRootDomain}` },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
@@ -145,7 +145,7 @@ describe('pageRouter.login()', () => {
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
       // Call login with the mock request and response
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate Redirect response
       validateRedirectResponse(
@@ -216,7 +216,7 @@ describe('pageRouter.login()', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate Redirect response
       validateRedirectResponse(
@@ -256,7 +256,7 @@ describe('pageRouter.login()', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate Redirect response
       validateRedirectResponse(
@@ -297,7 +297,7 @@ describe('pageRouter.login()', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate Redirect response
       validateRedirectResponse(mockRes, authorizeUrl, `https://tenant.custom.com`, redirectUri);
@@ -326,13 +326,13 @@ describe('pageRouter.login()', () => {
         method: 'GET',
         url: `${loginUrl}`,
         headers: { host: `${parseTenantFromRootDomain}` },
-        query: { tenant_domain: 'devs4you', tenant_custom_domain: 'tenant.custom.com' },
+        query: { tenant_name: 'devs4you', tenant_custom_domain: 'tenant.custom.com' },
       });
       // Cast req and res to NextApiRequest and NextApiResponse
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate Redirect response
       validateRedirectResponse(mockRes, authorizeUrl, `https://tenant.custom.com`, redirectUri);
@@ -371,7 +371,7 @@ describe('pageRouter.login()', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate Redirect response
       const locationUrl: URL = new URL(authorizeUrl);
@@ -445,7 +445,7 @@ describe('pageRouter.login()', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
 
       // Validate Redirect response
       const locationUrl: URL = new URL(authorizeUrl);
@@ -491,7 +491,7 @@ describe('pageRouter.login()', () => {
   });
 
   describe('Redirect to Application-level Login/Tenant Discovery', () => {
-    test('Unresolved tenant_domain and tenant_custom_domain query params', async () => {
+    test('Unresolved tenant_name and tenant_custom_domain query params', async () => {
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
         clientSecret: CLIENT_SECRET,
@@ -502,7 +502,7 @@ describe('pageRouter.login()', () => {
         autoConfigureEnabled: false,
       });
 
-      // tenant_domain and tenant_custom_domain query param is missing, which should redirect to app-level login.
+      // tenant_name and tenant_custom_domain query param is missing, which should redirect to app-level login.
       // Create mock request and response
       const { req, res } = createMocks({
         method: 'GET',
@@ -513,7 +513,7 @@ describe('pageRouter.login()', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
       expect(authorizeUrl).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
     });
 
@@ -546,7 +546,7 @@ describe('pageRouter.login()', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
       expect(authorizeUrl).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
     });
 
@@ -580,7 +580,7 @@ describe('pageRouter.login()', () => {
       const mockReq = req as unknown as NextApiRequest;
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
-      const authorizeUrl = await wristbandAuth.pageRouter.login(mockReq, mockRes);
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
       expect(authorizeUrl).toBe(`https://google.com?client_id=${CLIENT_ID}`);
     });
   });

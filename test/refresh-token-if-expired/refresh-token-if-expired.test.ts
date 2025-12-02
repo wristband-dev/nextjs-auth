@@ -26,7 +26,7 @@ describe('Refresh Token If Expired', () => {
   test('Invalid refreshToken', async () => {
     try {
       await wristbandAuth.refreshTokenIfExpired('', 1000);
-      expect('').fail('Error expected to be thrown.');
+      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('Refresh token must be a valid string');
@@ -36,7 +36,7 @@ describe('Refresh Token If Expired', () => {
   test('Invalid expiresAt', async () => {
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', -1000);
-      expect('').fail('Error expected to be thrown.');
+      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('The expiresAt field must be an integer greater than 0');
@@ -99,10 +99,7 @@ describe('Refresh Token If Expired', () => {
   });
 
   test('Perform a token refresh with a bad token value (4xx error)', async () => {
-    const mockError = {
-      error: 'invalid_grant',
-      error_description: 'Invalid refresh token',
-    };
+    const mockError = { error: 'invalid_grant', error_description: 'Invalid refresh token' };
     (global.fetch as jest.Mock).mockImplementationOnce((url: string) => {
       if (url === `https://${WRISTBAND_APPLICATION_DOMAIN}/api/v1/oauth2/token`) {
         return Promise.resolve({
@@ -116,10 +113,10 @@ describe('Refresh Token If Expired', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect('').fail('Error expected to be thrown.');
+      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof WristbandError).toBe(true);
-      expect(error.error).toBe('invalid_refresh_token');
+      expect(error.code).toBe('invalid_refresh_token');
       expect(error.errorDescription).toBe('Invalid refresh token');
     }
   });
@@ -142,10 +139,10 @@ describe('Refresh Token If Expired', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect('').fail('Error expected to be thrown.');
+      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof WristbandError).toBe(true);
-      expect(error.error).toBe('unexpected_error');
+      expect(error.code).toBe('unexpected_error');
       expect(error.errorDescription).toBe('Unexpected Error');
     }
 

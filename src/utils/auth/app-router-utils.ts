@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
 import { AppRouterLoginStateCookie, LoginState, LoginStateMapConfig } from '../../types';
-import { base64ToURLSafe, generateRandomString, sha256Base64 } from './common-utils';
+import { base64ToURLSafe, generateRandomString, sha256Base64 } from '../crypto';
 
 function parseCookies(cookieHeader: string | null): Record<string, string> {
   if (!cookieHeader) return {};
@@ -14,29 +14,38 @@ function parseCookies(cookieHeader: string | null): Record<string, string> {
   );
 }
 
-export function parseTenantSubdomain(req: NextRequest, parseTenantFromRootDomain: string): string {
-  const host = req.headers.get('host');
-  return host!.substring(host!.indexOf('.') + 1) === parseTenantFromRootDomain
-    ? host!.substring(0, host!.indexOf('.'))
+export function parseTenantSubdomain(request: NextRequest, parseTenantFromRootDomain: string): string {
+  const host = request.headers.get('host');
+
+  // Should never happen (defensive measure)
+  if (!host) {
+    return '';
+  }
+
+  // Strip off the port if it exists
+  const hostname = host.split(':')[0];
+
+  return hostname.substring(hostname.indexOf('.') + 1) === parseTenantFromRootDomain
+    ? hostname.substring(0, hostname.indexOf('.'))
     : '';
 }
 
-export function resolveTenantDomainName(req: NextRequest, parseTenantFromRootDomain: string): string {
+export function resolveTenantName(request: NextRequest, parseTenantFromRootDomain: string): string {
   if (parseTenantFromRootDomain) {
-    return parseTenantSubdomain(req, parseTenantFromRootDomain) || '';
+    return parseTenantSubdomain(request, parseTenantFromRootDomain) || '';
   }
 
-  const tenantDomainParam = req.nextUrl.searchParams.getAll('tenant_domain');
+  const tenantNameParam = request.nextUrl.searchParams.getAll('tenant_name');
 
-  if (tenantDomainParam.length > 1) {
-    throw new TypeError('More than one [tenant_domain] query parameter was encountered');
+  if (tenantNameParam.length > 1) {
+    throw new TypeError('More than one [tenant_name] query parameter was encountered');
   }
 
-  return tenantDomainParam[0] || '';
+  return tenantNameParam[0] || '';
 }
 
-export function resolveTenantCustomDomainParam(req: NextRequest): string {
-  const tenantCustomDomainParam = req.nextUrl.searchParams.getAll('tenant_custom_domain');
+export function resolveTenantCustomDomainParam(request: NextRequest): string {
+  const tenantCustomDomainParam = request.nextUrl.searchParams.getAll('tenant_custom_domain');
 
   if (tenantCustomDomainParam.length > 1) {
     throw new TypeError('More than one [tenant_custom_domain] query parameter was encountered');
@@ -45,8 +54,12 @@ export function resolveTenantCustomDomainParam(req: NextRequest): string {
   return tenantCustomDomainParam[0] || '';
 }
 
-export function createLoginState(req: NextRequest, redirectUri: string, config: LoginStateMapConfig = {}): LoginState {
-  const returnUrlParam = req.nextUrl.searchParams.getAll('return_url');
+export function createLoginState(
+  request: NextRequest,
+  redirectUri: string,
+  config: LoginStateMapConfig = {}
+): LoginState {
+  const returnUrlParam = request.nextUrl.searchParams.getAll('return_url');
 
   if (returnUrlParam.length > 1) {
     throw new TypeError('More than one [return_url] query parameter was encountered');
@@ -65,14 +78,14 @@ export function createLoginState(req: NextRequest, redirectUri: string, config: 
 }
 
 export function createLoginStateCookie(
-  req: NextRequest,
-  res: NextResponse,
+  request: NextRequest,
+  response: NextResponse,
   state: string,
   encryptedLoginState: string,
   dangerouslyDisableSecureCookies: boolean
 ): void {
   // Parse existing cookies from the request
-  const cookies = parseCookies(req.headers.get('cookie'));
+  const cookies = parseCookies(request.headers.get('cookie'));
 
   // Filter for login state cookies
   const allLoginCookies = Object.entries(cookies)
@@ -91,7 +104,7 @@ export function createLoginStateCookie(
     })[0];
 
     // Delete the cookie
-    res.headers.append(
+    response.headers.append(
       'Set-Cookie',
       `${oldestCookie.name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`
     );
@@ -99,29 +112,29 @@ export function createLoginStateCookie(
 
   // 1 hour expiration for new cookie
   const newCookieName: string = `${LOGIN_STATE_COOKIE_PREFIX}${state}${LOGIN_STATE_COOKIE_SEPARATOR}${Date.now().valueOf()}`;
-  res.headers.append(
+  response.headers.append(
     'Set-Cookie',
     `${newCookieName}=${encryptedLoginState}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`
   );
 }
 
 export async function getAuthorizeUrl(
-  req: NextRequest,
+  request: NextRequest,
   config: {
     clientId: string;
     codeVerifier: string;
     defaultTenantCustomDomain?: string;
-    defaultTenantDomainName?: string;
+    defaultTenantName?: string;
     redirectUri: string;
     scopes: string[];
     state: string;
     tenantCustomDomain?: string;
-    tenantDomainName?: string;
+    tenantName?: string;
     isApplicationCustomDomainActive?: boolean;
     wristbandApplicationVanityDomain: string;
   }
 ): Promise<string> {
-  const loginHint = req.nextUrl.searchParams.getAll('login_hint');
+  const loginHint = request.nextUrl.searchParams.getAll('login_hint');
 
   if (loginHint.length > 1) {
     throw new TypeError('More than one [login_hint] query parameter was encountered');
@@ -146,25 +159,25 @@ export async function getAuthorizeUrl(
   // Domain priority order resolution:
   // 1)  tenant_custom_domain query param
   // 2a) tenant subdomain
-  // 2b) tenant_domain query param
+  // 2b) tenant_name query param
   // 3)  defaultTenantCustomDomain login config
-  // 4)  defaultTenantDomainName login config
+  // 4)  defaultTenantName login config
   if (config.tenantCustomDomain) {
     return `https://${config.tenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
   }
-  if (config.tenantDomainName) {
-    return `https://${config.tenantDomainName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
+  if (config.tenantName) {
+    return `https://${config.tenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
   }
   if (config.defaultTenantCustomDomain) {
     return `https://${config.defaultTenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
   }
-  return `https://${config.defaultTenantDomainName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
+  return `https://${config.defaultTenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
 }
 
-export function getLoginStateCookie(req: NextRequest): AppRouterLoginStateCookie | null {
+export function getLoginStateCookie(request: NextRequest): AppRouterLoginStateCookie | null {
   // Parse existing cookies from the request
-  const cookies = parseCookies(req.headers.get('cookie'));
-  const state = req.nextUrl.searchParams.get('state');
+  const cookies = parseCookies(request.headers.get('cookie'));
+  const state = request.nextUrl.searchParams.get('state');
   const paramState = state ? state.toString() : '';
 
   // This should always resolve to a single cookie with this prefix, or possibly no cookie at all
@@ -182,7 +195,7 @@ export function getLoginStateCookie(req: NextRequest): AppRouterLoginStateCookie
 }
 
 export function clearLoginStateCookie(
-  res: NextResponse,
+  response: NextResponse,
   cookieName: string,
   dangerouslyDisableSecureCookies: boolean
 ): void {
@@ -191,5 +204,5 @@ export function clearLoginStateCookie(
     `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`,
     !dangerouslyDisableSecureCookies ? 'Secure' : '',
   ].join('; ');
-  res.headers.append('Set-Cookie', cookieAttributes);
+  response.headers.append('Set-Cookie', cookieAttributes);
 }

@@ -1,5 +1,3 @@
-/* eslint-disable import/no-extraneous-dependencies */
-
 import { createWristbandAuth, WristbandAuth, WristbandError } from '../../src/index';
 
 const CLIENT_ID = 'clientId';
@@ -28,7 +26,7 @@ describe('Refresh Token Errors', () => {
   test('Invalid refreshToken', async () => {
     try {
       await wristbandAuth.refreshTokenIfExpired('', 1000);
-      expect.fail('Expected error to be thrown');
+      fail('Expected error to be thrown');
     } catch (error: any) {
       expect(error).toBeInstanceOf(TypeError);
       expect(error.message).toBe('Refresh token must be a valid string');
@@ -38,7 +36,7 @@ describe('Refresh Token Errors', () => {
   test('Invalid expiresAt', async () => {
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', -1000);
-      expect.fail('Expected error to be thrown');
+      fail('Expected error to be thrown');
     } catch (error: any) {
       expect(error).toBeInstanceOf(TypeError);
       expect(error.message).toBe('The expiresAt field must be an integer greater than 0');
@@ -64,11 +62,40 @@ describe('Refresh Token Errors', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect.fail('Expected error to be thrown');
+      fail('Expected error to be thrown');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
-      expect(error.error).toBe('invalid_refresh_token');
+      expect(error.code).toBe('invalid_refresh_token');
       expect(error.errorDescription).toBe('Invalid refresh token');
+    }
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('Perform a token refresh with InvalidGrantError', async () => {
+    const mockError = {
+      error: 'invalid_grant',
+      error_description: 'The refresh token is invalid or expired',
+    };
+
+    (global.fetch as jest.Mock).mockImplementationOnce((url: string) => {
+      if (url === `https://${WRISTBAND_APPLICATION_DOMAIN}/api/v1/oauth2/token`) {
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          text: jest.fn().mockResolvedValueOnce(JSON.stringify(mockError)),
+        });
+      }
+      return Promise.reject(new Error('Unexpected URL'));
+    });
+
+    try {
+      await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
+      fail('Expected error to be thrown');
+    } catch (error: any) {
+      expect(error).toBeInstanceOf(WristbandError);
+      expect(error.code).toBe('invalid_refresh_token');
+      expect(error.errorDescription).toBe('The refresh token is invalid or expired');
     }
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
@@ -93,10 +120,10 @@ describe('Refresh Token Errors', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect.fail('Expected error to be thrown');
+      fail('Expected error to be thrown');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
-      expect(error.error).toBe('unexpected_error');
+      expect(error.code).toBe('unexpected_error');
       expect(error.errorDescription).toBe('Unexpected Error');
     }
 
@@ -122,10 +149,10 @@ describe('Refresh Token Errors', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect.fail('Expected error to be thrown for status 401');
+      fail('Expected error to be thrown for status 401');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
-      expect(error.error).toBe('invalid_refresh_token');
+      expect(error.code).toBe('invalid_refresh_token');
       expect(error.errorDescription).toBe('Unauthorized');
     }
 
@@ -151,10 +178,10 @@ describe('Refresh Token Errors', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect.fail('Expected error to be thrown for status 403');
+      fail('Expected error to be thrown for status 403');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
-      expect(error.error).toBe('invalid_refresh_token');
+      expect(error.code).toBe('invalid_refresh_token');
       expect(error.errorDescription).toBe('Forbidden');
     }
 
@@ -180,10 +207,10 @@ describe('Refresh Token Errors', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect.fail('Expected error to be thrown for status 422');
+      fail('Expected error to be thrown for status 422');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
-      expect(error.error).toBe('invalid_refresh_token');
+      expect(error.code).toBe('invalid_refresh_token');
       expect(error.errorDescription).toBe('Unprocessable Entity');
     }
 
@@ -209,10 +236,10 @@ describe('Refresh Token Errors', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect.fail('Expected error to be thrown for status 500');
+      fail('Expected error to be thrown for status 500');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
-      expect(error.error).toBe('unexpected_error');
+      expect(error.code).toBe('unexpected_error');
       expect(error.errorDescription).toBe('Unexpected Error');
     }
 
@@ -238,10 +265,10 @@ describe('Refresh Token Errors', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect.fail('Expected error to be thrown for status 502');
+      fail('Expected error to be thrown for status 502');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
-      expect(error.error).toBe('unexpected_error');
+      expect(error.code).toBe('unexpected_error');
       expect(error.errorDescription).toBe('Unexpected Error');
     }
 
@@ -267,10 +294,10 @@ describe('Refresh Token Errors', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect.fail('Expected error to be thrown for status 503');
+      fail('Expected error to be thrown for status 503');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
-      expect(error.error).toBe('unexpected_error');
+      expect(error.code).toBe('unexpected_error');
       expect(error.errorDescription).toBe('Unexpected Error');
     }
 
@@ -296,10 +323,10 @@ describe('Refresh Token Errors', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect.fail('Expected error to be thrown for status 504');
+      fail('Expected error to be thrown for status 504');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
-      expect(error.error).toBe('unexpected_error');
+      expect(error.code).toBe('unexpected_error');
       expect(error.errorDescription).toBe('Unexpected Error');
     }
 
@@ -325,11 +352,11 @@ describe('Refresh Token Errors', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect.fail('Expected error to be thrown');
+      fail('Expected error to be thrown');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
-      expect(error.error).toBe('invalid_refresh_token');
-      expect(error.errorDescription).toBe('Invalid Refresh Token'); // Default fallback
+      expect(error.code).toBe('invalid_refresh_token');
+      expect(error.errorDescription).toBe('Invalid grant'); // Default fallback
     }
   });
 
@@ -340,10 +367,10 @@ describe('Refresh Token Errors', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-      expect.fail('Expected error to be thrown');
+      fail('Expected error to be thrown');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
-      expect(error.error).toBe('unexpected_error');
+      expect(error.code).toBe('unexpected_error');
       expect(error.errorDescription).toBe('Unexpected Error');
     }
 

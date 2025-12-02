@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server';
 import {
   parseTenantSubdomain,
-  resolveTenantDomainName,
+  resolveTenantName,
   resolveTenantCustomDomainParam,
   createLoginState,
   createLoginStateCookie,
   getAuthorizeUrl,
   getLoginStateCookie,
   clearLoginStateCookie,
-} from '../../src/utils/auth/app-router-utils';
-import { createMockNextRequest, CLIENT_ID } from '../test-utils';
-import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
+} from '../../../src/utils/auth/app-router-utils';
+import { createMockNextRequest, CLIENT_ID } from '../../test-utils';
+import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
 
-jest.mock('../../src/utils/auth/common-utils', () => {
+jest.mock('../../../src/utils/crypto', () => {
   return {
     base64ToURLSafe: jest.fn((input) => {
       return input.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -66,57 +66,127 @@ describe('parseTenantSubdomain', () => {
     const result = parseTenantSubdomain(req, 'example.com');
     expect(result).toBe('');
   });
+
+  test('should strip port from host header', () => {
+    const req = createMockNextRequest({
+      url: 'https://tenant.example.com:3000/path',
+      headers: { host: 'tenant.example.com:3000' },
+    });
+
+    const result = parseTenantSubdomain(req, 'example.com');
+    expect(result).toBe('tenant');
+  });
+
+  test('should strip port from host header with complex subdomain', () => {
+    const req = createMockNextRequest({
+      url: 'https://my-tenant-123.example.com:8080/path',
+      headers: { host: 'my-tenant-123.example.com:8080' },
+    });
+
+    const result = parseTenantSubdomain(req, 'example.com');
+    expect(result).toBe('my-tenant-123');
+  });
+
+  test('should handle host without port (no change)', () => {
+    const req = createMockNextRequest({
+      url: 'https://tenant.example.com/path',
+      headers: { host: 'tenant.example.com' },
+    });
+
+    const result = parseTenantSubdomain(req, 'example.com');
+    expect(result).toBe('tenant');
+  });
+
+  test('should return empty string when root domain does not match after stripping port', () => {
+    const req = createMockNextRequest({
+      url: 'https://tenant.otherdomain.com:3000/path',
+      headers: { host: 'tenant.otherdomain.com:3000' },
+    });
+
+    const result = parseTenantSubdomain(req, 'example.com');
+    expect(result).toBe('');
+  });
+
+  test('should strip port when accessing root domain directly', () => {
+    const req = createMockNextRequest({
+      url: 'https://example.com:3000/path',
+      headers: { host: 'example.com:3000' },
+    });
+
+    const result = parseTenantSubdomain(req, 'example.com');
+    expect(result).toBe('');
+  });
 });
 
-describe('resolveTenantDomainName', () => {
+describe('resolveTenantName', () => {
   test('should return subdomain when parseTenantFromRootDomain is provided', () => {
     const req = createMockNextRequest({
       url: 'https://tenant.example.com/path',
       headers: { host: 'tenant.example.com' },
     });
 
-    const result = resolveTenantDomainName(req, 'example.com');
+    const result = resolveTenantName(req, 'example.com');
     expect(result).toBe('tenant');
   });
 
-  test('should return tenant_domain query param when parseTenantFromRootDomain is not provided', () => {
+  test('should return tenant_name query param when parseTenantFromRootDomain is not provided', () => {
     const req = createMockNextRequest({
-      url: 'https://example.com/path?tenant_domain=mytenant',
+      url: 'https://example.com/path?tenant_name=mytenant',
       headers: { host: 'example.com' },
     });
 
-    const result = resolveTenantDomainName(req, '');
+    const result = resolveTenantName(req, '');
     expect(result).toBe('mytenant');
   });
 
-  test('should return empty string when no tenant_domain param and no parseTenantFromRootDomain', () => {
+  test('should return empty string when no tenant_name param and no parseTenantFromRootDomain', () => {
     const req = createMockNextRequest({
       url: 'https://example.com/path',
       headers: { host: 'example.com' },
     });
 
-    const result = resolveTenantDomainName(req, '');
+    const result = resolveTenantName(req, '');
     expect(result).toBe('');
   });
 
-  test('should throw error when multiple tenant_domain params are provided', () => {
+  test('should throw error when multiple tenant_name params are provided', () => {
     const req = createMockNextRequest({
-      url: 'https://example.com/path?tenant_domain=tenant1&tenant_domain=tenant2',
+      url: 'https://example.com/path?tenant_name=tenant1&tenant_name=tenant2',
       headers: { host: 'example.com' },
     });
 
     expect(() => {
-      return resolveTenantDomainName(req, '');
-    }).toThrow('More than one [tenant_domain] query parameter was encountered');
+      return resolveTenantName(req, '');
+    }).toThrow('More than one [tenant_name] query parameter was encountered');
   });
 
   test('should prioritize subdomain over query param when both are present', () => {
     const req = createMockNextRequest({
-      url: 'https://subdomain-tenant.example.com/path?tenant_domain=query-tenant',
+      url: 'https://subdomain-tenant.example.com/path?tenant_name=query-tenant',
       headers: { host: 'subdomain-tenant.example.com' },
     });
 
-    const result = resolveTenantDomainName(req, 'example.com');
+    const result = resolveTenantName(req, 'example.com');
+    expect(result).toBe('subdomain-tenant');
+  });
+
+  test('should strip port when resolving tenant from subdomain', () => {
+    const req = createMockNextRequest({
+      url: 'https://tenant.example.com:3000/path',
+      headers: { host: 'tenant.example.com:3000' },
+    });
+
+    const result = resolveTenantName(req, 'example.com');
+    expect(result).toBe('tenant');
+  });
+
+  test('should prioritize subdomain over query param even with port in host', () => {
+    const req = createMockNextRequest({
+      url: 'https://subdomain-tenant.example.com:3000/path?tenant_name=query-tenant',
+      headers: { host: 'subdomain-tenant.example.com:3000' },
+    });
+
+    const result = resolveTenantName(req, 'example.com');
     expect(result).toBe('subdomain-tenant');
   });
 });
@@ -347,9 +417,9 @@ describe('getAuthorizeUrl', () => {
     const config = {
       ...baseConfig,
       tenantCustomDomain: 'custom.domain.com',
-      tenantDomainName: 'tenant',
+      tenantName: 'tenant',
       defaultTenantCustomDomain: 'default-custom.domain.com',
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);
@@ -368,9 +438,9 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      tenantDomainName: 'tenant',
+      tenantName: 'tenant',
       defaultTenantCustomDomain: 'default-custom.domain.com',
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);
@@ -386,7 +456,7 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      tenantDomainName: 'tenant',
+      tenantName: 'tenant',
       isApplicationCustomDomainActive: true,
     };
 
@@ -404,7 +474,7 @@ describe('getAuthorizeUrl', () => {
     const config = {
       ...baseConfig,
       defaultTenantCustomDomain: 'default-custom.domain.com',
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);
@@ -420,7 +490,7 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);
@@ -436,7 +506,7 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);
@@ -452,7 +522,7 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     await expect(getAuthorizeUrl(req, config)).rejects.toThrow(
@@ -468,7 +538,7 @@ describe('getAuthorizeUrl', () => {
 
     const config = {
       ...baseConfig,
-      defaultTenantDomainName: 'default-tenant',
+      defaultTenantName: 'default-tenant',
     };
 
     const result = await getAuthorizeUrl(req, config);
@@ -651,10 +721,8 @@ describe('Edge Cases and Error Handling', () => {
       headers: {},
     });
 
-    // This will throw because host is null, but that's expected behavior
-    expect(() => {
-      return parseTenantSubdomain(req, 'example.com');
-    }).toThrow();
+    const result = parseTenantSubdomain(req, 'example.com');
+    expect(result).toBe(''); // Should return empty string, not throw
   });
 
   test('createLoginState should handle null/undefined config', () => {
