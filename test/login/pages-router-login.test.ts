@@ -33,6 +33,7 @@ function validateRedirectResponse(
   expect(searchParams.get('code_challenge_method')).toEqual('S256');
   expect(searchParams.get('nonce')).toBeTruthy();
   expect(searchParams.get('login_hint')).toBeFalsy();
+  expect(searchParams.get('idp_hint')).toBeFalsy();
 }
 
 async function validateLoginStateCookie(
@@ -339,7 +340,7 @@ describe('pagesRouter.login()', () => {
       validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
     });
 
-    test('With login_hint and return_url query params', async () => {
+    test('With login_hint, idp_hint, and return_url query params', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
       loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
@@ -363,6 +364,7 @@ describe('pagesRouter.login()', () => {
         url: `${loginUrl}`,
         headers: { host: `devs4you.${parseTenantFromRootDomain}` },
         query: {
+          idp_hint: 'google',
           login_hint: 'test@wristband.dev',
           return_url: `https://devs4you.${parseTenantFromRootDomain}/settings`,
         },
@@ -381,6 +383,7 @@ describe('pagesRouter.login()', () => {
 
       // Validate query params of Authorize URL
       expect(searchParams.get('login_hint')).toBe('test@wristband.dev');
+      expect(searchParams.get('idp_hint')).toBe('google');
 
       // Validate login state cookie
       const setCookieHeaders = mockRes.getHeader('Set-Cookie');

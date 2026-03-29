@@ -183,19 +183,21 @@ export class ConfigResolver {
 
   // Method to preload and validate all configurations
   private validateAllDynamicConfigs(sdkConfiguration: SdkConfiguration): void {
-    // Validate that required fields are present in the SDK config response
-    if (!sdkConfiguration.loginUrl) {
-      throw new WristbandError('SDK configuration response missing required field: loginUrl');
-    }
-    if (!sdkConfiguration.redirectUri) {
-      throw new WristbandError('SDK configuration response missing required field: redirectUri');
-    }
-
     // Use manual config values if provided, otherwise use SDK config values
-    const loginUrl = this.authConfig.loginUrl || sdkConfiguration.loginUrl;
-    const redirectUri = this.authConfig.redirectUri || sdkConfiguration.redirectUri;
+    const loginUrl = this.authConfig.loginUrl || sdkConfiguration.loginUrl || '';
+    const redirectUri = this.authConfig.redirectUri || sdkConfiguration.redirectUri || '';
     const parseTenantFromRootDomain =
       this.authConfig.parseTenantFromRootDomain || sdkConfiguration.loginUrlTenantDomainSuffix || '';
+
+    // Validate that required fields are present in the SDK config response
+    if (!loginUrl) {
+      throw new WristbandError('SDK configuration response missing required field: loginUrl');
+    }
+    if (!redirectUri) {
+      throw new WristbandError(
+        'The [redirectUri] could not be resolved. Provide it explicitly in your SDK config or ensure your Wristband OAuth2 Client has a single redirect URI configured.'
+      );
+    }
 
     // Validate the tenant name placeholder logic with final resolved values
     if (parseTenantFromRootDomain) {

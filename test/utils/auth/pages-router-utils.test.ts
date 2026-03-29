@@ -568,6 +568,26 @@ describe('Page Router Utils', () => {
       );
     });
 
+    it('should include idp_hint when provided in query', async () => {
+      const req = {
+        query: { idp_hint: 'google' },
+      } as unknown as NextApiRequest;
+
+      const result = await getAuthorizeUrl(req, baseConfig);
+
+      expect(result).toContain('idp_hint=google');
+    });
+
+    it('should throw error when multiple idp_hint query params are provided', async () => {
+      const req = {
+        query: { idp_hint: ['google', 'facebook'] },
+      } as unknown as NextApiRequest;
+
+      await expect(getAuthorizeUrl(req, baseConfig)).rejects.toThrow(
+        'More than one [idp_hint] query parameter was encountered'
+      );
+    });
+
     it('should call crypto functions correctly', async () => {
       const req = { query: {} } as NextApiRequest;
 

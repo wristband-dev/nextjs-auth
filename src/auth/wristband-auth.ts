@@ -32,11 +32,13 @@ export interface WristbandAuth {
      * for the user attempting to login in order to start the Authorization Code flow.
      *
      * Your request can contain Wristband-specific query parameters:
+     * - idp_hint: A hint to Wristband about which identity provider the user should be redirected to. When present,
+     * Wristband will bypass the Tenant Login Page and send the user directly to the specified identity provider.
      * - login_hint: A hint to Wristband about user's preferred login identifier. This can be appended as a query
      * parameter in the redirect request to the Authorize URL.
      * - return_url: The location of where to send users after authenticating.
-     * - tenant_custom_domain: The tenant custom domain for the tenant that the user belongs to, if applicable. Should be
-     * used as the domain of the authorize URL when present.
+     * - tenant_custom_domain: The tenant custom domain for the tenant that the user belongs to, if applicable. Should
+     * be used as the domain of the authorize URL when present.
      * - tenant_: The name of the tenant the user belongs to. Should be used in the tenant vanity domain of
      * the authorize URL when not utilizing tenant subdomains nor tenant custom domains.
      *
@@ -150,11 +152,13 @@ export interface WristbandAuth {
      * for the user attempting to login in order to start the Authorization Code flow.
      *
      * Your request can contain Wristband-specific query parameters:
+     * - idp_hint: A hint to Wristband about which identity provider the user should be redirected to. When present,
+     * Wristband will bypass the Tenant Login Page and send the user directly to the specified identity provider.
      * - login_hint: A hint to Wristband about user's preferred login identifier. This can be appended as a query
      * parameter in the redirect request to the Authorize URL.
      * - return_url: The location of where to send users after authenticating.
-     * - tenant_custom_domain: The tenant custom domain for the tenant that the user belongs to, if applicable. Should be
-     * used as the domain of the authorize URL when present.
+     * - tenant_custom_domain: The tenant custom domain for the tenant that the user belongs to, if applicable. Should
+     * be used as the domain of the authorize URL when present.
      * - tenant_name: The name of the tenant the user belongs to. Should be used in the tenant vanity domain of
      * the authorize URL when not utilizing tenant subdomains nor tenant custom domains.
      *

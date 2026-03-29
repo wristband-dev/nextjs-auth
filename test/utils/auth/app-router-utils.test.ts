@@ -530,6 +530,38 @@ describe('getAuthorizeUrl', () => {
     );
   });
 
+  test('should include idp_hint when provided', async () => {
+    const req = createMockNextRequest({
+      url: 'https://example.com/path?idp_hint=google',
+      headers: {},
+    });
+
+    const config = {
+      ...baseConfig,
+      defaultTenantName: 'default-tenant',
+    };
+
+    const result = await getAuthorizeUrl(req, config);
+
+    expect(result).toContain('idp_hint=google');
+  });
+
+  test('should throw error when multiple idp_hint params are provided', async () => {
+    const req = createMockNextRequest({
+      url: 'https://example.com/path?idp_hint=google&idp_hint=facebook',
+      headers: {},
+    });
+
+    const config = {
+      ...baseConfig,
+      defaultTenantName: 'default-tenant',
+    };
+
+    await expect(getAuthorizeUrl(req, config)).rejects.toThrow(
+      'More than one [idp_hint] query parameter was encountered'
+    );
+  });
+
   test('should include all required OAuth2 parameters', async () => {
     const req = createMockNextRequest({
       url: 'https://example.com/path',

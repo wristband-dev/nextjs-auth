@@ -108,6 +108,26 @@ describe('Login Errors', () => {
     }
   });
 
+  test('Multiple idp_hint params', async () => {
+    // Create mock request and response
+    const { req, res } = createMocks({
+      method: 'GET',
+      url: `${loginUrl}`,
+      query: { tenant_name: 'test', idp_hint: ['hint1', 'hint2'] },
+    });
+    // Cast req and res to NextApiRequest and NextApiResponse
+    const mockReq = req as unknown as NextApiRequest;
+    const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+    try {
+      await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+      fail('Error expected to be thrown.');
+    } catch (error: any) {
+      expect(error instanceof TypeError).toBe(true);
+      expect(error.message).toBe('More than one [idp_hint] query parameter was encountered');
+    }
+  });
+
   test('Way too large customState', async () => {
     // Create mock request and response
     const { req, res } = createMocks({
