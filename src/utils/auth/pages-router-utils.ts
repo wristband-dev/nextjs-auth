@@ -136,10 +136,14 @@ export async function getAuthorizeUrl(
     wristbandApplicationVanityDomain: string;
   }
 ): Promise<string> {
-  const { login_hint: loginHint } = request.query;
+  const { idp_hint: idpHint, login_hint: loginHint } = request.query;
 
   if (!!loginHint && typeof loginHint !== 'string') {
     throw new TypeError('More than one [login_hint] query parameter was encountered');
+  }
+
+  if (!!idpHint && typeof idpHint !== 'string') {
+    throw new TypeError('More than one [idp_hint] query parameter was encountered');
   }
 
   const digest = await sha256Base64(config.codeVerifier);
@@ -154,6 +158,7 @@ export async function getAuthorizeUrl(
     code_challenge_method: 'S256',
     nonce: generateRandomString(32),
     ...(!!loginHint && typeof loginHint === 'string' ? { login_hint: loginHint } : {}),
+    ...(!!idpHint && typeof idpHint === 'string' ? { idp_hint: idpHint } : {}),
   });
 
   const separator = config.isApplicationCustomDomainActive ? '.' : '-';

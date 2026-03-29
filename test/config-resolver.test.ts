@@ -581,7 +581,7 @@ describe('ConfigResolver', () => {
       resolver = new ConfigResolver(validAuthConfig);
 
       await expect(resolver.getRedirectUri()).rejects.toThrow(
-        'SDK configuration response missing required field: redirectUri'
+        'The [redirectUri] could not be resolved. Provide it explicitly in your SDK config or ensure your Wristband OAuth2 Client has a single redirect URI configured.'
       );
     });
   });
@@ -705,7 +705,9 @@ describe('ConfigResolver', () => {
       const invalidSdkConfig = { loginUrl: 'https://test.com/login' } as SdkConfiguration;
       expect(() => {
         return resolver['validateAllDynamicConfigs'](invalidSdkConfig);
-      }).toThrow('SDK configuration response missing required field: redirectUri');
+      }).toThrow(
+        'The [redirectUri] could not be resolved. Provide it explicitly in your SDK config or ensure your Wristband OAuth2 Client has a single redirect URI configured.'
+      );
     });
 
     it(`should validate resolved config with parseTenantFromRootDomain requires ${placeholderName}`, () => {

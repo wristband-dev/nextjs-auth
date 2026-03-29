@@ -135,9 +135,14 @@ export async function getAuthorizeUrl(
   }
 ): Promise<string> {
   const loginHint = request.nextUrl.searchParams.getAll('login_hint');
+  const idpHint = request.nextUrl.searchParams.getAll('idp_hint');
 
   if (loginHint.length > 1) {
     throw new TypeError('More than one [login_hint] query parameter was encountered');
+  }
+
+  if (idpHint.length > 1) {
+    throw new TypeError('More than one [idp_hint] query parameter was encountered');
   }
 
   const digest = await sha256Base64(config.codeVerifier);
@@ -152,6 +157,7 @@ export async function getAuthorizeUrl(
     code_challenge_method: 'S256',
     nonce: generateRandomString(32),
     ...(loginHint.length > 0 ? { login_hint: loginHint[0] } : {}),
+    ...(idpHint.length > 0 ? { idp_hint: idpHint[0] } : {}),
   });
 
   const separator = config.isApplicationCustomDomainActive ? '.' : '-';

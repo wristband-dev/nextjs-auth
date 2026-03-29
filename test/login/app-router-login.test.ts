@@ -72,6 +72,7 @@ describe('appRouter.login()', () => {
       expect(searchParams.get('code_challenge_method')).toEqual('S256');
       expect(searchParams.get('nonce')).toBeTruthy();
       expect(searchParams.get('login_hint')).toBeFalsy();
+      expect(searchParams.get('idp_hint')).toBeFalsy();
 
       // Validate login state cookie
       const setCookieHeaders = response.headers.getSetCookie();
@@ -149,6 +150,7 @@ describe('appRouter.login()', () => {
       expect(searchParams.get('code_challenge_method')).toEqual('S256');
       expect(searchParams.get('nonce')).toBeTruthy();
       expect(searchParams.get('login_hint')).toBeFalsy();
+      expect(searchParams.get('idp_hint')).toBeFalsy();
 
       // Validate login state cookie
       const setCookieHeaders = response.headers.getSetCookie();
