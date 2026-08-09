@@ -14,7 +14,7 @@ export class FetchError<Response> extends Error {
   /**
    * The parsed response body, typically JSON or text, if available.
    */
-  readonly body?: any;
+  readonly body?: unknown;
 
   /**
    * Creates a new FetchError instance.
@@ -22,7 +22,7 @@ export class FetchError<Response> extends Error {
    * @param response - The raw fetch Response associated with the error.
    * @param body - The parsed body of the response, if available.
    */
-  constructor(response: Response, body: any) {
+  constructor(response: Response, body: unknown) {
     super('Fetch Error');
     this.name = 'FetchError';
     this.response = response;

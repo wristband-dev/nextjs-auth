@@ -37,7 +37,7 @@ export async function refreshExpiredToken(
       // eslint-disable-next-line no-await-in-loop
       tokenResponse = await wristbandService.refreshToken(refreshToken);
       break;
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof InvalidGrantError) {
         // Specifically handle invalid_grant errors
         throw new WristbandError('invalid_refresh_token', error.errorDescription, error);
@@ -50,6 +50,7 @@ export async function refreshExpiredToken(
         error.response.status < 500
       ) {
         const errorDescription =
+          // @ts-expect-error - body is unknown, error_description access not type-checked
           error.body && error.body.error_description ? error.body.error_description : 'Invalid Refresh Token';
         // Only 4xx errors should short-circuit the retry loop early.
         throw new WristbandError('invalid_refresh_token', errorDescription, error);
@@ -57,7 +58,7 @@ export async function refreshExpiredToken(
 
       // Final attempt failed
       if (attempt === 3) {
-        throw new WristbandError('unexpected_error', 'Unexpected Error', error);
+        throw new WristbandError('unexpected_error', 'Unexpected Error', error instanceof Error ? error : undefined);
       }
 
       // Wait before retrying (100ms delay)

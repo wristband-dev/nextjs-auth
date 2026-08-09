@@ -3,7 +3,7 @@ import { FORM_URLENCODED_MEDIA_TYPE, JSON_MEDIA_TYPE } from './utils/constants';
 
 interface RequestOptions extends RequestInit {
   headers?: HeadersInit;
-  body?: any;
+  body?: BodyInit;
 }
 
 export class WristbandApiClient {
@@ -39,7 +39,7 @@ export class WristbandApiClient {
     return this.request<T>(endpoint, { method: 'GET', headers, keepalive: true });
   }
 
-  public async post<T>(endpoint: string, body: any, headers: HeadersInit = {}): Promise<T> {
+  public async post<T>(endpoint: string, body: BodyInit, headers: HeadersInit = {}): Promise<T> {
     return this.request<T>(endpoint, { method: 'POST', headers, body, keepalive: true });
   }
 }
