@@ -38,6 +38,7 @@ export async function sha256Base64(input: string) {
 }
 
 export async function encryptLoginState(loginState: LoginState, loginStateSecret: string): Promise<string> {
+  // @ts-expect-error - TODO: Upgrade to iron-webcrypto v2.x
   const encryptedLoginState: string = await seal(crypto, loginState, loginStateSecret, defaults);
 
   if (encryptedLoginState.length > 4096) {
@@ -50,6 +51,7 @@ export async function encryptLoginState(loginState: LoginState, loginStateSecret
 }
 
 export async function decryptLoginState(loginStateCookie: string, loginStateSecret: string): Promise<LoginState> {
+  // @ts-expect-error - TODO: Upgrade to iron-webcrypto v2.x
   const loginState: unknown = await unseal(crypto, loginStateCookie, loginStateSecret, defaults);
   return loginState as LoginState;
 }

@@ -57,7 +57,9 @@ async function getSessionFromCookies<T extends SessionData = SessionData>(
  * @returns True if the session is from a Server Component
  */
 function isServerComponentSession(session: unknown): session is ServerComponentSessionMarker {
-  return Boolean(session && typeof session === 'object' && (session as any)[SERVER_COMPONENT_SESSION]);
+  return Boolean(
+    session && typeof session === 'object' && (session as Record<PropertyKey, unknown>)[SERVER_COMPONENT_SESSION]
+  );
 }
 
 // ======================================

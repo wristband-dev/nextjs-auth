@@ -1,13 +1,16 @@
 {
+  "root": true,
   "env": {
     "browser": true,
     "commonjs": true,
     "es2021": true
   },
   "extends": [
-    "airbnb-base",
-    "airbnb-typescript/base",
-    "prettier"
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:import/recommended",
+    "plugin:import/typescript",
+    "plugin:prettier/recommended"
   ],
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
@@ -19,20 +22,20 @@
     "@typescript-eslint",
     "prettier",
     "jest-extended",
-    "node"
+    "import"
   ],
   "rules": {
     "arrow-body-style": ["error", "always"],
     "consistent-return": "warn",
-    "func-names": "off",
     "no-console": "off",
-    "no-empty-function": "off",
     "no-fallthrough": "off",
     "no-process-exit": "off",
-    "no-unused-vars": "warn",
-    "object-curly-newline": "off",
-    "object-shorthand": "off",
-    "prefer-destructuring": "off",
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_"
+      }
+    ],
     "prettier/prettier": "error",
     "strict": ["error", "global"],
     "max-len": [
@@ -45,10 +48,16 @@
         "ignoreTemplateLiterals": true
       }
     ],
-    "@typescript-eslint/dot-notation": "off",
-    "import/prefer-default-export": "off",
-    "lines-between-class-members": "off",
-    "@typescript-eslint/lines-between-class-members": "off"
+    "import/no-extraneous-dependencies": [
+      "error",
+      {
+        "devDependencies": [
+          "test/**",
+          "**/*.test.ts",
+          "**/*.spec.ts"
+        ]
+      }
+    ]
   },
   "settings": {
     "import/resolver": {
@@ -57,5 +66,25 @@
         "extensions": [".js", ".jsx", ".ts", ".tsx"]
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "files": [
+        "test/**/*.ts",
+        "**/*.test.ts",
+        "**/*.spec.ts"
+      ],
+      "env": {
+        "jest": true
+      },
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-non-null-assertion": "off",
+        "@typescript-eslint/no-unsafe-assignment": "off",
+        "@typescript-eslint/no-unsafe-call": "off",
+        "@typescript-eslint/no-unsafe-member-access": "off",
+        "import/no-extraneous-dependencies": "off"
+      }
+    }
+  ]
 }
