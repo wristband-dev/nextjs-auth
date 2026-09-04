@@ -3,6 +3,27 @@ import { TokenData, TokenResponse } from '../../types';
 import { WristbandService } from '../../wristband-service';
 
 /**
+ * Resolves a tenant custom domain to itself when it is verified and belongs to your Wristband
+ * application. Resolves to an empty string otherwise, so the caller skips over it and falls through
+ * to the next domain in its resolution precedence order.
+ *
+ * @param tenantCustomDomain - The tenant custom domain to validate.
+ * @param wristbandService - Service instance used to perform the validation request.
+ * @returns The tenant custom domain when valid, otherwise an empty string.
+ */
+export async function resolveValidTenantCustomDomain(
+  tenantCustomDomain: string,
+  wristbandService: WristbandService
+): Promise<string> {
+  if (!tenantCustomDomain) {
+    return '';
+  }
+
+  const isValid = await wristbandService.validateTenantCustomDomain(tenantCustomDomain);
+  return isValid ? tenantCustomDomain : '';
+}
+
+/**
  * Refreshes an access token if it has expired.
  *
  * @param refreshToken - The refresh token to use

@@ -22,6 +22,7 @@ import { InvalidGrantError, WristbandError } from '../../error';
 import { LOGIN_REQUIRED_ERROR, TENANT_PLACEHOLDER_REGEX } from '../../utils/constants';
 import { decryptLoginState, encryptLoginState } from '../../utils/crypto';
 import { ConfigResolver } from '../../config-resolver';
+import { resolveValidTenantCustomDomain } from '../../utils/auth/common-utils';
 
 export class PagesRouterAuthHandler {
   private configResolver: ConfigResolver;
@@ -48,7 +49,10 @@ export class PagesRouterAuthHandler {
     const wristbandApplicationVanityDomain = this.configResolver.getWristbandApplicationVanityDomain();
 
     // Determine if a tenant custom domain is present as it will be needed for the authorize URL, if provided.
-    const tenantCustomDomain: string = resolveTenantCustomDomainParam(request);
+    const tenantCustomDomain: string = await resolveValidTenantCustomDomain(
+      resolveTenantCustomDomainParam(request),
+      this.wristbandService
+    );
     const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
     const defaultTenantCustomDomain: string = loginConfig.defaultTenantCustomDomain || '';
     const defaultTenantName: string = loginConfig.defaultTenantName || '';
@@ -106,7 +110,7 @@ export class PagesRouterAuthHandler {
       state: paramState,
       error,
       error_description: errorDescription,
-      tenant_custom_domain: tenantCustomDomainParam,
+      tenant_custom_domain: rawTenantCustomDomainParam,
     } = request.query;
     if (!paramState || typeof paramState !== 'string') {
       throw new TypeError('Invalid query parameter [state] passed from Wristband during callback');
@@ -120,9 +124,16 @@ export class PagesRouterAuthHandler {
     if (!!errorDescription && typeof errorDescription !== 'string') {
       throw new TypeError('Invalid query parameter [error_description] passed from Wristband during callback');
     }
-    if (!!tenantCustomDomainParam && typeof tenantCustomDomainParam !== 'string') {
+    if (!!rawTenantCustomDomainParam && typeof rawTenantCustomDomainParam !== 'string') {
       throw new TypeError('Invalid query parameter [tenant_custom_domain] passed from Wristband during callback');
     }
+
+    // An unverified tenant custom domain is skipped so the flow falls through to the next
+    // entry in the domain precedence order.
+    const tenantCustomDomainParam: string = await resolveValidTenantCustomDomain(
+      rawTenantCustomDomainParam || '',
+      this.wristbandService
+    );
 
     // Resolve and validate the tenant name
     const resolvedTenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
@@ -241,7 +252,10 @@ export class PagesRouterAuthHandler {
     const state = logoutConfig.state ? `&state=${logoutConfig.state}` : '';
     const logoutPath: string = `/api/v1/logout?client_id=${clientId}${logoutRedirectUrl}${state}`;
     const separator = isApplicationCustomDomainActive ? '.' : '-';
-    const tenantCustomDomainParam: string = resolveTenantCustomDomainParam(request);
+    const tenantCustomDomainParam: string = await resolveValidTenantCustomDomain(
+      resolveTenantCustomDomainParam(request),
+      this.wristbandService
+    );
     const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
 
     // Domain priority order resolution:

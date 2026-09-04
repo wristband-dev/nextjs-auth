@@ -8,6 +8,7 @@ import { CLIENT_ID, CLIENT_SECRET, LOGIN_STATE_COOKIE_SECRET, parseSetCookies } 
 import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
 import { LoginState } from '../../src/types';
 import { decryptLoginState, encryptLoginState } from '../../src/utils/crypto';
+import { mockWristbandFetch } from '../helpers/mock-fetch';
 
 function validateRedirectResponse(
   mockRes: MockResponse<NextApiResponse>,
@@ -82,6 +83,7 @@ describe('pagesRouter.login()', () => {
   let wristbandApplicationVanityDomain: string;
 
   beforeEach(() => {
+    mockWristbandFetch();
     parseTenantFromRootDomain = 'localhost:6001';
     loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
     redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;

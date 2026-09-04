@@ -26,7 +26,7 @@ import {
   resolveTenantCustomDomainParam,
   resolveTenantName,
 } from '../../utils/auth/app-router-utils';
-import { refreshExpiredToken } from '../../utils/auth/common-utils';
+import { refreshExpiredToken, resolveValidTenantCustomDomain } from '../../utils/auth/common-utils';
 import { decryptLoginState, encryptLoginState } from '../../utils/crypto';
 import { LOGIN_REQUIRED_ERROR, REDIRECT_RESPONSE_INIT, TENANT_PLACEHOLDER_REGEX } from '../../utils/constants';
 import { WristbandService } from '../../wristband-service';
@@ -53,7 +53,10 @@ export class AppRouterAuthHandler {
     const wristbandApplicationVanityDomain = this.configResolver.getWristbandApplicationVanityDomain();
 
     // Determine if a tenant custom domain is present as it will be needed for the authorize URL, if provided.
-    const tenantCustomDomain: string = resolveTenantCustomDomainParam(request);
+    const tenantCustomDomain: string = await resolveValidTenantCustomDomain(
+      resolveTenantCustomDomainParam(request),
+      this.wristbandService
+    );
     const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
     const defaultTenantCustomDomain: string = loginConfig.defaultTenantCustomDomain || '';
     const defaultTenantName: string = loginConfig.defaultTenantName || '';
@@ -132,7 +135,12 @@ export class AppRouterAuthHandler {
     const paramState = paramStateArray[0] || '';
     const error = errorArray[0] || '';
     const errorDescription = errorDescriptionArray[0] || '';
-    const tenantCustomDomainParam = tenantCustomDomainParamArray[0] || '';
+    // An unverified tenant custom domain is skipped so the flow falls through to the next
+    // entry in the domain precedence order.
+    const tenantCustomDomainParam = await resolveValidTenantCustomDomain(
+      tenantCustomDomainParamArray[0] || '',
+      this.wristbandService
+    );
 
     // Resolve and validate the tenant name
     const resolvedTenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
@@ -244,7 +252,10 @@ export class AppRouterAuthHandler {
     const state = logoutConfig.state ? `&state=${logoutConfig.state}` : '';
     const logoutPath: string = `/api/v1/logout?client_id=${clientId}${logoutRedirectUrl}${state}`;
     const separator = isApplicationCustomDomainActive ? '.' : '-';
-    const tenantCustomDomainParam: string = resolveTenantCustomDomainParam(request);
+    const tenantCustomDomainParam: string = await resolveValidTenantCustomDomain(
+      resolveTenantCustomDomainParam(request),
+      this.wristbandService
+    );
     const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
 
     // Domain priority order resolution:

@@ -1,5 +1,11 @@
 import { FetchError, InvalidGrantError } from './error';
-import { SdkConfiguration, TokenResponse, UserInfo, WristbandUserinfoResponse } from './types';
+import {
+  SdkConfiguration,
+  TokenResponse,
+  UserInfo,
+  ValidateTenantCustomDomainResponse,
+  WristbandUserinfoResponse,
+} from './types';
 import { encodeBase64 } from './utils/crypto';
 import { FORM_URLENCODED_MEDIA_TYPE, JSON_MEDIA_TYPE } from './utils/constants';
 import { withRetry } from './utils/retry';
@@ -176,6 +182,29 @@ export class WristbandService {
     await withRetry(() => {
       return this.wristbandApiClient.post<void>('/oauth2/revoke', `token=${refreshToken}`, this.basicAuthHeaders);
     });
+  }
+
+  /**
+   * Validates that a tenant custom domain is verified and belongs to your Wristband application.
+   *
+   * @param tenantCustomDomain - The tenant custom domain to validate.
+   * @returns Promise resolving to true if the tenant custom domain is verified and belongs to your application.
+   * @throws {Error} When tenantCustomDomain is missing or empty.
+   */
+  async validateTenantCustomDomain(tenantCustomDomain: string): Promise<boolean> {
+    if (!tenantCustomDomain || !tenantCustomDomain.trim()) {
+      throw new Error('Tenant custom domain is required');
+    }
+
+    const response = await withRetry(() => {
+      return this.wristbandApiClient.post<ValidateTenantCustomDomainResponse>(
+        '/custom-domains/validate',
+        JSON.stringify({ tenantCustomDomain }),
+        { 'Content-Type': JSON_MEDIA_TYPE, Accept: JSON_MEDIA_TYPE }
+      );
+    });
+
+    return response.valid;
   }
 
   /// /////////////////////////////////
