@@ -381,7 +381,9 @@ describe('Callback Errors', () => {
       expect(typedError.originalError).toBeDefined();
     }
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    // The 500 is a transient failure, so WristbandService retries it up to
+    // MAX_API_RETRY_ATTEMPTS times -- see withRetry() in utils/retry.ts.
+    expect(global.fetch).toHaveBeenCalledTimes(3);
   });
 
   test('Missing login state cookie returns redirect with missing_login_state reason', async () => {

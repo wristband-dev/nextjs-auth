@@ -26,7 +26,16 @@ export class WristbandApiClient {
     }
 
     const responseBodyText = await response.text();
-    const responseBody = responseBodyText ? (JSON.parse(responseBodyText) as T) : (undefined as T);
+    let responseBody: T;
+    try {
+      responseBody = responseBodyText ? (JSON.parse(responseBodyText) as T) : (undefined as T);
+    } catch {
+      // The body wasn't JSON (e.g. a plain-text or HTML error page from a proxy/CDN). Fall back
+      // to the raw text so that the status-based handling below still applies -- otherwise a 4xx
+      // with a non-JSON body would surface as a SyntaxError and be mistaken for a transient
+      // failure by the retry logic in utils/retry.ts.
+      responseBody = responseBodyText as unknown as T;
+    }
 
     if (response.status >= 400) {
       throw new FetchError(response, responseBody);

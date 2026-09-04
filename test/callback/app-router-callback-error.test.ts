@@ -334,7 +334,9 @@ describe('Callback Errors', () => {
       expect(typedError.originalError).toBeDefined();
     }
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    // The 500 is a transient failure, so WristbandService retries it up to
+    // MAX_API_RETRY_ATTEMPTS times -- see withRetry() in utils/retry.ts.
+    expect(global.fetch).toHaveBeenCalledTimes(3);
   });
 
   describe('Redirect to Application-level Login', () => {
