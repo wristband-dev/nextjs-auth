@@ -586,18 +586,12 @@ describe('ConfigResolver', () => {
     });
   });
 
-  describe('fetchSdkConfiguration - Retry Logic', () => {
+  describe('fetchSdkConfiguration - Error Handling', () => {
     let resolver: ConfigResolver;
-    let originalSetTimeout: typeof setTimeout;
 
     beforeEach(() => {
       initWristbandServiceMock(validSdkConfig);
       resolver = new ConfigResolver(validAuthConfig);
-      originalSetTimeout = global.setTimeout;
-    });
-
-    afterEach(() => {
-      global.setTimeout = originalSetTimeout;
     });
 
     it('should succeed on first attempt', async () => {
@@ -606,71 +600,26 @@ describe('ConfigResolver', () => {
       expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(1);
     });
 
-    it('should retry on failure and succeed on second attempt', async () => {
-      mockWristbandService.getSdkConfiguration
-        .mockRejectedValueOnce(new Error('Network error'))
-        .mockResolvedValue(validSdkConfig);
+    // Retrying on transient failures (5xx errors, network errors) is handled one layer down by
+    // WristbandService -- see withRetry() in utils/retry.ts. ConfigResolver itself only ever
+    // calls getSdkConfiguration once and maps whatever error (if any) surfaces after that.
+    it('should propagate the error immediately without retrying', async () => {
+      mockWristbandService.getSdkConfiguration.mockRejectedValue(new Error('Network error'));
 
-      const result = await resolver.getLoginUrl();
-      expect(result).toBe('https://test.example.com/auth/login');
-      expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(2);
-    });
-
-    it('should retry on failure and succeed on third attempt', async () => {
-      mockWristbandService.getSdkConfiguration
-        .mockRejectedValueOnce(new Error('Network error 1'))
-        .mockRejectedValueOnce(new Error('Network error 2'))
-        .mockResolvedValue(validSdkConfig);
-
-      const result = await resolver.getLoginUrl();
-      expect(result).toBe('https://test.example.com/auth/login');
-      expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(3);
-    });
-
-    it('should fail after 3 attempts', async () => {
-      const error1 = new Error('Network error 1');
-      const error2 = new Error('Network error 2');
-      const error3 = new Error('Network error 3');
-
-      mockWristbandService.getSdkConfiguration
-        .mockRejectedValueOnce(error1)
-        .mockRejectedValueOnce(error2)
-        .mockRejectedValueOnce(error3);
-
-      await expect(resolver.getLoginUrl()).rejects.toThrow(
-        'Failed to fetch SDK configuration after 3 attempts: Network error 3'
-      );
-      expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(3);
-    });
-
-    it('should wait 100ms between retry attempts', async () => {
-      const startTime = Date.now();
-      mockWristbandService.getSdkConfiguration
-        .mockRejectedValueOnce(new Error('Network error 1'))
-        .mockRejectedValueOnce(new Error('Network error 2'))
-        .mockResolvedValue(validSdkConfig);
-
-      await resolver.getLoginUrl();
-      const endTime = Date.now();
-
-      // Account for time drift in CI/CD env (normally take 200ms)
-      expect(endTime - startTime).toBeGreaterThan(101);
+      await expect(resolver.getLoginUrl()).rejects.toThrow('Failed to fetch SDK configuration: Network error');
+      expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(1);
     });
 
     it('should handle unknown error type', async () => {
       mockWristbandService.getSdkConfiguration.mockRejectedValue('string error');
 
-      await expect(resolver.getLoginUrl()).rejects.toThrow(
-        'Failed to fetch SDK configuration after 3 attempts: Unknown error'
-      );
+      await expect(resolver.getLoginUrl()).rejects.toThrow('Failed to fetch SDK configuration: Unknown error');
     });
 
     it('should handle null error', async () => {
       mockWristbandService.getSdkConfiguration.mockRejectedValue(null);
 
-      await expect(resolver.getLoginUrl()).rejects.toThrow(
-        'Failed to fetch SDK configuration after 3 attempts: Unknown error'
-      );
+      await expect(resolver.getLoginUrl()).rejects.toThrow('Failed to fetch SDK configuration: Unknown error');
     });
 
     it('should handle error without message', async () => {
@@ -678,9 +627,7 @@ describe('ConfigResolver', () => {
       (errorWithoutMessage as any).message = undefined;
       mockWristbandService.getSdkConfiguration.mockRejectedValue(errorWithoutMessage);
 
-      await expect(resolver.getLoginUrl()).rejects.toThrow(
-        'Failed to fetch SDK configuration after 3 attempts: Unknown error'
-      );
+      await expect(resolver.getLoginUrl()).rejects.toThrow('Failed to fetch SDK configuration: Unknown error');
     });
   });
 
@@ -859,18 +806,18 @@ describe('ConfigResolver', () => {
     it('should reset promise on error to allow retry', async () => {
       mockWristbandService.getSdkConfiguration
         .mockRejectedValueOnce(new Error('First error'))
-        .mockRejectedValueOnce(new Error('Second error'))
-        .mockRejectedValueOnce(new Error('Third error'))
         .mockResolvedValue(validSdkConfig);
 
-      // First call should fail after 3 attempts
+      // First call should fail immediately -- retrying transient failures is handled one layer
+      // down by WristbandService, so ConfigResolver itself only ever calls
+      // getSdkConfiguration once per loadSdkConfig() invocation.
       await expect(resolver.getLoginUrl()).rejects.toThrow();
-      expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(3);
+      expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(1);
 
-      // Second call should succeed on first attempt (new set of 3 attempts)
+      // Second call should succeed since the cached promise was reset after the error
       const result = await resolver.getRedirectUri();
       expect(result).toBe('https://test.example.com/auth/callback');
-      expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(4);
+      expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(2);
     });
 
     it('should use preloadSdkConfig to eagerly load config', async () => {

@@ -3,6 +3,11 @@ export const JSON_MEDIA_TYPE: string = 'application/json;charset=UTF-8';
 export const LOGIN_REQUIRED_ERROR: string = 'login_required';
 export const LOGIN_STATE_COOKIE_SEPARATOR = '#';
 export const LOGIN_STATE_COOKIE_PREFIX: string = `login${LOGIN_STATE_COOKIE_SEPARATOR}`;
+// Common retry settings applied to all Wristband API calls made from WristbandService.
+export const MAX_API_RETRY_ATTEMPTS: number = 3;
+export const API_RETRY_DELAY_MS: number = 100;
+// Multiplier applied to the delay after each retry attempt (exponential backoff).
+export const API_RETRY_DELAY_MULTIPLIER: number = 2;
 export const NO_CACHE_HEADERS = { 'Cache-Control': 'no-store', Pragma: 'no-cache' };
 export const REDIRECT_RESPONSE_INIT = { status: 302, headers: NO_CACHE_HEADERS };
 

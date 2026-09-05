@@ -476,8 +476,9 @@ describe('App Router Multi Tenant Logout', () => {
     });
 
     test('refresh token revocation network error but logout continues', async () => {
-      // Mock network error
-      (global.fetch as jest.Mock).mockImplementationOnce(() => {
+      // Mock network error. Network failures are transient, so WristbandService retries them
+      // (see withRetry() in utils/retry.ts) -- reject on every attempt so revocation truly fails.
+      (global.fetch as jest.Mock).mockImplementation(() => {
         return Promise.reject(new Error('Network error'));
       });
 

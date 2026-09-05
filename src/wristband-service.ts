@@ -2,6 +2,7 @@ import { FetchError, InvalidGrantError } from './error';
 import { SdkConfiguration, TokenResponse, UserInfo, WristbandUserinfoResponse } from './types';
 import { encodeBase64 } from './utils/crypto';
 import { FORM_URLENCODED_MEDIA_TYPE, JSON_MEDIA_TYPE } from './utils/constants';
+import { withRetry } from './utils/retry';
 import { WristbandApiClient } from './wristband-api-client';
 
 /**
@@ -9,7 +10,9 @@ import { WristbandApiClient } from './wristband-api-client';
  *
  * Handles OAuth token exchange, user information retrieval, token refresh,
  * and token revocation. Most methods use HTTP Basic Authentication with
- * the configured client credentials.
+ * the configured client credentials. Every external API call made here is
+ * automatically retried on transient failures (5xx responses, network errors) via
+ * {@link withRetry}.
  *
  * @internal
  */
@@ -39,10 +42,9 @@ export class WristbandService {
    */
   async getSdkConfiguration(): Promise<SdkConfiguration> {
     const jsonHeaders = { 'Content-Type': JSON_MEDIA_TYPE, Accept: JSON_MEDIA_TYPE };
-    const sdkConfig = await this.wristbandApiClient.get<SdkConfiguration>(
-      `/clients/${this.clientId}/sdk-configuration`,
-      jsonHeaders
-    );
+    const sdkConfig = await withRetry(() => {
+      return this.wristbandApiClient.get<SdkConfiguration>(`/clients/${this.clientId}/sdk-configuration`, jsonHeaders);
+    });
     return sdkConfig;
   }
 
@@ -80,11 +82,9 @@ export class WristbandService {
     ].join('&');
 
     try {
-      const tokenResponse = await this.wristbandApiClient.post<TokenResponse>(
-        '/oauth2/token',
-        authData,
-        this.basicAuthHeaders
-      );
+      const tokenResponse = await withRetry(() => {
+        return this.wristbandApiClient.post<TokenResponse>('/oauth2/token', authData, this.basicAuthHeaders);
+      });
       return tokenResponse;
     } catch (error) {
       if (WristbandService.hasInvalidGrantError(error)) {
@@ -116,7 +116,9 @@ export class WristbandService {
       'Content-Type': JSON_MEDIA_TYPE,
       Accept: JSON_MEDIA_TYPE,
     };
-    const userinfo = await this.wristbandApiClient.get('/oauth2/userinfo', bearerTokenHeaders);
+    const userinfo = await withRetry(() => {
+      return this.wristbandApiClient.get('/oauth2/userinfo', bearerTokenHeaders);
+    });
 
     // Validate response data is a valid UserInfo object
     WristbandService.validateUserinfoResponse(userinfo);
@@ -143,11 +145,9 @@ export class WristbandService {
     const authData: string = `grant_type=refresh_token&refresh_token=${refreshToken}`;
 
     try {
-      const tokenResponse = await this.wristbandApiClient.post<TokenResponse>(
-        '/oauth2/token',
-        authData,
-        this.basicAuthHeaders
-      );
+      const tokenResponse = await withRetry(() => {
+        return this.wristbandApiClient.post<TokenResponse>('/oauth2/token', authData, this.basicAuthHeaders);
+      });
       return tokenResponse;
     } catch (error) {
       if (WristbandService.hasInvalidGrantError(error)) {
@@ -173,7 +173,9 @@ export class WristbandService {
       throw new Error('Refresh token is required');
     }
 
-    await this.wristbandApiClient.post<void>('/oauth2/revoke', `token=${refreshToken}`, this.basicAuthHeaders);
+    await withRetry(() => {
+      return this.wristbandApiClient.post<void>('/oauth2/revoke', `token=${refreshToken}`, this.basicAuthHeaders);
+    });
   }
 
   /// /////////////////////////////////

@@ -5,8 +5,6 @@ import { WristbandService } from './wristband-service';
 
 const DEFAULT_SCOPES = ['openid', 'offline_access', 'email'];
 const DEFAULT_TOKEN_EXPIRATION_BUFFER = 60; // 60 seconds
-const MAX_FETCH_ATTEMPTS = 3;
-const ATTEMPT_DELAY_MS = 100; // 100 milliseconds
 
 export class ConfigResolver {
   private authConfig: AuthConfig;
@@ -70,33 +68,16 @@ export class ConfigResolver {
     }
   }
 
+  // Retrying on transient failures (5xx errors, network errors) is already handled one layer
+  // down by WristbandService -- see withRetry() in utils/retry.ts. By the time an error surfaces
+  // here, retries (if any applied) have already been exhausted.
   private async fetchSdkConfiguration(): Promise<SdkConfiguration> {
-    let lastError: Error | undefined;
-
-    for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt += 1) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const config = await this.wristbandService.getSdkConfiguration();
-        return config;
-      } catch (error) {
-        lastError = error as Error;
-
-        // Final attempt failed, throw the error
-        if (attempt === MAX_FETCH_ATTEMPTS) {
-          break;
-        }
-
-        // Wait before retrying
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, ATTEMPT_DELAY_MS);
-        });
-      }
+    try {
+      return await this.wristbandService.getSdkConfiguration();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : undefined;
+      throw new WristbandError(`Failed to fetch SDK configuration: ${message || 'Unknown error'}`);
     }
-
-    throw new WristbandError(
-      `Failed to fetch SDK configuration after ${MAX_FETCH_ATTEMPTS} attempts: ${lastError?.message || 'Unknown error'}`
-    );
   }
 
   private validateRequiredAuthConfigs(): void {

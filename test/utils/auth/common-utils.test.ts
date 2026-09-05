@@ -313,8 +313,11 @@ describe('refreshExpiredToken()', () => {
     });
   });
 
-  describe('Error Handling - Retries (5xx)', () => {
-    test('should retry up to 3 times for 500 errors before throwing', async () => {
+  // Retrying on transient failures (5xx errors, network errors) is handled one layer down by
+  // WristbandService -- see withRetry() in utils/retry.ts. WristbandService is mocked in these
+  // tests, so refreshExpiredToken calls it exactly once and only maps the surfacing error.
+  describe('Error Handling - Server Errors (5xx)', () => {
+    test('should throw unexpected_error for 500 errors without retrying at this layer', async () => {
       const expiredTime = Date.now() - 1000;
       const fetchError = new FetchError('Internal Server Error', {
         status: 500,
@@ -331,118 +334,53 @@ describe('refreshExpiredToken()', () => {
         expect(error.errorDescription).toBe('Unexpected Error');
       }
 
-      // Should have tried 3 times
-      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(3);
+      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(1);
     });
 
-    test('should succeed on second retry attempt', async () => {
+    test('should return token data when the refresh succeeds', async () => {
       const expiredTime = Date.now() - 1000;
-      const fetchError = new FetchError('Service Unavailable', {
-        status: 503,
+      mockWristbandService.refreshToken.mockResolvedValue({
+        access_token: 'newAccessToken',
+        id_token: 'newIdToken',
+        refresh_token: 'newRefreshToken',
+        expires_in: 1800,
+        token_type: 'bearer',
       } as any);
-      const mockTokenResponse = {
-        access_token: 'new-access-token',
-        id_token: 'new-id-token',
-        expires_in: 3600,
-        refresh_token: 'new-refresh-token',
-        token_type: 'Bearer',
-      };
 
-      mockWristbandService.refreshToken
-        .mockRejectedValueOnce(fetchError) // First attempt fails
-        .mockResolvedValueOnce(mockTokenResponse); // Second attempt succeeds
+      const tokenData = await refreshExpiredToken('token', expiredTime, mockWristbandService);
 
-      const result = await refreshExpiredToken('token', expiredTime, mockWristbandService);
-
-      expect(result).not.toBeNull();
-      expect(result!.accessToken).toBe('new-access-token');
-      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(2);
+      expect(tokenData?.accessToken).toBe('newAccessToken');
+      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(1);
     });
 
-    test('should succeed on third retry attempt', async () => {
+    test('should throw unexpected_error for a generic failure', async () => {
       const expiredTime = Date.now() - 1000;
-      const networkError = new Error('Network timeout');
-      const mockTokenResponse = {
-        access_token: 'new-access-token',
-        id_token: 'new-id-token',
-        expires_in: 3600,
-        refresh_token: 'new-refresh-token',
-        token_type: 'Bearer',
-      };
+      mockWristbandService.refreshToken.mockRejectedValue(new Error('Temporary failure'));
 
-      mockWristbandService.refreshToken
-        .mockRejectedValueOnce(networkError) // First attempt fails
-        .mockRejectedValueOnce(networkError) // Second attempt fails
-        .mockResolvedValueOnce(mockTokenResponse); // Third attempt succeeds
-
-      const result = await refreshExpiredToken('token', expiredTime, mockWristbandService);
-
-      expect(result).not.toBeNull();
-      expect(result!.accessToken).toBe('new-access-token');
-      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(3);
-    });
-
-    test('should throw unexpected_error after 3 failed attempts', async () => {
-      const expiredTime = Date.now() - 1000;
-      const networkError = new Error('Connection refused');
-
-      mockWristbandService.refreshToken.mockRejectedValue(networkError);
-
-      try {
-        await refreshExpiredToken('token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
-      } catch (error: any) {
-        expect(error).toBeInstanceOf(WristbandError);
-        expect(error.message).toBe('Unexpected Error'); // message is errorDescription
-        expect(error.errorDescription).toBe('Unexpected Error');
-      }
-
-      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(3);
-    });
-
-    test('should wait 100ms between retry attempts', async () => {
-      const expiredTime = Date.now() - 1000;
-      const error = new Error('Temporary failure');
-
-      mockWristbandService.refreshToken.mockRejectedValue(error);
-
-      const startTime = Date.now();
-
-      await expect(refreshExpiredToken('token', expiredTime, mockWristbandService)).rejects.toThrow();
-
-      const endTime = Date.now();
-      const elapsed = endTime - startTime;
-
-      // Should have waited ~200ms total (2 delays of 100ms each)
-      // Allow some flexibility for test execution time
-      expect(elapsed).toBeGreaterThanOrEqual(180);
-      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(3);
+      await expect(refreshExpiredToken('token', expiredTime, mockWristbandService)).rejects.toThrow(WristbandError);
+      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('Error Handling - FetchError without response', () => {
-    test('should retry when FetchError has no response object', async () => {
+    test('should surface unexpected_error when FetchError has no response object', async () => {
       const expiredTime = Date.now() - 1000;
       const fetchError = new FetchError('Network error', null as any);
 
       mockWristbandService.refreshToken.mockRejectedValue(fetchError);
 
       await expect(refreshExpiredToken('token', expiredTime, mockWristbandService)).rejects.toThrow(WristbandError);
-
-      // Should retry since there's no response status
-      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(3);
+      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(1);
     });
 
-    test('should retry when FetchError has response without status', async () => {
+    test('should surface unexpected_error when FetchError has response without status', async () => {
       const expiredTime = Date.now() - 1000;
       const fetchError = new FetchError('Network error', {} as any);
 
       mockWristbandService.refreshToken.mockRejectedValue(fetchError);
 
       await expect(refreshExpiredToken('token', expiredTime, mockWristbandService)).rejects.toThrow(WristbandError);
-
-      // Should retry since status is undefined
-      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(3);
+      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -503,7 +441,7 @@ describe('refreshExpiredToken()', () => {
       expect(result!.accessToken).toBe('new-access-token');
     });
 
-    test('should throw WristbandError if tokenResponse is null after retries', async () => {
+    test('should throw WristbandError if tokenResponse is null', async () => {
       const expiredTime = Date.now() - 1000;
 
       // Mock a scenario where refreshToken somehow returns null
