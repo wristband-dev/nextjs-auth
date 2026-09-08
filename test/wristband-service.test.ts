@@ -550,6 +550,48 @@ describe('WristbandService', () => {
     });
   });
 
+  describe('validateTenantCustomDomain', () => {
+    const tenantCustomDomain = 'login.tenant.com';
+
+    it('should call API client with correct parameters', async () => {
+      mockApiClient.post.mockResolvedValue({ valid: true });
+
+      await service.validateTenantCustomDomain(tenantCustomDomain);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        '/custom-domains/validate',
+        JSON.stringify({ tenantCustomDomain }),
+        { 'Content-Type': JSON_MEDIA_TYPE, Accept: JSON_MEDIA_TYPE }
+      );
+    });
+
+    it('should return true when the tenant custom domain is valid', async () => {
+      mockApiClient.post.mockResolvedValue({ valid: true });
+
+      await expect(service.validateTenantCustomDomain(tenantCustomDomain)).resolves.toBe(true);
+    });
+
+    it('should return false when the tenant custom domain is invalid', async () => {
+      mockApiClient.post.mockResolvedValue({ valid: false });
+
+      await expect(service.validateTenantCustomDomain(tenantCustomDomain)).resolves.toBe(false);
+    });
+
+    it('should throw error when tenant custom domain is missing', async () => {
+      await expect(service.validateTenantCustomDomain('')).rejects.toThrow('Tenant custom domain is required');
+    });
+
+    it('should throw error when tenant custom domain is whitespace only', async () => {
+      await expect(service.validateTenantCustomDomain('   ')).rejects.toThrow('Tenant custom domain is required');
+    });
+
+    it('should propagate API client errors', async () => {
+      mockApiClient.post.mockRejectedValue(new Error('Validation failed'));
+
+      await expect(service.validateTenantCustomDomain(tenantCustomDomain)).rejects.toThrow('Validation failed');
+    });
+  });
+
   describe('integration with WristbandApiClient', () => {
     it('should use the same API client instance for all methods', async () => {
       // Mock all API client methods

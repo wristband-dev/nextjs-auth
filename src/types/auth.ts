@@ -297,6 +297,15 @@ export type SdkConfiguration = {
 };
 
 /**
+ * Represents the result of validating a tenant custom domain against your Wristband application.
+ * @typedef {Object} ValidateTenantCustomDomainResponse
+ * @property {boolean} valid Indicates whether the tenant custom domain is verified and belongs to your Wristband application.
+ */
+export type ValidateTenantCustomDomainResponse = {
+  valid: boolean;
+};
+
+/**
  * Represents all possible state for the current login request, which is stored in the login state cookie.
  * @typedef {Object} LoginState
  * @property {string} codeVerifier The code verifier for PKCE.

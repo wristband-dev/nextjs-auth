@@ -2,7 +2,7 @@
   "name": "@wristband/nextjs-auth",
   "description": "SDK for integrating your Next.js application with Wristband. Handles user authentication, session management, and token management.",
   "author": "Wristband",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "license": "MIT",
   "private": false,
   "homepage": "https://wristband.dev",

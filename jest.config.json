@@ -1,11 +1,22 @@
 {
-  "moduleFileExtensions": ["ts", "js"],
+  "collectCoverageFrom": [
+    "src/**/*.ts"
+  ],
+  "moduleFileExtensions": [
+    "ts",
+    "js"
+  ],
   "preset": "ts-jest",
-  "roots": ["<rootDir>"],
-  "setupFilesAfterEnv": ["jest-extended/all"],
+  "roots": [
+    "<rootDir>"
+  ],
+  "setupFilesAfterEnv": [
+    "jest-extended/all"
+  ],
   "testEnvironment": "node",
-  "coveragePathIgnorePatterns": [
-    "/node_modules/", 
-    ".*test-utils\\.ts$"
+  "testPathIgnorePatterns": [
+    "/node_modules/",
+    "/dist/",
+    "/test/helpers/"
   ]
 }

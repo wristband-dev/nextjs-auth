@@ -60,6 +60,14 @@ describe('Multi Tenant Callback - App Router', () => {
     // Reset fetch mock before each test
     global.fetch = jest.fn();
     global.fetch = jest.fn().mockImplementation((url: string) => {
+      // Tenant custom domain validation now runs during login/callback/logout.
+      if (url.includes('/api/v1/custom-domains/validate')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: jest.fn().mockResolvedValue(JSON.stringify({ valid: true })),
+        });
+      }
       if (url.endsWith('/api/v1/oauth2/token')) {
         return Promise.resolve({
           ok: true,

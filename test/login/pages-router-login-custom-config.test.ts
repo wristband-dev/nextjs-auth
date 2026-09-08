@@ -9,6 +9,7 @@ import { decryptLoginState } from '../../src/utils/crypto';
 import { LoginState } from '../../src/types';
 import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
 import { parseSetCookies } from '../test-utils';
+import { mockWristbandFetch } from '../helpers/mock-fetch';
 
 const CLIENT_ID = 'clientId';
 const CLIENT_SECRET = 'clientSecret';
@@ -57,6 +58,7 @@ describe('Custom Login Configurations', () => {
   let wristbandApplicationVanityDomain: string;
 
   beforeEach(() => {
+    mockWristbandFetch();
     parseTenantFromRootDomain = 'business.invotastic.com';
     wristbandApplicationVanityDomain = 'auth.invotastic.com';
   });
