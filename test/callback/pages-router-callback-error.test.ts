@@ -233,6 +233,38 @@ describe('Callback Errors', () => {
     }
   });
 
+  test('Error query parameter without error_description falls back to the error code', async () => {
+    // Mock login state
+    const loginState: LoginState = {
+      codeVerifier: 'codeVerifier',
+      redirectUri: REDIRECT_URI,
+      state: 'state',
+    };
+    const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+    // Create mock request and response, deliberately omitting error_description
+    const { req, res } = createMocks({
+      method: 'GET',
+      url: `${REDIRECT_URI}`,
+      query: { state: 'state', tenant_name: 'devs4you', error: 'server_error' },
+      cookies: { 'login#state#1234567890': encryptedLoginState },
+    });
+    // Cast req and res to NextApiRequest and NextApiResponse
+    const mockReq = req as unknown as NextApiRequest;
+    const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+    // With no error_description, the WristbandError message falls back to the error code itself.
+    try {
+      await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+      fail('Error expected to be thrown.');
+    } catch (error: any) {
+      expect(error instanceof WristbandError).toBe(true);
+      expect(error.code).toBe('server_error');
+      expect(error.errorDescription).toBe('');
+      expect(error.message).toBe('server_error');
+    }
+  });
+
   test('State mismatch returns redirect with invalid_login_state reason', async () => {
     // Mock login state with different state value
     const loginState: LoginState = {
@@ -385,6 +417,51 @@ describe('Callback Errors', () => {
     // MAX_API_RETRY_ATTEMPTS times -- see withRetry() in utils/retry.ts.
     expect(global.fetch).toHaveBeenCalledTimes(3);
   });
+
+  test('Non-Error value thrown during token exchange is wrapped with an undefined originalError', async () => {
+    // Mock login state
+    const loginState: LoginState = {
+      codeVerifier: 'codeVerifier',
+      redirectUri: REDIRECT_URI,
+      state: 'state',
+    };
+    const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+    // Create mock request and response
+    const { req, res } = createMocks({
+      method: 'GET',
+      url: `${REDIRECT_URI}`,
+      query: { state: 'state', code: 'code', tenant_name: 'devs4you' },
+      cookies: { 'login#state#state': encryptedLoginState },
+    });
+    const mockReq = req as unknown as NextApiRequest;
+    const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+    // Reject with a plain value (not an Error instance) on every attempt, including retries,
+    // so the final caught error genuinely fails `instanceof Error` -- unlike the 500-response
+    // test above, where the underlying rejection would itself be an Error.
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url === `https://${WRISTBAND_APPLICATION_DOMAIN}/api/v1/oauth2/token`) {
+        // eslint-disable-next-line prefer-promise-reject-errors
+        return Promise.reject('a non-Error rejection value');
+      }
+      return Promise.reject(new Error('Unexpected URL'));
+    });
+
+    try {
+      await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+      fail('Expected error to be thrown');
+    } catch (error: any) {
+      expect(error).toBeInstanceOf(WristbandError);
+      const typedError = error as WristbandError;
+      expect(typedError.code).toBe('unexpected_error');
+      expect(typedError.errorDescription).toBe('Unexpected error');
+      expect(typedError.originalError).toBeUndefined();
+    }
+
+    // Non-Error rejections are still treated as transient/retryable by withRetry().
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  }, 15000);
 
   test('Missing login state cookie returns redirect with missing_login_state reason', async () => {
     // Create mock request and response with no cookies

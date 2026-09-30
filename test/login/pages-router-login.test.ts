@@ -61,7 +61,7 @@ async function validateLoginStateCookie(
   expect(loginStateCookie.httponly).toBe(true);
   expect(loginStateCookie['max-age']).toBe('3600');
   expect(loginStateCookie.path).toBe('/');
-  expect(loginStateCookie.samesite).toBe('lax');
+  expect(loginStateCookie.samesite).toBe('Lax');
   expect(loginStateCookie.secure).toBe(true);
 
   const cookieValue: string = loginStateCookie.value;
@@ -179,7 +179,7 @@ describe('pagesRouter.login()', () => {
       expect(loginStateCookie.httponly).toBe(true);
       expect(loginStateCookie['max-age']).toBe('3600');
       expect(loginStateCookie.path).toBe('/');
-      expect(loginStateCookie.samesite).toBe('lax');
+      expect(loginStateCookie.samesite).toBe('Lax');
       expect(loginStateCookie.secure).toBeUndefined();
 
       const cookieValue: string = loginStateCookie.value;

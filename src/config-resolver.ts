@@ -27,6 +27,7 @@ export class ConfigResolver {
       // - loginUrl
       // - redirectUri
       // - parseTenantFromRootDomain
+      // - fallbackLoginUrl
       this.validateStrictUrlAuthConfigs();
     } else {
       // Only validate manually provided values when auto-configure is enabled
@@ -132,6 +133,20 @@ export class ConfigResolver {
         );
       }
     }
+
+    if (
+      this.authConfig.applicationAuthorizationRequestsEnabled &&
+      TENANT_PLACEHOLDER_REGEX.test(this.authConfig.loginUrl) &&
+      (!this.authConfig.fallbackLoginUrl || !this.authConfig.fallbackLoginUrl.trim())
+    ) {
+      throw new TypeError(
+        'The [fallbackLoginUrl] config must have a value when auto-configure is disabled, [applicationAuthorizationRequestsEnabled] is true, and [loginUrl] contains the {tenant_name} placeholder.'
+      );
+    }
+
+    if (this.authConfig.fallbackLoginUrl && TENANT_PLACEHOLDER_REGEX.test(this.authConfig.fallbackLoginUrl)) {
+      throw new TypeError(`The [fallbackLoginUrl] cannot contain the {tenant_name} placeholder.`);
+    }
   }
 
   private validatePartialUrlAuthConfigs(): void {
@@ -160,6 +175,10 @@ export class ConfigResolver {
         );
       }
     }
+
+    if (this.authConfig.fallbackLoginUrl && TENANT_PLACEHOLDER_REGEX.test(this.authConfig.fallbackLoginUrl)) {
+      throw new TypeError(`The [fallbackLoginUrl] cannot contain the {tenant_name} placeholder.`);
+    }
   }
 
   // Method to preload and validate all configurations
@@ -169,6 +188,11 @@ export class ConfigResolver {
     const redirectUri = this.authConfig.redirectUri || sdkConfiguration.redirectUri || '';
     const parseTenantFromRootDomain =
       this.authConfig.parseTenantFromRootDomain || sdkConfiguration.loginUrlTenantDomainSuffix || '';
+    const applicationAuthorizationRequestsEnabled =
+      this.authConfig.applicationAuthorizationRequestsEnabled ??
+      sdkConfiguration.applicationAuthorizationRequestsEnabled ??
+      false;
+    const fallbackLoginUrl = this.authConfig.fallbackLoginUrl || sdkConfiguration.fallbackLoginUrl || '';
 
     // Validate that required fields are present in the SDK config response
     if (!loginUrl) {
@@ -203,6 +227,18 @@ export class ConfigResolver {
           `The resolved [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when [parseTenantFromRootDomain] is absent.`
         );
       }
+    }
+
+    // Validate fallbackLoginUrl against the fully resolved values, since any of loginUrl,
+    // applicationAuthorizationRequestsEnabled, and fallbackLoginUrl may independently come
+    // from either the manual config or the SDK Auto-Configuration Endpoint.
+    if (applicationAuthorizationRequestsEnabled && TENANT_PLACEHOLDER_REGEX.test(loginUrl) && !fallbackLoginUrl) {
+      throw new WristbandError(
+        'The resolved [fallbackLoginUrl] must have a value when [applicationAuthorizationRequestsEnabled] is true and the resolved [loginUrl] contains the {tenant_name} placeholder.'
+      );
+    }
+    if (fallbackLoginUrl && TENANT_PLACEHOLDER_REGEX.test(fallbackLoginUrl)) {
+      throw new WristbandError(`The resolved [fallbackLoginUrl] cannot contain the {tenant_name} placeholder.`);
     }
   }
 
@@ -324,5 +360,37 @@ export class ConfigResolver {
 
     // 3. This should not happen if validation is done properly
     throw new TypeError('The [redirectUri] config must have a value');
+  }
+
+  public async getApplicationAuthorizationRequestsEnabled(): Promise<boolean> {
+    // 1. Check if manually provided in authConfig
+    if (this.authConfig.applicationAuthorizationRequestsEnabled !== undefined) {
+      return this.authConfig.applicationAuthorizationRequestsEnabled;
+    }
+
+    // 2. If auto-configure is enabled, get from SDK config
+    if (this.getAutoConfigureEnabled()) {
+      const sdkConfig = await this.loadSdkConfig();
+      return sdkConfig.applicationAuthorizationRequestsEnabled ?? false;
+    }
+
+    // 3. Default fallback
+    return false;
+  }
+
+  public async getFallbackLoginUrl(): Promise<string> {
+    // 1. Check if manually provided in authConfig
+    if (this.authConfig.fallbackLoginUrl) {
+      return this.authConfig.fallbackLoginUrl;
+    }
+
+    // 2. If auto-configure is enabled, get from SDK config
+    if (this.getAutoConfigureEnabled()) {
+      const sdkConfig = await this.loadSdkConfig();
+      return sdkConfig.fallbackLoginUrl || '';
+    }
+
+    // 3. Default fallback
+    return '';
   }
 }

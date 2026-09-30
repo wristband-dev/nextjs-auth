@@ -167,6 +167,42 @@ describe('Multi Tenant Callback - App Router', () => {
       expect(cookieValue).toBeFalsy();
     });
 
+    test('tokenExpirationBuffer explicitly disabled via 0', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        tokenExpirationBuffer: 0,
+        autoConfigureEnabled: false,
+      });
+
+      // Mock login state
+      const loginState: LoginState = {
+        codeVerifier: 'codeVerifier',
+        redirectUri,
+        state: 'state',
+      };
+      const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+      // Create mock request
+      const { req } = createMocks({
+        method: 'GET',
+        url: `${redirectUri}?state=state&code=code&tenant_name=devs4you`,
+        headers: { host: `${parseTenantFromRootDomain}`, cookie: `login#state#1234567890=${encryptedLoginState}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+
+      // With the buffer explicitly disabled, expiresIn should equal the raw token response value,
+      // not the default-buffered value (1740) asserted in validateMockCallbackData().
+      expect(callbackResult.type).toBe('completed');
+      expect(callbackResult.callbackData?.expiresIn).toBe(mockTokens.expires_in);
+    });
+
     describe.each([
       ['tenant_domain', '{tenant_domain}'],
       ['tenant_name', '{tenant_name}'],

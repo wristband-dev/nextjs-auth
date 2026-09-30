@@ -61,6 +61,21 @@ describe('Callback Errors', () => {
     }
   });
 
+  test('Empty state query param falls back to the empty string default', async () => {
+    // Create mock request with a state param that is present but has an empty value
+    const req = httpMocks.createRequest({
+      url: `${REDIRECT_URI}?state=&code=code&tenant_name=devs4you`,
+    });
+    const mockNextRequest = createMockNextRequest(req);
+
+    // No login state cookie present, so this should redirect_required with missing_login_state,
+    // but only after falling through the [paramStateArray[0] || ''] fallback on an empty value.
+    const result = await wristbandAuth.appRouter.callback(mockNextRequest);
+
+    expect(result.type).toBe('redirect_required');
+    expect(result.reason).toBe('missing_login_state');
+  });
+
   test('Invalid code query param', async () => {
     // Mock login state
     const loginState: LoginState = {
@@ -203,6 +218,34 @@ describe('Callback Errors', () => {
     }
   });
 
+  test('Error query parameter without error_description falls back to the error code', async () => {
+    // Mock login state
+    const loginState: LoginState = {
+      codeVerifier: 'codeVerifier',
+      redirectUri: REDIRECT_URI,
+      state: 'state',
+    };
+    const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+    // Create mock request, deliberately omitting error_description
+    const req = httpMocks.createRequest({
+      url: `${REDIRECT_URI}?state=state&tenant_name=devs4you&error=BAD`,
+      headers: { cookie: `login#state#1234567890=${encryptedLoginState}` },
+    });
+    const mockNextRequest = createMockNextRequest(req);
+
+    try {
+      await wristbandAuth.appRouter.callback(mockNextRequest);
+      fail('Error expected to be thrown.');
+    } catch (error: any) {
+      expect(error instanceof WristbandError).toBe(true);
+      expect(error.code).toBe('BAD');
+      expect(error.errorDescription).toBe('');
+      // WristbandError's message falls back to the error code when no description is given.
+      expect(error.message).toBe('BAD');
+    }
+  });
+
   test('State mismatch returns redirect with invalid_login_state reason', async () => {
     // Mock login state with different state value
     const loginState: LoginState = {
@@ -338,6 +381,40 @@ describe('Callback Errors', () => {
     // MAX_API_RETRY_ATTEMPTS times -- see withRetry() in utils/retry.ts.
     expect(global.fetch).toHaveBeenCalledTimes(3);
   });
+
+  test('Non-Error value thrown during token exchange is wrapped with an undefined originalError', async () => {
+    // Mock login state
+    const loginState: LoginState = {
+      codeVerifier: 'codeVerifier',
+      redirectUri: REDIRECT_URI,
+      state: 'state',
+    };
+    const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+    // Create mock request
+    const req = httpMocks.createRequest({
+      url: `${REDIRECT_URI}?state=state&code=code&tenant_name=devs4you`,
+      headers: { cookie: `login#state#state=${encryptedLoginState}` },
+    });
+    const mockNextRequest = createMockNextRequest(req);
+
+    // Reject with a plain string, not an Error -- mockImplementation (not Once) so every retry
+    // attempt hits the same non-Error rejection instead of a real Error on later attempts.
+    (global.fetch as jest.Mock).mockImplementation(() => {
+      return Promise.reject('a plain string rejection, not an Error');
+    });
+
+    try {
+      await wristbandAuth.appRouter.callback(mockNextRequest);
+      fail('Expected error to be thrown');
+    } catch (error: any) {
+      expect(error).toBeInstanceOf(WristbandError);
+      const typedError = error as WristbandError;
+      expect(typedError.code).toBe('unexpected_error');
+      expect(typedError.errorDescription).toBe('Unexpected error');
+      expect(typedError.originalError).toBeUndefined();
+    }
+  }, 15000);
 
   describe('Redirect to Application-level Login', () => {
     test('Missing login state cookie, without subdomains, without tenant name query param', async () => {

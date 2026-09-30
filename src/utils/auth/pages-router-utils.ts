@@ -71,7 +71,8 @@ export function createLoginStateCookie(
   response: NextApiResponse,
   state: string,
   encryptedLoginState: string,
-  dangerouslyDisableSecureCookies: boolean
+  dangerouslyDisableSecureCookies: boolean,
+  domain?: string
 ) {
   const { cookies } = request;
 
@@ -96,9 +97,15 @@ export function createLoginStateCookie(
       const timestamp = cookieName.split(LOGIN_STATE_COOKIE_SEPARATOR)[2];
       // If 3 cookies exist, then we delete the oldest one to make room for the new one.
       if (!mostRecentTimestamps.includes(timestamp)) {
-        const staleCookieHeaderValue = [
-          `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`,
-        ];
+        const staleCookieHeaderValue: string = [
+          `${cookieName}=`,
+          'Path=/',
+          'HttpOnly',
+          ...(domain ? [`Domain=${domain}`] : []),
+          'SameSite=Lax',
+          'Max-Age=0',
+          ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
+        ].join('; ');
         responseCookieArray.push(staleCookieHeaderValue);
       }
     });
@@ -108,34 +115,22 @@ export function createLoginStateCookie(
   // NOTE: If deploying your own app to production, do not disable secure cookies.
   const newCookieName: string = `${LOGIN_STATE_COOKIE_PREFIX}${state}${LOGIN_STATE_COOKIE_SEPARATOR}${Date.now().valueOf()}`;
   const newCookieHeaderValue: string = [
-    `${newCookieName}=${encryptedLoginState};`,
-    'HTTPOnly;',
-    'Max-Age=3600;',
-    'Path=/;',
-    'SameSite=lax',
-  ].join(' ');
-  const resolvedCookieValue: string = `${newCookieHeaderValue}${dangerouslyDisableSecureCookies ? '' : '; Secure'}`;
-
-  responseCookieArray.push(resolvedCookieValue);
+    `${newCookieName}=${encryptedLoginState}`,
+    'Path=/',
+    'HttpOnly',
+    ...(domain ? [`Domain=${domain}`] : []),
+    'SameSite=Lax',
+    'Max-Age=3600',
+    ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
+  ].join('; ');
+  responseCookieArray.push(newCookieHeaderValue);
   response.setHeader('Set-Cookie', responseCookieArray);
 }
 
-export async function getAuthorizeUrl(
+export async function getAuthorizationUrlParams(
   request: NextApiRequest,
-  config: {
-    clientId: string;
-    codeVerifier: string;
-    defaultTenantCustomDomain?: string;
-    defaultTenantName?: string;
-    redirectUri: string;
-    scopes: string[];
-    state: string;
-    tenantCustomDomain?: string;
-    tenantName?: string;
-    isApplicationCustomDomainActive?: boolean;
-    wristbandApplicationVanityDomain: string;
-  }
-): Promise<string> {
+  config: { clientId: string; codeVerifier: string; redirectUri: string; scopes: string[]; state: string }
+): Promise<URLSearchParams> {
   const { idp_hint: idpHint, login_hint: loginHint } = request.query;
 
   if (!!loginHint && typeof loginHint !== 'string') {
@@ -148,7 +143,7 @@ export async function getAuthorizeUrl(
 
   const digest = await sha256Base64(config.codeVerifier);
 
-  const queryParams = new URLSearchParams({
+  return new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     response_type: 'code',
@@ -160,31 +155,13 @@ export async function getAuthorizeUrl(
     ...(!!loginHint && typeof loginHint === 'string' ? { login_hint: loginHint } : {}),
     ...(!!idpHint && typeof idpHint === 'string' ? { idp_hint: idpHint } : {}),
   });
-
-  const separator = config.isApplicationCustomDomainActive ? '.' : '-';
-
-  // Domain priority order resolution:
-  // 1)  tenant_custom_domain query param
-  // 2a) tenant subdomain
-  // 2b) tenant_name query param
-  // 3)  defaultTenantCustomDomain login config
-  // 4)  defaultTenantName login config
-  if (config.tenantCustomDomain) {
-    return `https://${config.tenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  if (config.tenantName) {
-    return `https://${config.tenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  if (config.defaultTenantCustomDomain) {
-    return `https://${config.defaultTenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  return `https://${config.defaultTenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
 }
 
 export function getAndClearLoginStateCookie(
   request: NextApiRequest,
   response: NextApiResponse,
-  dangerouslyDisableSecureCookies: boolean
+  dangerouslyDisableSecureCookies: boolean,
+  domain?: string
 ): string {
   const { cookies, query } = request;
   const { state } = query;
@@ -203,7 +180,7 @@ export function getAndClearLoginStateCookie(
     loginStateCookie = cookies[cookieName]!;
     // Delete the login state cookie.
     response.setHeader('Set-Cookie', [
-      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`,
+      `${cookieName}=; Path=/; HttpOnly${domain ? `; Domain=${domain}` : ''}; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`,
     ]);
   }
 

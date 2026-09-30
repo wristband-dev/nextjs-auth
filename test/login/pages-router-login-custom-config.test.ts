@@ -42,7 +42,7 @@ async function validateLoginStateCookie(mockRes: MockResponse<NextApiResponse>) 
   expect(loginStateCookie.httponly).toBe(true);
   expect(loginStateCookie['max-age']).toBe('3600');
   expect(loginStateCookie.path).toBe('/');
-  expect(loginStateCookie.samesite).toBe('lax');
+  expect(loginStateCookie.samesite).toBe('Lax');
   expect(loginStateCookie.secure).toBe(true);
 
   const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
@@ -125,7 +125,7 @@ describe('Custom Login Configurations', () => {
         expect(loginStateCookie.httponly).toBe(true);
         expect(loginStateCookie['max-age']).toBe('3600');
         expect(loginStateCookie.path).toBe('/');
-        expect(loginStateCookie.samesite).toBe('lax');
+        expect(loginStateCookie.samesite).toBe('Lax');
         expect(loginStateCookie.secure).toBe(true);
 
         const cookieValue: string = loginStateCookie.value;
@@ -184,7 +184,7 @@ describe('Custom Login Configurations', () => {
         expect(loginStateCookie.httponly).toBe(true);
         expect(loginStateCookie['max-age']).toBe('3600');
         expect(loginStateCookie.path).toBe('/');
-        expect(loginStateCookie.samesite).toBe('lax');
+        expect(loginStateCookie.samesite).toBe('Lax');
         expect(loginStateCookie.secure).toBe(true);
 
         const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);

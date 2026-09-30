@@ -23,6 +23,88 @@ export async function resolveValidTenantCustomDomain(
   return isValid ? tenantCustomDomain : '';
 }
 
+export function getAppLevelLoginUrl(
+  wristbandApplicationVanityDomain: string,
+  clientId: string,
+  customApplicationLoginPageUrl?: string
+): string {
+  // Safety check: this should never happen.
+  if (!wristbandApplicationVanityDomain) {
+    throw new Error('wristbandApplicationVanityDomain cannot be null or undefined');
+  }
+  if (!clientId) {
+    throw new Error('clientId cannot be null or undefined');
+  }
+
+  const apploginUrl = customApplicationLoginPageUrl || `https://${wristbandApplicationVanityDomain}/login`;
+  return `${apploginUrl}?client_id=${clientId}`;
+}
+
+export function getAppLevelAuthorizationUrl(
+  wristbandApplicationVanityDomain: string,
+  authorizationParams: URLSearchParams
+): string {
+  // Safety check: this should never happen.
+  if (!wristbandApplicationVanityDomain) {
+    throw new Error('wristbandApplicationVanityDomain cannot be null or undefined');
+  }
+  if (!authorizationParams || authorizationParams.size === 0) {
+    throw new Error('authorizationParams cannot be null or empty');
+  }
+
+  return `https://${wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${authorizationParams.toString()}`;
+}
+
+export function getTenantLevelAuthorizationUrl(
+  wristbandApplicationVanityDomain: string,
+  authorizationParams: URLSearchParams,
+  config: {
+    defaultTenantCustomDomain?: string;
+    defaultTenantName?: string;
+    tenantCustomDomain?: string;
+    tenantName?: string;
+    isApplicationCustomDomainActive?: boolean;
+  }
+): string {
+  // Safety check: this should never happen.
+  if (!wristbandApplicationVanityDomain) {
+    throw new Error('wristbandApplicationVanityDomain cannot be null or undefined');
+  }
+  if (!authorizationParams || authorizationParams.size === 0) {
+    throw new Error('authorizationParams cannot be null or empty');
+  }
+
+  // Safety check: this should never happen.
+  if (
+    !config.defaultTenantCustomDomain &&
+    !config.defaultTenantName &&
+    !config.tenantCustomDomain &&
+    !config.tenantName
+  ) {
+    throw new Error('No tenant name or tenant custom domain was provided');
+  }
+
+  const queryString = authorizationParams.toString();
+  const separator = config.isApplicationCustomDomainActive ? '.' : '-';
+
+  // Domain priority order resolution:
+  // 1)  tenant_custom_domain query param
+  // 2a) tenant subdomain
+  // 2b) tenant_name query param
+  // 3)  defaultTenantCustomDomain login config
+  // 4)  defaultTenantName login config
+  if (config.tenantCustomDomain) {
+    return `https://${config.tenantCustomDomain}/api/v1/oauth2/authorize?${queryString}`;
+  }
+  if (config.tenantName) {
+    return `https://${config.tenantName}${separator}${wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryString}`;
+  }
+  if (config.defaultTenantCustomDomain) {
+    return `https://${config.defaultTenantCustomDomain}/api/v1/oauth2/authorize?${queryString}`;
+  }
+  return `https://${config.defaultTenantName}${separator}${wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryString}`;
+}
+
 /**
  * Refreshes an access token if it has expired.
  *

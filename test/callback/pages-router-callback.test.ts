@@ -160,6 +160,38 @@ describe('Multi Tenant Callback - Page Router', () => {
       expect(cookieValue).toBeFalsy();
     });
 
+    test('tokenExpirationBuffer explicitly disabled via 0', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        tokenExpirationBuffer: 0,
+        autoConfigureEnabled: false,
+      });
+
+      const loginState: LoginState = { codeVerifier: 'codeVerifier', redirectUri, state: 'state' };
+      const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${redirectUri}?state=state&code=code&tenant_name=devs4you`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+        cookies: { 'login#state#1234567890': encryptedLoginState },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+
+      expect(callbackResult.type).toBe('completed');
+      // With tokenExpirationBuffer explicitly set to 0, the fallback branch is skipped
+      // and no buffer is subtracted from the raw expires_in value.
+      expect(callbackResult.callbackData?.expiresIn).toBe(mockTokens.expires_in);
+    });
+
     describe.each([
       ['tenant_domain', '{tenant_domain}'],
       ['tenant_name', '{tenant_name}'],
