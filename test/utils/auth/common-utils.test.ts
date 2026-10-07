@@ -1,9 +1,178 @@
 import { FetchError, InvalidGrantError, WristbandError } from '../../../src/error';
 import { WristbandService } from '../../../src/wristband-service';
-import { refreshExpiredToken } from '../../../src/utils/auth/common-utils';
+import {
+  getAppLevelAuthorizationUrl,
+  getAppLevelLoginUrl,
+  getTenantLevelAuthorizationUrl,
+  refreshExpiredToken,
+  resolveValidTenantCustomDomain,
+} from '../../../src/utils/auth/common-utils';
 
 // Mock WristbandService
 jest.mock('../../../src/wristband-service');
+
+describe('resolveValidTenantCustomDomain()', () => {
+  let mockWristbandService: jest.Mocked<WristbandService>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockWristbandService = {
+      validateTenantCustomDomain: jest.fn(),
+    } as any;
+  });
+
+  test('should return empty string when tenantCustomDomain is empty string', async () => {
+    const result = await resolveValidTenantCustomDomain('', mockWristbandService);
+    expect(result).toBe('');
+    expect(mockWristbandService.validateTenantCustomDomain).not.toHaveBeenCalled();
+  });
+
+  test('should return empty string when tenantCustomDomain is undefined', async () => {
+    const result = await resolveValidTenantCustomDomain(undefined as any, mockWristbandService);
+    expect(result).toBe('');
+    expect(mockWristbandService.validateTenantCustomDomain).not.toHaveBeenCalled();
+  });
+
+  test('should return the tenant custom domain when validation succeeds', async () => {
+    mockWristbandService.validateTenantCustomDomain.mockResolvedValue(true);
+
+    const result = await resolveValidTenantCustomDomain('tenant.custom.com', mockWristbandService);
+
+    expect(result).toBe('tenant.custom.com');
+    expect(mockWristbandService.validateTenantCustomDomain).toHaveBeenCalledWith('tenant.custom.com');
+    expect(mockWristbandService.validateTenantCustomDomain).toHaveBeenCalledTimes(1);
+  });
+
+  test('should return empty string when validation fails', async () => {
+    mockWristbandService.validateTenantCustomDomain.mockResolvedValue(false);
+
+    const result = await resolveValidTenantCustomDomain('tenant.custom.com', mockWristbandService);
+
+    expect(result).toBe('');
+    expect(mockWristbandService.validateTenantCustomDomain).toHaveBeenCalledWith('tenant.custom.com');
+  });
+});
+
+describe('getAppLevelLoginUrl()', () => {
+  test('should throw Error when wristbandApplicationVanityDomain is empty', () => {
+    expect(() => {
+      return getAppLevelLoginUrl('', 'clientId');
+    }).toThrow('wristbandApplicationVanityDomain cannot be null or undefined');
+  });
+
+  test('should throw Error when clientId is empty', () => {
+    expect(() => {
+      return getAppLevelLoginUrl('auth.invotastic.com', '');
+    }).toThrow('clientId cannot be null or undefined');
+  });
+
+  test('should build the Wristband-hosted app-level login URL when no custom page URL is provided', () => {
+    const url = getAppLevelLoginUrl('auth.invotastic.com', 'clientId');
+    expect(url).toBe('https://auth.invotastic.com/login?client_id=clientId');
+  });
+
+  test('should use the custom application login page URL when provided', () => {
+    const url = getAppLevelLoginUrl('auth.invotastic.com', 'clientId', 'https://business.invotastic.com/custom-login');
+    expect(url).toBe('https://business.invotastic.com/custom-login?client_id=clientId');
+  });
+});
+
+describe('getAppLevelAuthorizationUrl()', () => {
+  const validParams = new URLSearchParams({ client_id: 'clientId', state: 'state123' });
+
+  test('should throw Error when wristbandApplicationVanityDomain is empty', () => {
+    expect(() => {
+      return getAppLevelAuthorizationUrl('', validParams);
+    }).toThrow('wristbandApplicationVanityDomain cannot be null or undefined');
+  });
+
+  test('should throw Error when authorizationParams is null', () => {
+    expect(() => {
+      return getAppLevelAuthorizationUrl('auth.invotastic.com', null as any);
+    }).toThrow('authorizationParams cannot be null or empty');
+  });
+
+  test('should throw Error when authorizationParams is empty', () => {
+    expect(() => {
+      return getAppLevelAuthorizationUrl('auth.invotastic.com', new URLSearchParams());
+    }).toThrow('authorizationParams cannot be null or empty');
+  });
+
+  test('should build the app-level Wristband Authorize Endpoint URL using the vanity domain', () => {
+    const url = getAppLevelAuthorizationUrl('auth.invotastic.com', validParams);
+    expect(url).toBe(`https://auth.invotastic.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+});
+
+describe('getTenantLevelAuthorizationUrl()', () => {
+  const validParams = new URLSearchParams({ client_id: 'clientId', state: 'state123' });
+
+  test('should throw Error when wristbandApplicationVanityDomain is empty', () => {
+    expect(() => {
+      return getTenantLevelAuthorizationUrl('', validParams, { tenantName: 'devs4you' });
+    }).toThrow('wristbandApplicationVanityDomain cannot be null or undefined');
+  });
+
+  test('should throw Error when authorizationParams is null', () => {
+    expect(() => {
+      return getTenantLevelAuthorizationUrl('auth.invotastic.com', null as any, { tenantName: 'devs4you' });
+    }).toThrow('authorizationParams cannot be null or empty');
+  });
+
+  test('should throw Error when authorizationParams is empty', () => {
+    expect(() => {
+      return getTenantLevelAuthorizationUrl('auth.invotastic.com', new URLSearchParams(), { tenantName: 'devs4you' });
+    }).toThrow('authorizationParams cannot be null or empty');
+  });
+
+  test('should throw Error when no tenant name or tenant custom domain is provided in config', () => {
+    expect(() => {
+      return getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {});
+    }).toThrow('No tenant name or tenant custom domain was provided');
+  });
+
+  test('should prioritize tenantCustomDomain over all other config values', () => {
+    const url = getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {
+      tenantCustomDomain: 'tenant.custom.com',
+      tenantName: 'devs4you',
+      defaultTenantCustomDomain: 'default.custom.com',
+      defaultTenantName: 'defaulttenant',
+    });
+    expect(url).toBe(`https://tenant.custom.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+
+  test('should use tenantName with a dash separator when isApplicationCustomDomainActive is false', () => {
+    const url = getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {
+      tenantName: 'devs4you',
+      isApplicationCustomDomainActive: false,
+    });
+    expect(url).toBe(`https://devs4you-auth.invotastic.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+
+  test('should use tenantName with a dot separator when isApplicationCustomDomainActive is true', () => {
+    const url = getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {
+      tenantName: 'devs4you',
+      isApplicationCustomDomainActive: true,
+    });
+    expect(url).toBe(`https://devs4you.auth.invotastic.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+
+  test('should fall back to defaultTenantCustomDomain when no tenantCustomDomain or tenantName is provided', () => {
+    const url = getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {
+      defaultTenantCustomDomain: 'default.custom.com',
+      defaultTenantName: 'defaulttenant',
+    });
+    expect(url).toBe(`https://default.custom.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+
+  test('should fall back to defaultTenantName as the last resort', () => {
+    const url = getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {
+      defaultTenantName: 'defaulttenant',
+      isApplicationCustomDomainActive: false,
+    });
+    expect(url).toBe(`https://defaulttenant-auth.invotastic.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+});
 
 describe('refreshExpiredToken()', () => {
   let mockWristbandService: jest.Mocked<WristbandService>;
@@ -358,6 +527,24 @@ describe('refreshExpiredToken()', () => {
       mockWristbandService.refreshToken.mockRejectedValue(new Error('Temporary failure'));
 
       await expect(refreshExpiredToken('token', expiredTime, mockWristbandService)).rejects.toThrow(WristbandError);
+      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(1);
+    });
+
+    test('should throw unexpected_error with an undefined originalError for a non-Error rejection', async () => {
+      const expiredTime = Date.now() - 1000;
+      // eslint-disable-next-line prefer-promise-reject-errors
+      mockWristbandService.refreshToken.mockRejectedValue('a non-Error rejection value');
+
+      try {
+        await refreshExpiredToken('token', expiredTime, mockWristbandService);
+        fail('Expected error to be thrown');
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(WristbandError);
+        expect(error.code).toBe('unexpected_error');
+        expect(error.errorDescription).toBe('Unexpected Error');
+        expect(error.originalError).toBeUndefined();
+      }
+
       expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(1);
     });
   });

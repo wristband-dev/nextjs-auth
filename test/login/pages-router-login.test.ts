@@ -61,7 +61,7 @@ async function validateLoginStateCookie(
   expect(loginStateCookie.httponly).toBe(true);
   expect(loginStateCookie['max-age']).toBe('3600');
   expect(loginStateCookie.path).toBe('/');
-  expect(loginStateCookie.samesite).toBe('lax');
+  expect(loginStateCookie.samesite).toBe('Lax');
   expect(loginStateCookie.secure).toBe(true);
 
   const cookieValue: string = loginStateCookie.value;
@@ -179,7 +179,7 @@ describe('pagesRouter.login()', () => {
       expect(loginStateCookie.httponly).toBe(true);
       expect(loginStateCookie['max-age']).toBe('3600');
       expect(loginStateCookie.path).toBe('/');
-      expect(loginStateCookie.samesite).toBe('lax');
+      expect(loginStateCookie.samesite).toBe('Lax');
       expect(loginStateCookie.secure).toBeUndefined();
 
       const cookieValue: string = loginStateCookie.value;
@@ -229,6 +229,11 @@ describe('pagesRouter.login()', () => {
         redirectUri
       );
       validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+
+      // App-level authorization requests are not enabled, so the cookie stays host-only
+      // even though parseTenantFromRootDomain is set.
+      const parsedCookies = parseSetCookies(mockRes.getHeader('Set-Cookie') as string | string[]);
+      expect(parsedCookies[0].domain).toBeUndefined();
     });
 
     test('Custom Domains and Tenant Subdomains Configuration', async () => {
@@ -476,9 +481,11 @@ describe('pagesRouter.login()', () => {
       expect(oldLoginStateCookie.path).toBe('/');
       expect(oldLoginStateCookie.samesite).toBe('Lax');
       expect(oldLoginStateCookie.secure).toBe(true);
+      expect(oldLoginStateCookie.domain).toBeUndefined();
 
       // Validate new login state cookie
       const loginStateCookie = parsedCookies[1];
+      expect(loginStateCookie.domain).toBeUndefined();
       const cookieKey: string = loginStateCookie.name;
       expect(cookieKey).toBeTruthy();
       const keyParts: string[] = cookieKey.split(LOGIN_STATE_COOKIE_SEPARATOR);
@@ -553,6 +560,9 @@ describe('pagesRouter.login()', () => {
 
       const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
       expect(authorizeUrl).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
+
+      // App-level authorization requests are not enabled, so the login state cookie is never touched.
+      expect(mockRes.getHeader('Set-Cookie')).toBeUndefined();
     });
 
     test('Custom application login URL redirect', async () => {

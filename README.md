@@ -962,16 +962,18 @@ The `createWristbandAuth()` function is used to instatiate the Wristband SDK.  I
 
 | AuthConfig Field | Type | Required | Auto-Configurable | Description |
 | ---------------- | ---- | -------- | ----------------- | ----------- |
+| applicationAuthorizationRequestsEnabled | boolean | No | Yes | Flag indicating whether application-level authorization requests are enabled. Defaults to `false`. When `true`, if `login()` cannot resolve a tenant custom domain or tenant subdomain, the SDK redirects the user directly to the Wristband Authorize Endpoint to complete tenant discovery as part of one continuous authorization flow, rather than redirecting to the Application-Level Login (Tenant Discovery) Page. This has no effect when a tenant can be resolved directly (e.g. via a tenant subdomain, `tenant_name`/`tenant_custom_domain` query parameters, or a bookmarked Tenant-Level Login URL) — that scenario always proceeds with the standard tenant-level flow regardless of this setting. |
 | autoConfigureEnabled | boolean | No | _N/A_ | Flag that tells the SDK to automatically set some of the SDK configuration values by calling to Wristband's SDK Auto-Configuration Endpoint. Any manually provided configurations will take precedence over the configs returned from the endpoint. Auto-configure is enabled by default. When disabled, if manual configurations are not provided, then an error will be thrown. |
 | clientId | string | Yes | No | The ID of the Wristband client. |
 | clientSecret | string | Yes | No | The client's secret. |
-| customApplicationLoginPageUrl | string | No | Yes | Custom Application-Level Login Page URL (i.e. Tenant Discovery Page URL). This value only needs to be provided if you are self-hosting the application login page. By default, the SDK will use your Wristband-hosted Application-Level Login page URL. If this value is provided, the SDK will redirect to this URL in certain cases where it cannot resolve a proper Tenant-Level Login URL. |
+| customApplicationLoginPageUrl | string | No | Yes | Custom Application-Level Login Page URL (i.e. Tenant Discovery Page URL). This value only needs to be provided if you are self-hosting the application login page. By default, the SDK will use your Wristband-hosted Application-Level Login page URL. If this value is provided, the SDK will redirect to this URL in certain cases where it cannot resolve a proper Tenant-Level Login URL. Has no effect on `login()` or `logout()` when `applicationAuthorizationRequestsEnabled` is `true`. |
 | dangerouslyDisableSecureCookies | boolean | No | No | USE WITH CAUTION: If set to `true`, the "Secure" attribute will not be included in any cookie settings. This should only be done when testing in local development environments that don't have HTTPS enabed.  If not provided, this value defaults to `false`. |
+| fallbackLoginUrl | string | Only if `applicationAuthorizationRequestsEnabled` is `true` **and** using tenant subdomains in your application | Yes | A fixed, non-tenant-specific login URL for your application (e.g. `https://yourapp.io/login`). |
 | isApplicationCustomDomainActive | boolean | No | Yes | Indicates whether your Wristband application is configured with an application-level custom domain that is active. This tells the SDK which URL format to use when constructing the Wristband Authorize Endpoint URL. This has no effect on any tenant custom domains passed to your Login Endpoint either via the `tenant_custom_domain` query parameter or via the `defaultTenantCustomDomain` config.  Defaults to `false`. |
 | loginStateSecret | string | No | No | A 32 character (or longer) secret used for encryption and decryption of login state cookies. If not provided, it will default to using the client secret. For enhanced security, it is recommended to provide a value that is unique from the client secret. You can run `openssl rand -base64 32` to create a secret from your CLI. |
-| loginUrl | string | Yes | Yes | The URL of your application's login endpoint.  This is the endpoint within your application that redirects to Wristband to initialize the login flow. If you intend to use tenant subdomains in your Login Endpoint URL, then this value must contain the `{tenant_domain}` placeholder. For example: `https://{tenant_domain}.yourapp.com/auth/login`. |
+| loginUrl | string | Yes | Yes | The URL of your application's login endpoint.  This is the endpoint within your application that redirects to Wristband to initialize the login flow. If you intend to use tenant subdomains in your Login Endpoint URL, then this value must contain the `{tenant_name}` placeholder. For example: `https://{tenant_name}.yourapp.com/auth/login`. |
 | parseTenantFromRootDomain | string | Only if using tenant subdomains in your application | Yes | The root domain for your application. This value only needs to be specified if you intend to use tenant subdomains in your Login and Callback Endpoint URLs.  The root domain should be set to the portion of the domain that comes after the tenant subdomain.  For example, if your application uses tenant subdomains such as `tenantA.yourapp.com` and `tenantB.yourapp.com`, then the root domain should be set to `yourapp.com`. This has no effect on any tenant custom domains passed to your Login Endpoint either via the `tenant_custom_domain` query parameter or via the `defaultTenantCustomDomain` config. When this configuration is enabled, the SDK extracts the tenant subdomain from the host and uses it to construct the Wristband Authorize URL. |
-| redirectUri | string | Yes | Yes | The URI that Wristband will redirect to after authenticating a user.  This should point to your application's callback endpoint. If you intend to use tenant subdomains in your Callback Endpoint URL, then this value must contain the `{tenant_domain}` placeholder. For example: `https://{tenant_domain}.yourapp.com/auth/callback`. |
+| redirectUri | string | Yes | Yes | The URI that Wristband will redirect to after authenticating a user.  This should point to your application's callback endpoint. If you intend to use tenant subdomains in your Callback Endpoint URL, then this value must contain the `{tenant_name}` placeholder. For example: `https://{tenant_name}.yourapp.com/auth/callback`. |
 | scopes | string[] | No | No | The scopes required for authentication. Refer to the docs for [currently supported scopes](https://docs.wristband.dev/docs/oauth2-and-openid-connect-oidc#supported-openid-scopes). The default value is `[openid, offline_access, email]`. |
 | tokenExpirationBuffer | number | No | No | Buffer time (in seconds) to subtract from the access token’s expiration time. This causes the token to be treated as expired before its actual expiration, helping to avoid token expiration during API calls. Defaults to 60 seconds. |
 | wristbandApplicationVanityDomain | string | Yes | No | The vanity domain of the Wristband application. |
@@ -1024,8 +1026,8 @@ const auth = createWristbandAuth({
   wristbandApplicationVanityDomain: "auth.custom.com",
   // Must manually configure non-auto-configurable fields
   isApplicationCustomDomainActive: true,
-  loginUrl: "https://{tenant_domain}.custom.com/auth/login",
-  redirectUri: "https://{tenant_domain}.custom.com/auth/callback",
+  loginUrl: "https://{tenant_name}.custom.com/auth/login",
+  redirectUri: "https://{tenant_name}.custom.com/auth/callback",
   parseTenantFromRootDomain: "custom.com",
 });
 ```
@@ -1051,7 +1053,7 @@ const authorizeUrl = await wristbandAuth.pagesRouter.login(req, res);
 res.redirect(authorizeUrl);
 ```
 
-Wristband requires that your application specify a Tenant-Level domain when redirecting to the Wristband Authorize Endpoint when initiating an auth request. When the frontend of your application redirects the user to your Next.js Login Endpoint, there are two ways to accomplish getting the `tenantName` information: passing a query parameter or using tenant subdomains.
+Wristband requires that your application specify a Tenant-Level domain when redirecting to the Wristband Authorize Endpoint when initiating an auth request. If `applicationAuthorizationRequestsEnabled` is set to `true`, an App-Level domain can also be used. When the frontend of your application redirects the user to your Next.js Login Endpoint, there are two ways to accomplish getting the `tenantName` information: passing a query parameter or using tenant subdomains.
 
 The `login()` function can also take optional configuration if your application needs custom behavior:
 
@@ -1064,20 +1066,65 @@ The `login()` function can also take optional configuration if your application 
 
 #### Which Domains Are Used in the Authorize URL?
 
-Wristband supports various tenant domain configurations, including subdomains and custom domains. The SDK automatically determines the appropriate domain configuration when constructing the Wristband Authorize URL, which your login endpoint will redirect users to during the login flow. The selection follows this precedence order:
+Wristband supports various tenant domain configurations, including subdomains and custom domains. The SDK automatically determines the appropriate domain configuration when constructing the Wristband Authorize URL, which your login endpoint will redirect users to during the login flow. The selection follows this precedence order, where the first five options all resolve to a Tenant-Level domain:
 
 1. `tenant_custom_domain` query parameter: If provided, this takes top priority.
 2. Tenant subdomain in the URL: Used if subdomains are enabled and the subdomain is present.
 3. `tenant_name` query parameter: Evaluated if no tenant subdomain is detected.
 4. `defaultTenantCustomDomain` in LoginConfig: Used if none of the above are present.
-5. `defaultTenantDomain` in LoginConfig: Used as the final fallback.
+5. `defaultTenantName` in LoginConfig: Used as the final fallback.
 
-If none of these are specified, the SDK redirects users to the Application-Level Login (Tenant Discovery) Page.
+If none of these resolve a Tenant-Level domain, what happens next depends on your `applicationAuthorizationRequestsEnabled` configuration:
+
+- **Disabled (default):** The SDK redirects users to the appropriate Application-Level Login (Tenant Discovery) Page. This is either the Wristband-hosted page (the default), or the `customApplicationLoginPageUrl` if you configured a URL for self-hosting that page.
+- **Enabled:** The SDK redirects users directly to the Wristband Authorize Endpoint using your application's vanity domain, letting Wristband handle tenant discovery as part of the same authorization flow. See [Application-Level Authorization Requests](#application-level-authorization-requests) below.
 
 > [!NOTE]
-> The `tenant_custom_domain` query parameter (#1) is validated against the Wristband tenant custom domain
-> validation API. If the value is not a valid tenant custom domain for your application, it is ignored and
-> skipped over during evaluation, and the SDK continues on to the next entry in the precedence order above.
+> The `tenant_custom_domain` query parameter (#1) is validated against the Wristband Tenant Custom Domain Validation API. If the value is not a valid tenant custom domain for your application, it is ignored and skipped over during evaluation, and the SDK continues on to the next entry in the precedence order above.
+
+#### Application-Level Authorization Requests
+
+By default, the SDK constructs a different Wristband Authorize Endpoint URL for every tenant (e.g. `https://tenantA-yourapp-yourcompany.us.wristband.dev/api/v1/oauth2/authorize`, `https://tenantB-yourapp-yourcompany.us.wristband.dev/api/v1/oauth2/authorize`, etc.). Some third-party platforms and SDKs (e.g. Supabase, etc.) require a single, static Authorization Endpoint URL and can't accommodate dynamic, per-tenant URLs.
+
+Enabling `applicationAuthorizationRequestsEnabled` addresses this by allowing OIDC authorization requests through your application's vanity domain, in addition to tenant vanity domains. This gives one fixed, static Authorization Endpoint URL to hand off to your third-party integration. This setting is configured on your Application in the Wristband Dashboard.
+
+When enabled, this setting only changes behavior in the one case where `login()` cannot resolve a Tenant-level domain from the request. Instead of redirecting to the Application-Level Login (Tenant Discovery) Page, the SDK sends the user directly to the Wristband Authorize Endpoint using your application's vanity domain, and Wristband handles tenant discovery as part of that same authorization flow.
+
+**Without tenant subdomains**
+ 
+If your application doesn't use tenant subdomains (i.e., your `loginUrl` does not contain the `{tenant_name}` placeholder), then no additional configuration is needed beyond setting `applicationAuthorizationRequestsEnabled` to `true`:
+ 
+```ts
+const wristbandAuth = createWristbandAuth({
+  wristbandApplicationVanityDomain: "yourapp-yourcompany.us.wristband.dev",
+  clientId: "ic6saso5hzdvbnof3bwgccejxy",
+  clientSecret: "30e9977124b13037d035be10d727806f",
+  loginUrl: "https://yourapp.io/auth/login",
+  redirectUri: "https://yourapp.io/auth/callback",
+  applicationAuthorizationRequestsEnabled: true,
+});
+```
+
+**With tenant subdomains**
+ 
+If your application uses tenant subdomains (i.e., your `loginUrl` contains the `{tenant_name}` placeholder), you must also provide a `fallbackLoginUrl`.  See [logout()](#logout) for why this value is needed:
+
+```ts
+const wristbandAuth = createWristbandAuth({
+  wristbandApplicationVanityDomain: "yourapp-yourcompany.us.wristband.dev",
+  clientId: "ic6saso5hzdvbnof3bwgccejxy",
+  clientSecret: "30e9977124b13037d035be10d727806f",
+  loginUrl: "https://{tenant_name}.yourapp.io/auth/login",
+  redirectUri: "https://{tenant_name}.yourapp.io/auth/callback",
+  parseTenantFromRootDomain: "yourapp.io",
+  applicationAuthorizationRequestsEnabled: true,
+  fallbackLoginUrl: "https://yourapp.io/auth/login",
+});
+```
+ 
+This setting only affects requests where the tenant cannot be resolved. If a tenant subdomain, `tenant_name`/`tenant_custom_domain` query parameter, or a default tenant is present, `login()` proceeds with the standard tenant-level flow, including when a user navigates directly to a Tenant-Level Login URL (e.g. a bookmarked link).
+
+This is especially relevant for [Global and Standalone tenants](https://docs.wristband.dev/docs/tenants-1), which are either excluded from tenant discovery results entirely (Global Tenants) or intended to bypass application-level branding altogether (Standalone Tenants). Users of these tenant types should always reach your Login Endpoint with their tenant already resolvable, so this setting has no bearing on their experience.
 
 #### Tenant Name Query Param
 
@@ -1115,8 +1162,8 @@ const wristbandAuth = createWristbandAuth({
   clientId: "ic6saso5hzdvbnof3bwgccejxy",
   clientSecret: "30e9977124b13037d035be10d727806f",
   loginStateSecret: '7ffdbecc-ab7d-4134-9307-2dfcc52f7475',
-  loginUrl: "https://{tenant_domain}.yourapp.io/auth/login",
-  redirectUri: "https://{tenant_domain}.yourapp.io/auth/callback",
+  loginUrl: "https://{tenant_name}.yourapp.io/auth/login",
+  redirectUri: "https://{tenant_name}.yourapp.io/auth/callback",
   parseTenantFromRootDomain: "yourapp.io",
   wristbandApplicationVanityDomain: "yourapp-yourcompany.us.wristband.dev",
 });
@@ -1191,9 +1238,8 @@ This is useful when your application already knows which identity provider a use
 
 It is possible that users will try to access a location within your application that is not some default landing page. In those cases, they would expect to immediately land back at that desired location after logging in.  This is a better experience for the user, especially in cases where they have application URLs bookmarked for convenience.
 
-Given that your frontend will redirect users to your Login Endpoint, you can either include it in your Login Config or pass a `return_url` query parameter when redirecting to your Login Endpoint. The URL will be available to you upon completion of the Callback Endpoint. The Login Config takes precedence over the query parameter in the event a value is provided for both.
+Given that your frontend will redirect users to your Next.js Login Endpoint, you can either include it in your Login Config:
 
-**Passing a return URL in the Login Config**
 ```ts
 const loginUrl = await wristbandAuth.pagesRouter.login(req, res, {
   returnUrl: 'https://customer01.yourapp.io/settings/profile',
@@ -1201,12 +1247,20 @@ const loginUrl = await wristbandAuth.pagesRouter.login(req, res, {
 res.redirect(loginUrl);
 ```
 
-**Passing a return URL as a query parameter**
+...or you can pass a `return_url` query parameter when redirecting to your Login Endpoint:
+
 ```sh
 GET https://customer01.yourapp.io/auth/login?return_url=https://customer01.yourapp.io/settings/profile
 ```
 
-The return URL is stored in the Login State Cookie, and you can choose to send users to that return URL (if necessary) after the SDK's `callback()` funciton is done executing.
+The return URL is stored in the Login State Cookie, and it is available to you in your Callback Endpoint after the SDK's `callback()` method is done executing. You can choose to send users to that return URL (if necessary). The Login Config takes precedence over the query parameter in the event a value is provided for both.
+
+##### Return URL Preservation During Tenant Discovery
+
+When the `login()` method cannot resolve a Tenant-level domain from the request (via subdomain, query parameters, or defaults), what happens next depends on your `applicationAuthorizationRequestsEnabled` configuration:
+
+- **Disabled (default):** The SDK redirects users to the Application-Level Login (Tenant Discovery) Page. Any provided return URL value is not currently preserved through this flow. Once the user completes tenant discovery and lands back at your Login Endpoint, the original return URL is lost. If you need to preserve it, you could manually encode it into a `state` query param value yourself, though this has size limitations for long URLs (max: 512 characters).
+- **Enabled:** The SDK redirects users directly to the Wristband Authorize Endpoint, and the return URL is preserved as part of the Login State Cookie for that request, the same way it is for a resolvable tenant-level login — no additional propagation step through a Tenant Discovery Page is needed.
 
 <br>
 
@@ -1432,7 +1486,7 @@ If your application created a session, it should destroy it before invoking the 
 
 | LogoutConfig Field | Type | Required | Description |
 | ----------------- | ---- | -------- | ----------- |
-| redirectUrl | string | No | Optional URL that Wristband will redirect to after the logout operation has completed.  |
+| redirectUrl | string | No | Optional URL that Wristband will redirect to after the logout operation has completed. This will also take precedence over the `customApplicationLoginPageUrl` (if specified) in the SDK AuthConfig if the tenant domain cannot be determined when attempting to redirect to the Wristband Logout Endpoint. |
 | refreshToken | string | No | The refresh token to revoke. |
 | state | string | No | Optional value that will be appended as a query parameter to the resolved logout URL, if provided. Maximum length of 512 characters. |
 | tenantCustomDomain | string | No | The tenant custom domain for the tenant that the user belongs to (if applicable). |
@@ -1440,7 +1494,7 @@ If your application created a session, it should destroy it before invoking the 
 
 #### Which Domains Are Used in the Logout URL?
 
-Wristband supports various tenant domain configurations, including subdomains and custom domains. The SDK automatically determines the appropriate domain configuration when constructing the Wristband Logout URL, which your login endpoint will redirect users to during the logout flow. The selection follows this precedence order:
+Wristband supports various tenant domain configurations, including subdomains and custom domains. The SDK automatically determines the appropriate domain configuration when constructing the Wristband Logout URL, which your login endpoint will redirect users to during the logout flow. The selection follows this precedence order, where the first five options all resolve to a Tenant-Level domain:
 
 1. `tenantCustomDomain` in LogoutConfig: If provided, this takes top priority.
 2. `tenantName` in LogoutConfig: This takes the next priority if `tenantCustomDomain` is not present.
@@ -1448,12 +1502,15 @@ Wristband supports various tenant domain configurations, including subdomains an
 4. Tenant subdomain in the URL: Used if none of the above are present, and `parseTenantFromRootDomain` is specified, and the subdomain is present in the host.
 5. `tenant_name` query parameter: Used as the final fallback.
 
-If none of these are specified, the SDK redirects users to the Application-Level Login (Tenant Discovery) Page.
+If none of these resolve a Tenant-Level domain, the SDK checks whether a `redirectUrl` was provided in `LogoutConfig`. If so, it is returned immediately as the destination, with no Wristband Logout Endpoint URL constructed.
+
+When `redirectUrl` is not provided, what happens next depends on your `applicationAuthorizationRequestsEnabled` configuration:
+ 
+- **Disabled (default):** The SDK redirects users to the Application-Level Login (Tenant Discovery) Page. This is either the Wristband-hosted page (the default), or the `customApplicationLoginPageUrl` if you configured a URL for self-hosting that page.
+- **Enabled:** The SDK redirects users back to your application's own Login Endpoint instead to start a new app-level authorization flow. The exact location will be either the `fallbackLoginUrl` if `loginUrl` contains the `{tenant_name}` placeholder, or it will be the `loginUrl` otherwise.
 
 > [!NOTE]
-> The `tenant_custom_domain` query parameter (#3) is validated against the Wristband tenant custom domain
-> validation API. If the value is not a valid tenant custom domain for your application, it is ignored and
-> skipped over during evaluation, and the SDK continues on to the next entry in the precedence order above.
+> The `tenant_custom_domain` query parameter (#3) is validated against the Wristband Tenant Custom Domain Validation API. If the value is not a valid tenant custom domain for your application, it is ignored and skipped over during evaluation, and the SDK continues on to the next entry in the precedence order above.
 
 #### Revoking Refresh Tokens
 

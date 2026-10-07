@@ -5,7 +5,7 @@ import {
   resolveTenantCustomDomainParam,
   createLoginState,
   createLoginStateCookie,
-  getAuthorizeUrl,
+  getAuthorizationUrlParams,
   getLoginStateCookie,
   clearLoginStateCookie,
 } from '../../../src/utils/auth/app-router-utils';
@@ -127,6 +127,16 @@ describe('resolveTenantName', () => {
 
     const result = resolveTenantName(req, 'example.com');
     expect(result).toBe('tenant');
+  });
+
+  test('should return empty string when host does not match parseTenantFromRootDomain', () => {
+    const req = createMockNextRequest({
+      url: 'https://example.com/path',
+      headers: { host: 'example.com' },
+    });
+
+    const result = resolveTenantName(req, 'example.com');
+    expect(result).toBe('');
   });
 
   test('should return tenant_name query param when parseTenantFromRootDomain is not provided', () => {
@@ -353,6 +363,35 @@ describe('createLoginStateCookie', () => {
     expect(mockResponse.headers.append).toHaveBeenCalledWith('Set-Cookie', expect.not.stringContaining('Secure'));
   });
 
+  test('should not include Domain attribute when domain is not provided', () => {
+    const req = createMockNextRequest({
+      url: 'https://example.com/path',
+      headers: {},
+    });
+
+    createLoginStateCookie(req, mockResponse, 'state123', 'encrypted-data', false);
+
+    expect(mockResponse.headers.append).toHaveBeenCalledWith('Set-Cookie', expect.not.stringContaining('Domain='));
+  });
+
+  test('should include Domain attribute on the new cookie when domain is provided', () => {
+    const req = createMockNextRequest({
+      url: 'https://example.com/path',
+      headers: {},
+    });
+
+    createLoginStateCookie(req, mockResponse, 'state123', 'encrypted-data', false, '.business.invotastic.com');
+
+    expect(mockResponse.headers.append).toHaveBeenCalledWith(
+      'Set-Cookie',
+      expect.stringContaining(`${LOGIN_STATE_COOKIE_PREFIX}state123${LOGIN_STATE_COOKIE_SEPARATOR}`)
+    );
+    expect(mockResponse.headers.append).toHaveBeenCalledWith(
+      'Set-Cookie',
+      expect.stringContaining('Domain=.business.invotastic.com')
+    );
+  });
+
   test('should remove oldest cookie when 3 login cookies already exist', () => {
     const oldestTime = Date.now() - 3000;
     const middleTime = Date.now() - 2000;
@@ -386,6 +425,68 @@ describe('createLoginStateCookie', () => {
     );
   });
 
+  test('should not include Secure flag on the stale cookie removal when dangerouslyDisableSecureCookies is true', () => {
+    const oldestTime = Date.now() - 3000;
+    const middleTime = Date.now() - 2000;
+    const newestTime = Date.now() - 1000;
+
+    const cookieHeader = [
+      `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=value1`,
+      `${LOGIN_STATE_COOKIE_PREFIX}state2${LOGIN_STATE_COOKIE_SEPARATOR}${middleTime}=value2`,
+      `${LOGIN_STATE_COOKIE_PREFIX}state3${LOGIN_STATE_COOKIE_SEPARATOR}${newestTime}=value3`,
+    ].join('; ');
+
+    const req = createMockNextRequest({
+      url: 'https://example.com/path',
+      headers: { cookie: cookieHeader },
+    });
+
+    createLoginStateCookie(req, mockResponse, 'state4', 'encrypted-data', true);
+
+    // Stale cookie removal header should end right after Max-Age=0, with no Secure flag
+    expect(mockResponse.headers.append).toHaveBeenCalledWith(
+      'Set-Cookie',
+      `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+    );
+  });
+
+  test('should include Domain attribute on both the stale cookie removal and the new cookie when domain is provided', () => {
+    const oldestTime = Date.now() - 3000;
+    const middleTime = Date.now() - 2000;
+    const newestTime = Date.now() - 1000;
+
+    const cookieHeader = [
+      `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=value1`,
+      `${LOGIN_STATE_COOKIE_PREFIX}state2${LOGIN_STATE_COOKIE_SEPARATOR}${middleTime}=value2`,
+      `${LOGIN_STATE_COOKIE_PREFIX}state3${LOGIN_STATE_COOKIE_SEPARATOR}${newestTime}=value3`,
+    ].join('; ');
+
+    const req = createMockNextRequest({
+      url: 'https://example.com/path',
+      headers: { cookie: cookieHeader },
+    });
+
+    createLoginStateCookie(req, mockResponse, 'state4', 'encrypted-data', false, '.business.invotastic.com');
+
+    // Stale cookie removal should carry the Domain attribute
+    expect(mockResponse.headers.append).toHaveBeenCalledWith(
+      'Set-Cookie',
+      expect.stringContaining(
+        `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Secure`
+      )
+    );
+
+    // New cookie should also carry the Domain attribute
+    expect(mockResponse.headers.append).toHaveBeenCalledWith(
+      'Set-Cookie',
+      expect.stringContaining(`${LOGIN_STATE_COOKIE_PREFIX}state4${LOGIN_STATE_COOKIE_SEPARATOR}`)
+    );
+    expect(mockResponse.headers.append).toHaveBeenCalledWith(
+      'Set-Cookie',
+      expect.stringContaining('Domain=.business.invotastic.com')
+    );
+  });
+
   test('should handle malformed cookies gracefully', () => {
     const req = createMockNextRequest({
       url: 'https://example.com/path',
@@ -398,104 +499,43 @@ describe('createLoginStateCookie', () => {
   });
 });
 
-describe('getAuthorizeUrl', () => {
+describe('getAuthorizationUrlParams', () => {
   const baseConfig = {
     clientId: CLIENT_ID,
     codeVerifier: 'test-code-verifier',
     redirectUri: 'https://redirect.com',
     scopes: ['openid', 'profile'],
     state: 'test-state',
-    wristbandApplicationVanityDomain: 'app.wristband.dev',
   };
 
-  test('should create authorize URL with tenant custom domain (highest priority)', async () => {
+  test('should include all required OAuth2 parameters', async () => {
     const req = createMockNextRequest({
       url: 'https://example.com/path',
       headers: {},
     });
 
-    const config = {
-      ...baseConfig,
-      tenantCustomDomain: 'custom.domain.com',
-      tenantName: 'tenant',
-      defaultTenantCustomDomain: 'default-custom.domain.com',
-      defaultTenantName: 'default-tenant',
-    };
+    const result = await getAuthorizationUrlParams(req, baseConfig);
 
-    const result = await getAuthorizeUrl(req, config);
-
-    expect(result).toContain('https://custom.domain.com/api/v1/oauth2/authorize');
-    expect(result).toContain(`client_id=${CLIENT_ID}`);
-    expect(result).toContain('state=test-state');
-    expect(result).toContain('scope=openid+profile');
+    expect(result.get('client_id')).toBe(CLIENT_ID);
+    expect(result.get('redirect_uri')).toBe('https://redirect.com');
+    expect(result.get('response_type')).toBe('code');
+    expect(result.get('state')).toBe('test-state');
+    expect(result.get('scope')).toBe('openid profile');
+    expect(result.get('code_challenge')).toBeTruthy();
+    expect(result.get('code_challenge_method')).toBe('S256');
+    expect(result.get('nonce')).toBeTruthy();
   });
 
-  test('should create authorize URL with tenant domain name (second priority)', async () => {
+  test('should not include login_hint or idp_hint when not provided', async () => {
     const req = createMockNextRequest({
       url: 'https://example.com/path',
       headers: {},
     });
 
-    const config = {
-      ...baseConfig,
-      tenantName: 'tenant',
-      defaultTenantCustomDomain: 'default-custom.domain.com',
-      defaultTenantName: 'default-tenant',
-    };
+    const result = await getAuthorizationUrlParams(req, baseConfig);
 
-    const result = await getAuthorizeUrl(req, config);
-
-    expect(result).toContain('https://tenant-app.wristband.dev/api/v1/oauth2/authorize');
-  });
-
-  test('should use dot separator when isApplicationCustomDomainActive is true', async () => {
-    const req = createMockNextRequest({
-      url: 'https://example.com/path',
-      headers: {},
-    });
-
-    const config = {
-      ...baseConfig,
-      tenantName: 'tenant',
-      isApplicationCustomDomainActive: true,
-    };
-
-    const result = await getAuthorizeUrl(req, config);
-
-    expect(result).toContain('https://tenant.app.wristband.dev/api/v1/oauth2/authorize');
-  });
-
-  test('should create authorize URL with default tenant custom domain (third priority)', async () => {
-    const req = createMockNextRequest({
-      url: 'https://example.com/path',
-      headers: {},
-    });
-
-    const config = {
-      ...baseConfig,
-      defaultTenantCustomDomain: 'default-custom.domain.com',
-      defaultTenantName: 'default-tenant',
-    };
-
-    const result = await getAuthorizeUrl(req, config);
-
-    expect(result).toContain('https://default-custom.domain.com/api/v1/oauth2/authorize');
-  });
-
-  test('should create authorize URL with default tenant domain name (lowest priority)', async () => {
-    const req = createMockNextRequest({
-      url: 'https://example.com/path',
-      headers: {},
-    });
-
-    const config = {
-      ...baseConfig,
-      defaultTenantName: 'default-tenant',
-    };
-
-    const result = await getAuthorizeUrl(req, config);
-
-    expect(result).toContain('https://default-tenant-app.wristband.dev/api/v1/oauth2/authorize');
+    expect(result.has('login_hint')).toBe(false);
+    expect(result.has('idp_hint')).toBe(false);
   });
 
   test('should include login_hint when provided', async () => {
@@ -504,14 +544,9 @@ describe('getAuthorizeUrl', () => {
       headers: {},
     });
 
-    const config = {
-      ...baseConfig,
-      defaultTenantName: 'default-tenant',
-    };
+    const result = await getAuthorizationUrlParams(req, baseConfig);
 
-    const result = await getAuthorizeUrl(req, config);
-
-    expect(result).toContain('login_hint=user%40example.com');
+    expect(result.get('login_hint')).toBe('user@example.com');
   });
 
   test('should throw error when multiple login_hint params are provided', async () => {
@@ -520,12 +555,7 @@ describe('getAuthorizeUrl', () => {
       headers: {},
     });
 
-    const config = {
-      ...baseConfig,
-      defaultTenantName: 'default-tenant',
-    };
-
-    await expect(getAuthorizeUrl(req, config)).rejects.toThrow(
+    await expect(getAuthorizationUrlParams(req, baseConfig)).rejects.toThrow(
       'More than one [login_hint] query parameter was encountered'
     );
   });
@@ -536,14 +566,9 @@ describe('getAuthorizeUrl', () => {
       headers: {},
     });
 
-    const config = {
-      ...baseConfig,
-      defaultTenantName: 'default-tenant',
-    };
+    const result = await getAuthorizationUrlParams(req, baseConfig);
 
-    const result = await getAuthorizeUrl(req, config);
-
-    expect(result).toContain('idp_hint=google');
+    expect(result.get('idp_hint')).toBe('google');
   });
 
   test('should throw error when multiple idp_hint params are provided', async () => {
@@ -552,37 +577,9 @@ describe('getAuthorizeUrl', () => {
       headers: {},
     });
 
-    const config = {
-      ...baseConfig,
-      defaultTenantName: 'default-tenant',
-    };
-
-    await expect(getAuthorizeUrl(req, config)).rejects.toThrow(
+    await expect(getAuthorizationUrlParams(req, baseConfig)).rejects.toThrow(
       'More than one [idp_hint] query parameter was encountered'
     );
-  });
-
-  test('should include all required OAuth2 parameters', async () => {
-    const req = createMockNextRequest({
-      url: 'https://example.com/path',
-      headers: {},
-    });
-
-    const config = {
-      ...baseConfig,
-      defaultTenantName: 'default-tenant',
-    };
-
-    const result = await getAuthorizeUrl(req, config);
-
-    expect(result).toContain(`client_id=${CLIENT_ID}`);
-    expect(result).toContain('redirect_uri=https%3A%2F%2Fredirect.com');
-    expect(result).toContain('response_type=code');
-    expect(result).toContain('state=test-state');
-    expect(result).toContain('scope=openid+profile');
-    expect(result).toContain('code_challenge=');
-    expect(result).toContain('code_challenge_method=S256');
-    expect(result).toContain('nonce=');
   });
 });
 
@@ -696,9 +693,31 @@ describe('clearLoginStateCookie', () => {
 
     clearLoginStateCookie(mockResponse, cookieName, true);
 
+    // NOTE: no trailing "; " here -- the Secure element is omitted from the array entirely
+    // now that clearLoginStateCookie builds its header the same way pages-router-utils does,
+    // rather than joining in an empty string for the disabled case.
     expect(mockResponse.headers.append).toHaveBeenCalledWith(
       'Set-Cookie',
-      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; `
+      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
+    );
+  });
+
+  test('should not include Domain attribute when domain is not provided', () => {
+    const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890`;
+
+    clearLoginStateCookie(mockResponse, cookieName, false);
+
+    expect(mockResponse.headers.append).toHaveBeenCalledWith('Set-Cookie', expect.not.stringContaining('Domain='));
+  });
+
+  test('should include Domain attribute when domain is provided', () => {
+    const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890`;
+
+    clearLoginStateCookie(mockResponse, cookieName, false, '.business.invotastic.com');
+
+    expect(mockResponse.headers.append).toHaveBeenCalledWith(
+      'Set-Cookie',
+      `${cookieName}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure`
     );
   });
 

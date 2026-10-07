@@ -147,7 +147,7 @@ function extractLoginPath(loginUrl: string): string {
 
     const url = new URL(normalizedUrl);
     return url.pathname;
-  } catch (error) {
+  } catch {
     // Fallback to relative path default in the event a parse error occurs.
     return DEFAULT_LOGIN_ENDPOINT;
   }

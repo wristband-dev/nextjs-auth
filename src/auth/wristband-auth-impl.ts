@@ -267,13 +267,13 @@ export class WristbandAuthImpl implements WristbandAuth {
               session.refreshToken = newTokenData.refreshToken;
               session.expiresAt = newTokenData.expiresAt;
             }
-          } catch (error) {
+          } catch {
             return { authenticated: false, reason: 'token_refresh_failed' };
           }
         }
 
         return { authenticated: true, session, usedStrategy: 'SESSION' };
-      } catch (error) {
+      } catch {
         return { authenticated: false, reason: 'unexpected_error' };
       }
     }
@@ -298,7 +298,7 @@ export class WristbandAuthImpl implements WristbandAuth {
         }
 
         return { authenticated: true, usedStrategy: 'JWT' };
-      } catch (error) {
+      } catch {
         return { authenticated: false, reason: 'unexpected_error' };
       }
     }

@@ -82,7 +82,8 @@ export function createLoginStateCookie(
   response: NextResponse,
   state: string,
   encryptedLoginState: string,
-  dangerouslyDisableSecureCookies: boolean
+  dangerouslyDisableSecureCookies: boolean,
+  domain?: string
 ): void {
   // Parse existing cookies from the request
   const cookies = parseCookies(request.headers.get('cookie'));
@@ -104,36 +105,42 @@ export function createLoginStateCookie(
     })[0];
 
     // Delete the cookie
-    response.headers.append(
-      'Set-Cookie',
-      `${oldestCookie.name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`
-    );
+    const staleCookieHeaderValue: string = [
+      `${oldestCookie.name}=`,
+      'Path=/',
+      'HttpOnly',
+      ...(domain ? [`Domain=${domain}`] : []),
+      'SameSite=Lax',
+      'Max-Age=0',
+      ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
+    ].join('; ');
+    response.headers.append('Set-Cookie', staleCookieHeaderValue);
   }
 
   // 1 hour expiration for new cookie
   const newCookieName: string = `${LOGIN_STATE_COOKIE_PREFIX}${state}${LOGIN_STATE_COOKIE_SEPARATOR}${Date.now().valueOf()}`;
-  response.headers.append(
-    'Set-Cookie',
-    `${newCookieName}=${encryptedLoginState}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`
-  );
+  const newCookieHeaderValue: string = [
+    `${newCookieName}=${encryptedLoginState}`,
+    'Path=/',
+    'HttpOnly',
+    ...(domain ? [`Domain=${domain}`] : []),
+    'SameSite=Lax',
+    'Max-Age=3600',
+    ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
+  ].join('; ');
+  response.headers.append('Set-Cookie', newCookieHeaderValue);
 }
 
-export async function getAuthorizeUrl(
+/**
+ * Builds the OAuth2 authorization request params shared by both the app-level and tenant-level
+ * Authorize Endpoint URLs. Mirrors pages-router-utils's getAuthorizationUrlParams so that
+ * getAppLevelAuthorizationUrl()/getTenantLevelAuthorizationUrl() (common-utils.ts) can be reused
+ * identically across both routers.
+ */
+export async function getAuthorizationUrlParams(
   request: NextRequest,
-  config: {
-    clientId: string;
-    codeVerifier: string;
-    defaultTenantCustomDomain?: string;
-    defaultTenantName?: string;
-    redirectUri: string;
-    scopes: string[];
-    state: string;
-    tenantCustomDomain?: string;
-    tenantName?: string;
-    isApplicationCustomDomainActive?: boolean;
-    wristbandApplicationVanityDomain: string;
-  }
-): Promise<string> {
+  config: { clientId: string; codeVerifier: string; redirectUri: string; scopes: string[]; state: string }
+): Promise<URLSearchParams> {
   const loginHint = request.nextUrl.searchParams.getAll('login_hint');
   const idpHint = request.nextUrl.searchParams.getAll('idp_hint');
 
@@ -147,7 +154,7 @@ export async function getAuthorizeUrl(
 
   const digest = await sha256Base64(config.codeVerifier);
 
-  const queryParams = new URLSearchParams({
+  return new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     response_type: 'code',
@@ -159,25 +166,6 @@ export async function getAuthorizeUrl(
     ...(loginHint.length > 0 ? { login_hint: loginHint[0] } : {}),
     ...(idpHint.length > 0 ? { idp_hint: idpHint[0] } : {}),
   });
-
-  const separator = config.isApplicationCustomDomainActive ? '.' : '-';
-
-  // Domain priority order resolution:
-  // 1)  tenant_custom_domain query param
-  // 2a) tenant subdomain
-  // 2b) tenant_name query param
-  // 3)  defaultTenantCustomDomain login config
-  // 4)  defaultTenantName login config
-  if (config.tenantCustomDomain) {
-    return `https://${config.tenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  if (config.tenantName) {
-    return `https://${config.tenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  if (config.defaultTenantCustomDomain) {
-    return `https://${config.defaultTenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  return `https://${config.defaultTenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
 }
 
 export function getLoginStateCookie(request: NextRequest): AppRouterLoginStateCookie | null {
@@ -203,12 +191,19 @@ export function getLoginStateCookie(request: NextRequest): AppRouterLoginStateCo
 export function clearLoginStateCookie(
   response: NextResponse,
   cookieName: string,
-  dangerouslyDisableSecureCookies: boolean
+  dangerouslyDisableSecureCookies: boolean,
+  domain?: string
 ): void {
-  // NOTE: Due to a bug in iron-session, we set both maxAge and Expires
-  const cookieAttributes = [
-    `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`,
-    !dangerouslyDisableSecureCookies ? 'Secure' : '',
+  // NOTE: Due to a bug in iron, we set both maxAge and Expires
+  const cookieAttributes: string = [
+    `${cookieName}=`,
+    'Path=/',
+    'HttpOnly',
+    ...(domain ? [`Domain=${domain}`] : []),
+    'SameSite=Lax',
+    'Max-Age=0',
+    'Expires=Thu, 01 Jan 1970 00:00:00 GMT',
+    ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
   ].join('; ');
   response.headers.append('Set-Cookie', cookieAttributes);
 }
