@@ -159,6 +159,7 @@ describe('Multi Tenant Callback - App Router', () => {
 
       expect(loginStateCookie.httponly).toBe(true);
       expect(loginStateCookie['max-age']).toBe('0');
+      expect(loginStateCookie.domain).toBeUndefined();
       expect(loginStateCookie.path).toBe('/');
       expect(loginStateCookie.samesite).toBe('Lax');
       expect(loginStateCookie.secure).toBe(true);
@@ -258,6 +259,11 @@ describe('Multi Tenant Callback - App Router', () => {
         const locationUrl: string = headers.get('location')!;
         expect(status).toBe(302);
         expect(locationUrl).toBe(APP_HOME_URL);
+
+        // The app-level authorization requests flag is not enabled, so the cleared cookie is host-only
+        const parsedCookies = parseSetCookies(response.headers.getSetCookie());
+        expect(parsedCookies).toHaveLength(1);
+        expect(parsedCookies[0].domain).toBeUndefined();
       });
     });
 
@@ -317,6 +323,11 @@ describe('Multi Tenant Callback - App Router', () => {
         const locationUrl: string = headers.get('location')!;
         expect(status).toBe(302);
         expect(locationUrl).toBe(APP_HOME_URL);
+
+        // The app-level authorization requests flag is not enabled, so the cleared cookie is host-only
+        const parsedCookies = parseSetCookies(response.headers.getSetCookie());
+        expect(parsedCookies).toHaveLength(1);
+        expect(parsedCookies[0].domain).toBeUndefined();
       });
     });
   });

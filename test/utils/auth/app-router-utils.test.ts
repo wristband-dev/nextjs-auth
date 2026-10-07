@@ -129,6 +129,16 @@ describe('resolveTenantName', () => {
     expect(result).toBe('tenant');
   });
 
+  test('should return empty string when host does not match parseTenantFromRootDomain', () => {
+    const req = createMockNextRequest({
+      url: 'https://example.com/path',
+      headers: { host: 'example.com' },
+    });
+
+    const result = resolveTenantName(req, 'example.com');
+    expect(result).toBe('');
+  });
+
   test('should return tenant_name query param when parseTenantFromRootDomain is not provided', () => {
     const req = createMockNextRequest({
       url: 'https://example.com/path?tenant_name=mytenant',

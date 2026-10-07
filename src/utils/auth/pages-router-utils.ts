@@ -157,12 +157,7 @@ export async function getAuthorizationUrlParams(
   });
 }
 
-export function getAndClearLoginStateCookie(
-  request: NextApiRequest,
-  response: NextApiResponse,
-  dangerouslyDisableSecureCookies: boolean,
-  domain?: string
-): string {
+export function getLoginStateCookie(request: NextApiRequest): { cookieName: string; loginStateCookie: string } {
   const { cookies, query } = request;
   const { state } = query;
   const paramState = state ? state.toString() : '';
@@ -173,16 +168,27 @@ export function getAndClearLoginStateCookie(
     return cookieName.startsWith(`${LOGIN_STATE_COOKIE_PREFIX}${paramState}${LOGIN_STATE_COOKIE_SEPARATOR}`);
   });
 
-  let loginStateCookie: string = '';
-
   if (matchingLoginCookieNames.length > 0) {
     const cookieName = matchingLoginCookieNames[0];
-    loginStateCookie = cookies[cookieName]!;
-    // Delete the login state cookie.
-    response.setHeader('Set-Cookie', [
-      `${cookieName}=; Path=/; HttpOnly${domain ? `; Domain=${domain}` : ''}; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`,
-    ]);
+    return { cookieName, loginStateCookie: cookies[cookieName]! };
   }
 
-  return loginStateCookie;
+  return { cookieName: '', loginStateCookie: '' };
+}
+
+export function clearLoginStateCookie(
+  response: NextApiResponse,
+  cookieName: string,
+  dangerouslyDisableSecureCookies: boolean,
+  domain?: string
+): void {
+  const cookieAttributes = [
+    'HttpOnly',
+    ...(domain ? [`Domain=${domain}`] : []),
+    'Path=/',
+    'Max-Age=0',
+    'SameSite=Lax',
+    ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
+  ].join('; ');
+  response.setHeader('Set-Cookie', [`${cookieName}=; ${cookieAttributes}`]);
 }

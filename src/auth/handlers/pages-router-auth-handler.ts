@@ -11,10 +11,11 @@ import {
 } from '../../types';
 import { WristbandService } from '../../wristband-service';
 import {
+  clearLoginStateCookie,
   createLoginState,
   createLoginStateCookie,
-  getAndClearLoginStateCookie,
   getAuthorizationUrlParams,
+  getLoginStateCookie,
   resolveTenantCustomDomainParam,
   resolveTenantName,
 } from '../../utils/auth/pages-router-utils';
@@ -72,15 +73,20 @@ export class PagesRouterAuthHandler {
       returnUrl: loginConfig.returnUrl,
     });
 
-    // Create the authroization request params needed, regardless if using app-level or tenant-level Authorize Endpoint.
+    // Create the authorization request params needed, regardless if using app-level or tenant-level Authorize Endpoint.
     const { codeVerifier, state } = loginState;
     const authorizationParamConfig = { clientId, codeVerifier, redirectUri, scopes, state };
+
+    // Determine whether to use the root domain for the login state cookie.
+    const cookieDomain =
+      applicationAuthorizationRequestsEnabled && parseTenantFromRootDomain
+        ? `.${parseTenantFromRootDomain}`
+        : undefined;
 
     // In the event we cannot determine either a tenant custom domain or subdomain, send the user to app-level login.
     if (!tenantCustomDomain && !tenantName && !defaultTenantCustomDomain && !defaultTenantName) {
       if (applicationAuthorizationRequestsEnabled) {
         // Clear any stale login state cookies and add a new one for the current request.
-        const domain = parseTenantFromRootDomain ? `.${parseTenantFromRootDomain}` : undefined;
         const encryptedLoginState: string = await encryptLoginState(loginState, loginStateSecret);
         createLoginStateCookie(
           request,
@@ -88,7 +94,7 @@ export class PagesRouterAuthHandler {
           loginState.state,
           encryptedLoginState,
           dangerouslyDisableSecureCookies,
-          domain
+          cookieDomain
         );
 
         // Send users to the app-level Authorize Endpoint with a login state cookie instead of going to login URL.
@@ -102,9 +108,16 @@ export class PagesRouterAuthHandler {
 
     // Clear any stale login state cookies and add a new one for the current request.
     const encryptedLoginState: string = await encryptLoginState(loginState, loginStateSecret);
-    createLoginStateCookie(request, response, loginState.state, encryptedLoginState, dangerouslyDisableSecureCookies);
+    createLoginStateCookie(
+      request,
+      response,
+      loginState.state,
+      encryptedLoginState,
+      dangerouslyDisableSecureCookies,
+      cookieDomain
+    );
 
-    // Return the tenant-level Wristband Authorize Endpoint URL which the user will get redirectd to.
+    // Return the tenant-level Wristband Authorize Endpoint URL which the user will get redirected to.
     const authorizationParams = await getAuthorizationUrlParams(request, authorizationParamConfig);
     return getTenantLevelAuthorizationUrl(wristbandApplicationVanityDomain, authorizationParams, {
       isApplicationCustomDomainActive,
@@ -178,21 +191,20 @@ export class PagesRouterAuthHandler {
       tenantLoginUrl = `${tenantLoginUrl}${parseTenantFromRootDomain ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
     }
 
-    // Make sure the login state cookie exists, extract it, and set it to be cleared by the server.
-    const domain =
-      applicationAuthorizationRequestsEnabled && parseTenantFromRootDomain
-        ? `.${parseTenantFromRootDomain}`
-        : undefined;
-    const loginStateCookie: string = getAndClearLoginStateCookie(
-      request,
-      response,
-      dangerouslyDisableSecureCookies,
-      domain
-    );
-    if (!loginStateCookie) {
+    // Make sure the login state cookie exists.
+    const { cookieName, loginStateCookie } = getLoginStateCookie(request);
+    if (!cookieName || !loginStateCookie) {
       return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'missing_login_state' };
     }
 
+    // Determine whether to use the root domain for clearing the login state cookie.
+    const cookieDomain =
+      applicationAuthorizationRequestsEnabled && parseTenantFromRootDomain
+        ? `.${parseTenantFromRootDomain}`
+        : undefined;
+    clearLoginStateCookie(response, cookieName, dangerouslyDisableSecureCookies, cookieDomain);
+
+    // Extract the login state from the cookie.
     const loginState: LoginState = await decryptLoginState(loginStateCookie, loginStateSecret);
     const { codeVerifier, customState, redirectUri, returnUrl, state: cookieState } = loginState;
 
@@ -273,7 +285,7 @@ export class PagesRouterAuthHandler {
     if (logoutConfig.refreshToken) {
       try {
         await this.wristbandService.revokeRefreshToken(logoutConfig.refreshToken);
-      } catch (error) {
+      } catch {
         // No need to block logout execution if revoking fails
         console.debug(`Revoking the refresh token failed during logout`);
       }

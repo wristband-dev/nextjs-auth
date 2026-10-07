@@ -250,7 +250,7 @@ export interface UserInfo {
 export type CallbackData = TokenData & {
   // TODO: customState is typed `any` for consumer flexibility. Tightening to Record<string, unknown>
   // would change consumer-side type-checking behavior, deferred to the next major version alongside
-  // the iron-webcrypto v2 upgrade.
+  // using our own encryption lib.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   customState?: { [key: string]: any };
   returnUrl?: string;

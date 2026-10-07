@@ -90,6 +90,7 @@ describe('appRouter.login()', () => {
 
       expect(loginStateCookie.httponly).toBe(true);
       expect(loginStateCookie['max-age']).toBe('3600');
+      expect(loginStateCookie.domain).toBeUndefined();
       expect(loginStateCookie.path).toBe('/');
       expect(loginStateCookie.samesite).toBe('Lax');
       expect(loginStateCookie.secure).toBe(true);
@@ -168,6 +169,7 @@ describe('appRouter.login()', () => {
 
       expect(loginStateCookie.httponly).toBe(true);
       expect(loginStateCookie['max-age']).toBe('3600');
+      expect(loginStateCookie.domain).toBeUndefined();
       expect(loginStateCookie.path).toBe('/');
       expect(loginStateCookie.samesite).toBe('Lax');
       expect(loginStateCookie.secure).toBeUndefined();

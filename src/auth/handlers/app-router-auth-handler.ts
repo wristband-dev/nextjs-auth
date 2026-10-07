@@ -77,9 +77,15 @@ export class AppRouterAuthHandler {
       returnUrl: loginConfig.returnUrl,
     });
 
-    // Create the authroization request params needed, regardless if using app-level or tenant-level Authorize Endpoint.
+    // Create the authorization request params needed, regardless if using app-level or tenant-level Authorize Endpoint.
     const { codeVerifier, state } = loginState;
     const authorizationParamConfig = { clientId, codeVerifier, redirectUri, scopes, state };
+
+    // Determine whether to use the root domain for the login state cookie.
+    const cookieDomain =
+      applicationAuthorizationRequestsEnabled && parseTenantFromRootDomain
+        ? `.${parseTenantFromRootDomain}`
+        : undefined;
 
     // In the event we cannot determine either a tenant custom domain or subdomain, send the user to app-level login.
     if (!tenantCustomDomain && !tenantName && !defaultTenantCustomDomain && !defaultTenantName) {
@@ -90,7 +96,6 @@ export class AppRouterAuthHandler {
         const appAuthorizeResponse = NextResponse.redirect(appAuthorizeUrl, REDIRECT_RESPONSE_INIT);
 
         // Clear any stale login state cookies and add a new one for the current request.
-        const domain = parseTenantFromRootDomain ? `.${parseTenantFromRootDomain}` : undefined;
         const encryptedLoginState: string = await encryptLoginState(loginState, loginStateSecret);
         createLoginStateCookie(
           request,
@@ -98,7 +103,7 @@ export class AppRouterAuthHandler {
           loginState.state,
           encryptedLoginState,
           dangerouslyDisableSecureCookies,
-          domain
+          cookieDomain
         );
 
         return appAuthorizeResponse;
@@ -135,7 +140,8 @@ export class AppRouterAuthHandler {
       tenantAuthorizeResponse,
       loginState.state,
       encryptedLoginState,
-      dangerouslyDisableSecureCookies
+      dangerouslyDisableSecureCookies,
+      cookieDomain
     );
 
     return tenantAuthorizeResponse;
@@ -201,12 +207,13 @@ export class AppRouterAuthHandler {
       tenantLoginUrl = `${tenantLoginUrl}${parseTenantFromRootDomain ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
     }
 
-    // Make sure the login state cookie exists, extract it, and set it to be cleared by the server.
+    // Make sure the login state cookie exists.
     const loginStateCookie: AppRouterLoginStateCookie | null = getLoginStateCookie(request);
     if (!loginStateCookie) {
       return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'missing_login_state' };
     }
 
+    // Extract the login state from the cookie.
     const loginState: LoginState = await decryptLoginState(loginStateCookie.value, loginStateSecret);
     const { codeVerifier, customState, redirectUri, returnUrl, state: cookieState } = loginState;
 
@@ -280,11 +287,17 @@ export class AppRouterAuthHandler {
 
     const loginStateCookie: AppRouterLoginStateCookie | null = getLoginStateCookie(request);
     if (loginStateCookie) {
-      const domain =
+      // Determine whether to use the root domain for clearing the login state cookie.
+      const cookieDomain =
         applicationAuthorizationRequestsEnabled && parseTenantFromRootDomain
           ? `.${parseTenantFromRootDomain}`
           : undefined;
-      await clearLoginStateCookie(redirectResponse, loginStateCookie.name, dangerouslyDisableSecureCookies, domain);
+      await clearLoginStateCookie(
+        redirectResponse,
+        loginStateCookie.name,
+        dangerouslyDisableSecureCookies,
+        cookieDomain
+      );
     }
 
     return redirectResponse;
@@ -306,7 +319,7 @@ export class AppRouterAuthHandler {
     if (logoutConfig.refreshToken) {
       try {
         await this.wristbandService.revokeRefreshToken(logoutConfig.refreshToken);
-      } catch (error) {
+      } catch {
         // No need to block logout execution if revoking fails
         console.debug(`Revoking the refresh token failed during logout`);
       }
@@ -423,7 +436,7 @@ export class AppRouterAuthHandler {
             session.refreshToken = newTokenData.refreshToken;
             session.expiresAt = newTokenData.expiresAt;
           }
-        } catch (error) {
+        } catch {
           return { authenticated: false, reason: 'token_refresh_failed' };
         }
       }
@@ -433,7 +446,7 @@ export class AppRouterAuthHandler {
 
       // Authentication successful
       return { authenticated: true, session };
-    } catch (error) {
+    } catch {
       return { authenticated: false, reason: 'unexpected_error' };
     }
   }

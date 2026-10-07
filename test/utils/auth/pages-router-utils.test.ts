@@ -6,7 +6,8 @@ import {
   createLoginState,
   createLoginStateCookie,
   getAuthorizationUrlParams,
-  getAndClearLoginStateCookie,
+  getLoginStateCookie,
+  clearLoginStateCookie,
 } from '../../../src/utils/auth/pages-router-utils';
 import { LoginStateMapConfig } from '../../../src/types';
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
@@ -598,18 +599,8 @@ describe('Page Router Utils', () => {
     });
   });
 
-  describe('getAndClearLoginStateCookie', () => {
-    let mockRes: NextApiResponse;
-    let mockSetHeader: jest.Mock;
-
-    beforeEach(() => {
-      mockSetHeader = jest.fn();
-      mockRes = {
-        setHeader: mockSetHeader,
-      } as any;
-    });
-
-    it('should return cookie value and clear it when found', () => {
+  describe('getLoginStateCookie', () => {
+    it('should return cookie name and value when found', () => {
       const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
       const req = {
         cookies: {
@@ -618,49 +609,12 @@ describe('Page Router Utils', () => {
         query: { state: 'test-state' },
       } as unknown as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      expect(result).toBe('encrypted-login-state-data');
-      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
-        `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure`,
-      ]);
+      expect(result).toEqual({ cookieName, loginStateCookie: 'encrypted-login-state-data' });
     });
 
-    it('should return cookie value and clear it without Secure flag when dangerouslyDisableSecureCookies is true', () => {
-      const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
-      const req = {
-        cookies: {
-          [cookieName]: 'encrypted-login-state-data',
-        },
-        query: { state: 'test-state' },
-      } as unknown as NextApiRequest;
-
-      const result = getAndClearLoginStateCookie(req, mockRes, true);
-
-      expect(result).toBe('encrypted-login-state-data');
-      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
-        `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
-      ]);
-    });
-
-    it('should include Domain attribute when domain is provided', () => {
-      const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
-      const req = {
-        cookies: {
-          [cookieName]: 'encrypted-login-state-data',
-        },
-        query: { state: 'test-state' },
-      } as unknown as NextApiRequest;
-
-      const result = getAndClearLoginStateCookie(req, mockRes, false, '.business.invotastic.com');
-
-      expect(result).toBe('encrypted-login-state-data');
-      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
-        `${cookieName}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Secure`,
-      ]);
-    });
-
-    it('should return empty string when no matching cookie found', () => {
+    it('should return empty strings when no matching cookie found', () => {
       const req = {
         cookies: {
           'other-cookie': 'value',
@@ -668,34 +622,31 @@ describe('Page Router Utils', () => {
         query: { state: 'test-state' },
       } as unknown as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      expect(result).toBe('');
-      expect(mockSetHeader).not.toHaveBeenCalled();
+      expect(result).toEqual({ cookieName: '', loginStateCookie: '' });
     });
 
-    it('should handle empty state parameter', () => {
+    it('should return empty strings when state query param is missing', () => {
       const req = {
         cookies: {},
         query: {},
       } as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      expect(result).toBe('');
-      expect(mockSetHeader).not.toHaveBeenCalled();
+      expect(result).toEqual({ cookieName: '', loginStateCookie: '' });
     });
 
-    it('should handle array state parameter', () => {
+    it('should return empty strings when state query param is an array', () => {
       const req = {
         cookies: {},
         query: { state: ['state1', 'state2'] },
       } as unknown as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      expect(result).toBe('');
-      expect(mockSetHeader).not.toHaveBeenCalled();
+      expect(result).toEqual({ cookieName: '', loginStateCookie: '' });
     });
 
     it('should ignore non-matching login state cookies', () => {
@@ -707,13 +658,12 @@ describe('Page Router Utils', () => {
         query: { state: 'test-state' },
       } as unknown as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      expect(result).toBe('data2');
-      expect(mockSetHeader).toHaveBeenCalledTimes(1);
+      expect(result.loginStateCookie).toBe('data2');
     });
 
-    it('should handle multiple matching cookies by using the first one', () => {
+    it('should return the first matching cookie when multiple match', () => {
       const cookieName1 = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567880000`;
       const cookieName2 = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
 
@@ -725,11 +675,51 @@ describe('Page Router Utils', () => {
         query: { state: 'test-state' },
       } as unknown as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      // Should return the first matching cookie's value
-      expect(['data1', 'data2']).toContain(result);
-      expect(mockSetHeader).toHaveBeenCalledTimes(1);
+      expect(['data1', 'data2']).toContain(result.loginStateCookie);
+    });
+  });
+
+  describe('clearLoginStateCookie', () => {
+    let mockRes: NextApiResponse;
+    let mockSetHeader: jest.Mock;
+
+    beforeEach(() => {
+      mockSetHeader = jest.fn();
+      mockRes = {
+        setHeader: mockSetHeader,
+      } as any;
+    });
+
+    it('should clear the cookie with Secure flag by default', () => {
+      const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
+
+      clearLoginStateCookie(mockRes, cookieName, false);
+
+      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
+        `${cookieName}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax; Secure`,
+      ]);
+    });
+
+    it('should clear the cookie without Secure flag when dangerouslyDisableSecureCookies is true', () => {
+      const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
+
+      clearLoginStateCookie(mockRes, cookieName, true);
+
+      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
+        `${cookieName}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`,
+      ]);
+    });
+
+    it('should include Domain attribute when domain is provided', () => {
+      const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
+
+      clearLoginStateCookie(mockRes, cookieName, false, '.business.invotastic.com');
+
+      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
+        `${cookieName}=; HttpOnly; Domain=.business.invotastic.com; Path=/; Max-Age=0; SameSite=Lax; Secure`,
+      ]);
     });
   });
 });

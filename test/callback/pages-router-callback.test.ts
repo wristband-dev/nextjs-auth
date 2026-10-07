@@ -155,6 +155,7 @@ describe('Multi Tenant Callback - Page Router', () => {
       expect(loginStateCookie.path).toBe('/');
       expect(loginStateCookie.samesite).toBe('Lax');
       expect(loginStateCookie.secure).toBe(true);
+      expect(loginStateCookie.domain).toBeUndefined();
 
       const cookieValue: string = loginStateCookie.value;
       expect(cookieValue).toBeFalsy();
@@ -240,6 +241,11 @@ describe('Multi Tenant Callback - Page Router', () => {
         // Validate response is not redirecting the user
         const location: string = mockRes._getRedirectUrl();
         expect(location).toBeFalsy();
+
+        // App-level authorization requests are not enabled, so the cleared cookie has no Domain
+        // even though parseTenantFromRootDomain is set.
+        const parsedCookies = parseSetCookies(mockRes.getHeader('Set-Cookie') as string | string[]);
+        expect(parsedCookies[0].domain).toBeUndefined();
       });
     });
 

@@ -347,7 +347,7 @@ describe('Refresh Token If Expired', () => {
 
     try {
       await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() - 1000);
-    } catch (error) {
+    } catch {
       // Expected to fail after all retries
     }
 

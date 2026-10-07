@@ -217,6 +217,14 @@ describe('pagesRouter.login() - Application-Level Authorization Requests', () =>
       expect(oldCookie).toBeTruthy();
       expect(oldCookie!.value).toBeFalsy();
       expect(oldCookie!['max-age']).toBe('0');
+
+      // No parseTenantFromRootDomain configured, so neither the clear nor the new cookie gets a Domain attribute
+      expect(oldCookie!.domain).toBeUndefined();
+      const newCookie = parsedCookies.find((c) => {
+        return c.name !== 'login#++state01#1111111111';
+      });
+      expect(newCookie).toBeTruthy();
+      expect(newCookie!.domain).toBeUndefined();
     });
   });
 
@@ -313,6 +321,95 @@ describe('pagesRouter.login() - Application-Level Authorization Requests', () =>
       });
       expect(newCookie!.domain).toBe(`.${parseTenantFromRootDomain}`);
     });
+
+    test('Sets the login state cookie with the root Domain attribute in the tenant-level flow when the tenant is resolved from the subdomain', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        parseTenantFromRootDomain,
+        wristbandApplicationVanityDomain,
+        applicationAuthorizationRequestsEnabled: true,
+        fallbackLoginUrl: `https://${wristbandApplicationVanityDomain}/login`,
+        autoConfigureEnabled: false,
+      });
+
+      // Subdomain present on the host, so tenant resolves to "devs4you"
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: loginUrl,
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+
+      // Tenant-level Authorize Endpoint (hyphen-separated), not the app-level one
+      expect(new URL(authorizeUrl).origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
+
+      const setCookieHeaders = mockRes.getHeader('Set-Cookie');
+      const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
+      expect(parsedCookies).toHaveLength(1);
+      expect(parsedCookies[0].domain).toBe(`.${parseTenantFromRootDomain}`);
+    });
+
+    test('Clears stale login state cookies with the matching Domain attribute in the tenant-level flow', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        parseTenantFromRootDomain,
+        wristbandApplicationVanityDomain,
+        applicationAuthorizationRequestsEnabled: true,
+        fallbackLoginUrl: `https://${wristbandApplicationVanityDomain}/login`,
+        autoConfigureEnabled: false,
+      });
+
+      const loginState01: LoginState = { codeVerifier: 'codeVerifier', redirectUri, state: '++state01' };
+      const loginState02: LoginState = { codeVerifier: 'codeVerifier', redirectUri, state: 'state02' };
+      const loginState03: LoginState = { codeVerifier: 'codeVerifier', redirectUri, state: 'state03' };
+      const encryptedLoginState01 = await encryptLoginState(loginState01, LOGIN_STATE_COOKIE_SECRET);
+      const encryptedLoginState02 = await encryptLoginState(loginState02, LOGIN_STATE_COOKIE_SECRET);
+      const encryptedLoginState03 = await encryptLoginState(loginState03, LOGIN_STATE_COOKIE_SECRET);
+
+      // Subdomain present, so tenant resolves and this hits the tenant-level branch
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: loginUrl,
+        cookies: {
+          'login#++state01#1111111111': encryptedLoginState01,
+          'login#state02#2222222222': encryptedLoginState02,
+          'login#state03#3333333333': encryptedLoginState03,
+        },
+        headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+
+      const setCookieHeaders = mockRes.getHeader('Set-Cookie');
+      expect(Array.isArray(setCookieHeaders)).toBe(true);
+      expect((setCookieHeaders as string[]).length).toBe(2);
+
+      const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
+      const oldCookie = parsedCookies.find((c) => {
+        return c.name === 'login#++state01#1111111111';
+      });
+      expect(oldCookie).toBeTruthy();
+      expect(oldCookie!['max-age']).toBe('0');
+      expect(oldCookie!.domain).toBe(`.${parseTenantFromRootDomain}`);
+
+      const newCookie = parsedCookies.find((c) => {
+        return c.name !== 'login#++state01#1111111111';
+      });
+      expect(newCookie!.domain).toBe(`.${parseTenantFromRootDomain}`);
+    });
   });
 
   describe('Tenant resolvable - applicationAuthorizationRequestsEnabled has no effect', () => {
@@ -345,6 +442,73 @@ describe('pagesRouter.login() - Application-Level Authorization Requests', () =>
 
       // Should hit the tenant-level Authorize Endpoint (hyphen-separated), not the app-level one
       expect(new URL(authorizeUrl).origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
+
+      // parseTenantFromRootDomain is not configured here, so the cookie stays host-only.
+      const setCookieHeaders = mockRes.getHeader('Set-Cookie');
+      const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
+      expect(parsedCookies).toHaveLength(1);
+      expect(parsedCookies[0].domain).toBeUndefined();
+    });
+
+    test('Clears stale login state cookies without a Domain attribute when a tenant_name is resolvable and parseTenantFromRootDomain is not set', async () => {
+      const parseTenantFromRootDomain = 'business.invotastic.com';
+      const loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+      const redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
+
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        applicationAuthorizationRequestsEnabled: true,
+        autoConfigureEnabled: false,
+      });
+
+      const loginState01: LoginState = { codeVerifier: 'codeVerifier', redirectUri, state: '++state01' };
+      const loginState02: LoginState = { codeVerifier: 'codeVerifier', redirectUri, state: 'state02' };
+      const loginState03: LoginState = { codeVerifier: 'codeVerifier', redirectUri, state: 'state03' };
+      const encryptedLoginState01 = await encryptLoginState(loginState01, LOGIN_STATE_COOKIE_SECRET);
+      const encryptedLoginState02 = await encryptLoginState(loginState02, LOGIN_STATE_COOKIE_SECRET);
+      const encryptedLoginState03 = await encryptLoginState(loginState03, LOGIN_STATE_COOKIE_SECRET);
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}?tenant_name=devs4you`,
+        cookies: {
+          'login#++state01#1111111111': encryptedLoginState01,
+          'login#state02#2222222222': encryptedLoginState02,
+          'login#state03#3333333333': encryptedLoginState03,
+        },
+        headers: { host: parseTenantFromRootDomain },
+        query: { tenant_name: 'devs4you' },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+
+      // Tenant-level Authorize Endpoint (hyphen-separated), not the app-level one
+      expect(new URL(authorizeUrl).origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
+
+      const setCookieHeaders = mockRes.getHeader('Set-Cookie');
+      expect(Array.isArray(setCookieHeaders)).toBe(true);
+      expect((setCookieHeaders as string[]).length).toBe(2);
+
+      const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
+      const oldCookie = parsedCookies.find((c) => {
+        return c.name === 'login#++state01#1111111111';
+      });
+      expect(oldCookie).toBeTruthy();
+      expect(oldCookie!['max-age']).toBe('0');
+      expect(oldCookie!.domain).toBeUndefined();
+
+      const newCookie = parsedCookies.find((c) => {
+        return c.name !== 'login#++state01#1111111111';
+      });
+      expect(newCookie).toBeTruthy();
+      expect(newCookie!.domain).toBeUndefined();
     });
   });
 });
