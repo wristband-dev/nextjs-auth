@@ -215,68 +215,68 @@ describe('App Router Multi Tenant Logout', () => {
       });
     });
 
-    describe('Priority 4: tenant domain from request (subdomain or query param)', () => {
-      describe.each([
-        ['tenant_domain', '{tenant_domain}'],
-        ['tenant_name', '{tenant_name}'],
-      ])('4a: Tenant subdomains enabled with %s placeholder', (placeholderName, placeholder) => {
-        test(`tenant subdomain from host header using ${placeholderName}`, async () => {
-          parseTenantFromRootDomain = 'business.invotastic.com';
-          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+    describe('Priority 4: tenant name from request (subdomain or query param)', () => {
+      describe.each([['tenant_name', '{tenant_name}']])(
+        '4a: Tenant subdomains enabled with %s placeholder',
+        (placeholderName, placeholder) => {
+          test(`tenant subdomain from host header using ${placeholderName}`, async () => {
+            parseTenantFromRootDomain = 'business.invotastic.com';
+            loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+            redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
 
-          wristbandAuth = createWristbandAuth({
-            clientId: CLIENT_ID,
-            clientSecret: CLIENT_SECRET,
-            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-            loginUrl,
-            redirectUri,
-            parseTenantFromRootDomain,
-            wristbandApplicationVanityDomain,
-            autoConfigureEnabled: false,
+            wristbandAuth = createWristbandAuth({
+              clientId: CLIENT_ID,
+              clientSecret: CLIENT_SECRET,
+              loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+              loginUrl,
+              redirectUri,
+              parseTenantFromRootDomain,
+              wristbandApplicationVanityDomain,
+              autoConfigureEnabled: false,
+            });
+
+            const { req } = createMocks({
+              method: 'GET',
+              url: `https://priority4a.${parseTenantFromRootDomain}/api/auth/logout`,
+              headers: { host: `priority4a.${parseTenantFromRootDomain}` },
+            });
+            const mockNextRequest = createMockNextRequest(req);
+
+            const response = await wristbandAuth.appRouter.logout(mockNextRequest);
+
+            validateRedirectResponse(response, `https://priority4a-${wristbandApplicationVanityDomain}`, null);
           });
 
-          const { req } = createMocks({
-            method: 'GET',
-            url: `https://priority4a.${parseTenantFromRootDomain}/api/auth/logout`,
-            headers: { host: `priority4a.${parseTenantFromRootDomain}` },
+          test(`tenant subdomain with custom domain separator using ${placeholderName}`, async () => {
+            parseTenantFromRootDomain = 'business.invotastic.com';
+            loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+            redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+            wristbandAuth = createWristbandAuth({
+              clientId: CLIENT_ID,
+              clientSecret: CLIENT_SECRET,
+              loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+              loginUrl,
+              redirectUri,
+              parseTenantFromRootDomain,
+              isApplicationCustomDomainActive: true,
+              wristbandApplicationVanityDomain,
+              autoConfigureEnabled: false,
+            });
+
+            const { req } = createMocks({
+              method: 'GET',
+              url: `https://priority4a.${parseTenantFromRootDomain}/api/auth/logout`,
+              headers: { host: `priority4a.${parseTenantFromRootDomain}` },
+            });
+            const mockNextRequest = createMockNextRequest(req);
+
+            const response = await wristbandAuth.appRouter.logout(mockNextRequest);
+
+            validateRedirectResponse(response, `https://priority4a.${wristbandApplicationVanityDomain}`, null);
           });
-          const mockNextRequest = createMockNextRequest(req);
-
-          const response = await wristbandAuth.appRouter.logout(mockNextRequest);
-
-          validateRedirectResponse(response, `https://priority4a-${wristbandApplicationVanityDomain}`, null);
-        });
-
-        test(`tenant subdomain with custom domain separator using ${placeholderName}`, async () => {
-          parseTenantFromRootDomain = 'business.invotastic.com';
-          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
-
-          wristbandAuth = createWristbandAuth({
-            clientId: CLIENT_ID,
-            clientSecret: CLIENT_SECRET,
-            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-            loginUrl,
-            redirectUri,
-            parseTenantFromRootDomain,
-            isApplicationCustomDomainActive: true,
-            wristbandApplicationVanityDomain,
-            autoConfigureEnabled: false,
-          });
-
-          const { req } = createMocks({
-            method: 'GET',
-            url: `https://priority4a.${parseTenantFromRootDomain}/api/auth/logout`,
-            headers: { host: `priority4a.${parseTenantFromRootDomain}` },
-          });
-          const mockNextRequest = createMockNextRequest(req);
-
-          const response = await wristbandAuth.appRouter.logout(mockNextRequest);
-
-          validateRedirectResponse(response, `https://priority4a.${wristbandApplicationVanityDomain}`, null);
-        });
-      });
+        }
+      );
 
       describe('4b: Tenant subdomains disabled - query param', () => {
         test('tenant_name query parameter with default separator', async () => {
@@ -588,75 +588,78 @@ describe('App Router Multi Tenant Logout', () => {
   });
 
   describe('Edge Cases and Error Scenarios', () => {
-    describe.each([
-      ['tenant_domain', '{tenant_domain}'],
-      ['tenant_name', '{tenant_name}'],
-    ])('Edge cases with %s placeholder', (placeholderName, placeholder) => {
-      test(`empty tenant subdomain resolves correctly using ${placeholderName}`, async () => {
-        parseTenantFromRootDomain = 'business.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+    describe.each([['tenant_name', '{tenant_name}']])(
+      'Edge cases with %s placeholder',
+      (placeholderName, placeholder) => {
+        test(`empty tenant subdomain resolves correctly using ${placeholderName}`, async () => {
+          parseTenantFromRootDomain = 'business.invotastic.com';
+          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
 
-        wristbandAuth = createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl,
-          redirectUri,
-          parseTenantFromRootDomain,
-          wristbandApplicationVanityDomain,
-          autoConfigureEnabled: false,
+          wristbandAuth = createWristbandAuth({
+            clientId: CLIENT_ID,
+            clientSecret: CLIENT_SECRET,
+            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+            loginUrl,
+            redirectUri,
+            parseTenantFromRootDomain,
+            wristbandApplicationVanityDomain,
+            autoConfigureEnabled: false,
+          });
+
+          // Host matches parseTenantFromRootDomain exactly (no subdomain)
+          const { req } = createMocks({
+            method: 'GET',
+            url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+            headers: { host: parseTenantFromRootDomain },
+          });
+          const mockNextRequest = createMockNextRequest(req);
+
+          const response = await wristbandAuth.appRouter.logout(mockNextRequest);
+
+          // Should fallback to app login since no tenant can be resolved
+          validateAppLoginRedirect(
+            response,
+            `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`
+          );
         });
 
-        // Host matches parseTenantFromRootDomain exactly (no subdomain)
-        const { req } = createMocks({
-          method: 'GET',
-          url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
-          headers: { host: parseTenantFromRootDomain },
+        test(`all config options provided - priority order maintained using ${placeholderName}`, async () => {
+          parseTenantFromRootDomain = 'business.invotastic.com';
+          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+          wristbandAuth = createWristbandAuth({
+            clientId: CLIENT_ID,
+            clientSecret: CLIENT_SECRET,
+            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+            loginUrl,
+            redirectUri,
+            parseTenantFromRootDomain,
+            wristbandApplicationVanityDomain,
+            customApplicationLoginPageUrl: 'https://should.be.ignored.com',
+            autoConfigureEnabled: false,
+          });
+
+          const { req } = createMocks({
+            method: 'GET',
+            url: `https://subdomain.${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=query.custom.com&tenant_name=query_tenant`,
+            headers: { host: `subdomain.${parseTenantFromRootDomain}` },
+          });
+          const mockNextRequest = createMockNextRequest(req);
+
+          const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
+            tenantCustomDomain: 'config.custom.com', // Should win (priority 1)
+            tenantName: 'config_tenant',
+            refreshToken: 'token',
+            redirectUrl: 'https://redirect.com',
+          });
+
+          // tenantCustomDomain config should take priority over everything else
+          validateRedirectResponse(response, 'https://config.custom.com', 'https://redirect.com');
         });
-        const mockNextRequest = createMockNextRequest(req);
-
-        const response = await wristbandAuth.appRouter.logout(mockNextRequest);
-
-        // Should fallback to app login since no tenant can be resolved
-        validateAppLoginRedirect(response, `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
-      });
-
-      test(`all config options provided - priority order maintained using ${placeholderName}`, async () => {
-        parseTenantFromRootDomain = 'business.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
-
-        wristbandAuth = createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl,
-          redirectUri,
-          parseTenantFromRootDomain,
-          wristbandApplicationVanityDomain,
-          customApplicationLoginPageUrl: 'https://should.be.ignored.com',
-          autoConfigureEnabled: false,
-        });
-
-        const { req } = createMocks({
-          method: 'GET',
-          url: `https://subdomain.${parseTenantFromRootDomain}/api/auth/logout?tenant_custom_domain=query.custom.com&tenant_name=query_tenant`,
-          headers: { host: `subdomain.${parseTenantFromRootDomain}` },
-        });
-        const mockNextRequest = createMockNextRequest(req);
-
-        const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
-          tenantCustomDomain: 'config.custom.com', // Should win (priority 1)
-          tenantName: 'config_tenant',
-          refreshToken: 'token',
-          redirectUrl: 'https://redirect.com',
-        });
-
-        // tenantCustomDomain config should take priority over everything else
-        validateRedirectResponse(response, 'https://config.custom.com', 'https://redirect.com');
-      });
-    });
+      }
+    );
   });
 
   describe('Existing Tests Coverage', () => {
@@ -687,160 +690,163 @@ describe('App Router Multi Tenant Logout', () => {
       validateRedirectResponse(response, `https://devs4you-${wristbandApplicationVanityDomain}`, 'https://google.com');
     });
 
-    describe.each([
-      ['tenant_domain', '{tenant_domain}'],
-      ['tenant_name', '{tenant_name}'],
-    ])('Tenant Subdomains Configuration with %s placeholder', (placeholderName, placeholder) => {
-      test(`Tenant Subdomains Configuration using ${placeholderName}`, async () => {
-        parseTenantFromRootDomain = 'business.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+    describe.each([['tenant_name', '{tenant_name}']])(
+      'Tenant Subdomains Configuration with %s placeholder',
+      (placeholderName, placeholder) => {
+        test(`Tenant Subdomains Configuration using ${placeholderName}`, async () => {
+          parseTenantFromRootDomain = 'business.invotastic.com';
+          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
 
-        wristbandAuth = createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl,
-          redirectUri,
-          parseTenantFromRootDomain,
-          wristbandApplicationVanityDomain,
-          autoConfigureEnabled: false,
+          wristbandAuth = createWristbandAuth({
+            clientId: CLIENT_ID,
+            clientSecret: CLIENT_SECRET,
+            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+            loginUrl,
+            redirectUri,
+            parseTenantFromRootDomain,
+            wristbandApplicationVanityDomain,
+            autoConfigureEnabled: false,
+          });
+
+          const { req } = createMocks({
+            method: 'GET',
+            url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+            headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+          });
+          const mockNextRequest = createMockNextRequest(req);
+
+          const response = await wristbandAuth.appRouter.logout(mockNextRequest, { refreshToken: 'refreshToken' });
+
+          validateRedirectResponse(response, `https://devs4you-${wristbandApplicationVanityDomain}`, null);
         });
 
-        const { req } = createMocks({
-          method: 'GET',
-          url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
-          headers: { host: `devs4you.${parseTenantFromRootDomain}` },
-        });
-        const mockNextRequest = createMockNextRequest(req);
+        test(`Custom Domains and Tenant Subdomains Configuration using ${placeholderName}`, async () => {
+          parseTenantFromRootDomain = 'business.invotastic.com';
+          wristbandApplicationVanityDomain = 'auth.invotastic.com';
+          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
 
-        const response = await wristbandAuth.appRouter.logout(mockNextRequest, { refreshToken: 'refreshToken' });
+          wristbandAuth = createWristbandAuth({
+            clientId: CLIENT_ID,
+            clientSecret: CLIENT_SECRET,
+            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+            loginUrl,
+            redirectUri,
+            parseTenantFromRootDomain,
+            isApplicationCustomDomainActive: true,
+            wristbandApplicationVanityDomain,
+            autoConfigureEnabled: false,
+          });
 
-        validateRedirectResponse(response, `https://devs4you-${wristbandApplicationVanityDomain}`, null);
-      });
+          const { req } = createMocks({
+            method: 'GET',
+            url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+            headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+          });
+          const mockNextRequest = createMockNextRequest(req);
 
-      test(`Custom Domains and Tenant Subdomains Configuration using ${placeholderName}`, async () => {
-        parseTenantFromRootDomain = 'business.invotastic.com';
-        wristbandApplicationVanityDomain = 'auth.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+          const response = await wristbandAuth.appRouter.logout(mockNextRequest, { refreshToken: 'refreshToken' });
 
-        wristbandAuth = createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl,
-          redirectUri,
-          parseTenantFromRootDomain,
-          isApplicationCustomDomainActive: true,
-          wristbandApplicationVanityDomain,
-          autoConfigureEnabled: false,
-        });
-
-        const { req } = createMocks({
-          method: 'GET',
-          url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
-          headers: { host: `devs4you.${parseTenantFromRootDomain}` },
-        });
-        const mockNextRequest = createMockNextRequest(req);
-
-        const response = await wristbandAuth.appRouter.logout(mockNextRequest, { refreshToken: 'refreshToken' });
-
-        validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`, null);
-      });
-
-      test(`Unresolved tenant subdomain using ${placeholderName}`, async () => {
-        parseTenantFromRootDomain = 'business.invotastic.com';
-        wristbandApplicationVanityDomain = 'auth.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
-
-        wristbandAuth = createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl,
-          redirectUri,
-          parseTenantFromRootDomain,
-          isApplicationCustomDomainActive: true,
-          wristbandApplicationVanityDomain,
-          autoConfigureEnabled: false,
+          validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`, null);
         });
 
-        const { req } = createMocks({
-          method: 'GET',
-          url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
-          headers: { host: parseTenantFromRootDomain },
-        });
-        const mockNextRequest = createMockNextRequest(req);
+        test(`Unresolved tenant subdomain using ${placeholderName}`, async () => {
+          parseTenantFromRootDomain = 'business.invotastic.com';
+          wristbandApplicationVanityDomain = 'auth.invotastic.com';
+          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
 
-        const response = await wristbandAuth.appRouter.logout(mockNextRequest);
+          wristbandAuth = createWristbandAuth({
+            clientId: CLIENT_ID,
+            clientSecret: CLIENT_SECRET,
+            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+            loginUrl,
+            redirectUri,
+            parseTenantFromRootDomain,
+            isApplicationCustomDomainActive: true,
+            wristbandApplicationVanityDomain,
+            autoConfigureEnabled: false,
+          });
 
-        validateAppLoginRedirect(response, `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
-      });
+          const { req } = createMocks({
+            method: 'GET',
+            url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+            headers: { host: parseTenantFromRootDomain },
+          });
+          const mockNextRequest = createMockNextRequest(req);
 
-      test(`Custom application login URL redirect using ${placeholderName}`, async () => {
-        parseTenantFromRootDomain = 'business.invotastic.com';
-        wristbandApplicationVanityDomain = 'auth.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+          const response = await wristbandAuth.appRouter.logout(mockNextRequest);
 
-        wristbandAuth = createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl,
-          redirectUri,
-          parseTenantFromRootDomain,
-          isApplicationCustomDomainActive: true,
-          wristbandApplicationVanityDomain,
-          customApplicationLoginPageUrl: 'https://google.com',
-          autoConfigureEnabled: false,
-        });
-
-        const { req } = createMocks({
-          method: 'GET',
-          url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
-          headers: { host: parseTenantFromRootDomain },
-        });
-        const mockNextRequest = createMockNextRequest(req);
-
-        const response = await wristbandAuth.appRouter.logout(mockNextRequest);
-
-        validateAppLoginRedirect(response, `https://google.com?client_id=${CLIENT_ID}`);
-      });
-
-      test(`Logout redirect URL precedence over custom application login URL using ${placeholderName}`, async () => {
-        parseTenantFromRootDomain = 'business.invotastic.com';
-        wristbandApplicationVanityDomain = 'auth.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
-
-        wristbandAuth = createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl,
-          redirectUri,
-          parseTenantFromRootDomain,
-          isApplicationCustomDomainActive: true,
-          wristbandApplicationVanityDomain,
-          customApplicationLoginPageUrl: 'https://google.com',
-          autoConfigureEnabled: false,
+          validateAppLoginRedirect(
+            response,
+            `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`
+          );
         });
 
-        const { req } = createMocks({
-          method: 'GET',
-          url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
-          headers: { host: parseTenantFromRootDomain },
+        test(`Custom application login URL redirect using ${placeholderName}`, async () => {
+          parseTenantFromRootDomain = 'business.invotastic.com';
+          wristbandApplicationVanityDomain = 'auth.invotastic.com';
+          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+          wristbandAuth = createWristbandAuth({
+            clientId: CLIENT_ID,
+            clientSecret: CLIENT_SECRET,
+            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+            loginUrl,
+            redirectUri,
+            parseTenantFromRootDomain,
+            isApplicationCustomDomainActive: true,
+            wristbandApplicationVanityDomain,
+            customApplicationLoginPageUrl: 'https://google.com',
+            autoConfigureEnabled: false,
+          });
+
+          const { req } = createMocks({
+            method: 'GET',
+            url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+            headers: { host: parseTenantFromRootDomain },
+          });
+          const mockNextRequest = createMockNextRequest(req);
+
+          const response = await wristbandAuth.appRouter.logout(mockNextRequest);
+
+          validateAppLoginRedirect(response, `https://google.com?client_id=${CLIENT_ID}`);
         });
-        const mockNextRequest = createMockNextRequest(req);
 
-        const response = await wristbandAuth.appRouter.logout(mockNextRequest, { redirectUrl: 'https://yahoo.com' });
+        test(`Logout redirect URL precedence over custom application login URL using ${placeholderName}`, async () => {
+          parseTenantFromRootDomain = 'business.invotastic.com';
+          wristbandApplicationVanityDomain = 'auth.invotastic.com';
+          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
 
-        validateAppLoginRedirect(response, 'https://yahoo.com');
-      });
-    });
+          wristbandAuth = createWristbandAuth({
+            clientId: CLIENT_ID,
+            clientSecret: CLIENT_SECRET,
+            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+            loginUrl,
+            redirectUri,
+            parseTenantFromRootDomain,
+            isApplicationCustomDomainActive: true,
+            wristbandApplicationVanityDomain,
+            customApplicationLoginPageUrl: 'https://google.com',
+            autoConfigureEnabled: false,
+          });
+
+          const { req } = createMocks({
+            method: 'GET',
+            url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+            headers: { host: parseTenantFromRootDomain },
+          });
+          const mockNextRequest = createMockNextRequest(req);
+
+          const response = await wristbandAuth.appRouter.logout(mockNextRequest, { redirectUrl: 'https://yahoo.com' });
+
+          validateAppLoginRedirect(response, 'https://yahoo.com');
+        });
+      }
+    );
 
     test('Unresolved tenantName logout config', async () => {
       wristbandAuth = createWristbandAuth({
@@ -948,7 +954,7 @@ describe('App Router Multi Tenant Logout', () => {
       expect(locationUrl.searchParams.get('redirect_url')).toBeNull();
     });
 
-    test('special characters in tenant domain name', async () => {
+    test('special characters in tenant name', async () => {
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
         clientSecret: CLIENT_SECRET,

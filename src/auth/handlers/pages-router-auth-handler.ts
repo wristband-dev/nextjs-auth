@@ -322,7 +322,7 @@ export class PagesRouterAuthHandler {
       return `https://${tenantCustomDomainParam}${logoutPath}`;
     }
 
-    // 4a) If tenant subdomains are enabled, get the tenant domain from the host.
+    // 4a) If tenant subdomains are enabled, get the tenant name from the host.
     // 4b) Otherwise, if tenant subdomains are not enabled, then look for it in the tenant_name query param.
     if (tenantName) {
       return `https://${tenantName}${separator}${wristbandApplicationVanityDomain}${logoutPath}`;

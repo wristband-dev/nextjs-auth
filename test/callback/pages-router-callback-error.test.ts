@@ -480,81 +480,81 @@ describe('Callback Errors', () => {
     expect(result.reason).toBe('missing_login_state');
   });
 
-  describe.each([
-    ['tenant_domain', '{tenant_domain}'],
-    ['tenant_name', '{tenant_name}'],
-  ])('Redirect to Application-level Login with %s placeholder', (placeholderName, placeholder) => {
-    test('Missing login state cookie, without subdomains, without tenant domain query param', async () => {
-      const parseTenantFromRootDomain = 'business.invotastic.com';
-      const loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
-      const redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
-      const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        wristbandApplicationVanityDomain,
-        autoConfigureEnabled: false,
+  describe.each([['tenant_name', '{tenant_name}']])(
+    'Redirect to Application-level Login with %s placeholder',
+    (placeholderName, placeholder) => {
+      test('Missing login state cookie, without subdomains, without tenant name query param', async () => {
+        const parseTenantFromRootDomain = 'business.invotastic.com';
+        const loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+        const redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
+        const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
+        wristbandAuth = createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl,
+          redirectUri,
+          wristbandApplicationVanityDomain,
+          autoConfigureEnabled: false,
+        });
+
+        // Create mock request and response
+        const { req, res } = createMocks({
+          method: 'GET',
+          url: `${REDIRECT_URI}`,
+          query: { state: 'state', code: 'code' },
+        });
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+        try {
+          await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+          fail('Error expected to be thrown.');
+        } catch (error: any) {
+          expect(error instanceof WristbandError).toBe(true);
+          expect(error.code).toBe('missing_tenant_name');
+          expect(error.errorDescription).toBe(
+            'Callback request is missing the [tenant_name] query parameter from Wristband'
+          );
+        }
       });
 
-      // Create mock request and response
-      const { req, res } = createMocks({
-        method: 'GET',
-        url: `${REDIRECT_URI}`,
-        query: { state: 'state', code: 'code' },
+      test(`Missing login state cookie, with subdomains using ${placeholderName}, and without URL subdomain`, async () => {
+        const parseTenantFromRootDomain = 'business.invotastic.com';
+        const loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+        const redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+        const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
+        wristbandAuth = createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          customApplicationLoginPageUrl: 'https://google.com',
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl,
+          redirectUri,
+          parseTenantFromRootDomain,
+          wristbandApplicationVanityDomain,
+          autoConfigureEnabled: false,
+        });
+
+        // Create mock request and response
+        const { req, res } = createMocks({
+          method: 'GET',
+          url: `${REDIRECT_URI}`,
+          query: { state: 'state', code: 'code' },
+          headers: { host: parseTenantFromRootDomain },
+        });
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+        try {
+          await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+          fail('Error expected to be thrown.');
+        } catch (error: any) {
+          expect(error instanceof WristbandError).toBe(true);
+          expect(error.code).toBe('missing_tenant_subdomain');
+          expect(error.errorDescription).toBe('Callback request URL is missing a tenant subdomain');
+        }
       });
-      const mockReq = req as unknown as NextApiRequest;
-      const mockRes = res as unknown as MockResponse<NextApiResponse>;
-
-      try {
-        await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-        fail('Error expected to be thrown.');
-      } catch (error: any) {
-        expect(error instanceof WristbandError).toBe(true);
-        expect(error.code).toBe('missing_tenant_name');
-        expect(error.errorDescription).toBe(
-          'Callback request is missing the [tenant_name] query parameter from Wristband'
-        );
-      }
-    });
-
-    test(`Missing login state cookie, with subdomains using ${placeholderName}, and without URL subdomain`, async () => {
-      const parseTenantFromRootDomain = 'business.invotastic.com';
-      const loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-      const redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
-      const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        customApplicationLoginPageUrl: 'https://google.com',
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        parseTenantFromRootDomain,
-        wristbandApplicationVanityDomain,
-        autoConfigureEnabled: false,
-      });
-
-      // Create mock request and response
-      const { req, res } = createMocks({
-        method: 'GET',
-        url: `${REDIRECT_URI}`,
-        query: { state: 'state', code: 'code' },
-        headers: { host: parseTenantFromRootDomain },
-      });
-      const mockReq = req as unknown as NextApiRequest;
-      const mockRes = res as unknown as MockResponse<NextApiResponse>;
-
-      try {
-        await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-        fail('Error expected to be thrown.');
-      } catch (error: any) {
-        expect(error instanceof WristbandError).toBe(true);
-        expect(error.code).toBe('missing_tenant_subdomain');
-        expect(error.errorDescription).toBe('Callback request URL is missing a tenant subdomain');
-      }
-    });
-  });
+    }
+  );
 });

@@ -359,7 +359,7 @@ export class AppRouterAuthHandler {
       return NextResponse.redirect(`https://${tenantCustomDomainParam}${logoutPath}`, REDIRECT_RESPONSE_INIT);
     }
 
-    // 4a) If tenant subdomains are enabled, get the tenant domain from the host.
+    // 4a) If tenant subdomains are enabled, get the tenant name from the host.
     // 4b) Otherwise, if tenant subdomains are not enabled, then look for it in the tenant_name query param.
     if (tenantName) {
       return NextResponse.redirect(

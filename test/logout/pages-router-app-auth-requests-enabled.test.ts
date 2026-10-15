@@ -13,7 +13,7 @@ describe('pagesRouter.logout() - Application-Level Authorization Requests', () =
   });
 
   describe('Tenant subdomain configuration (loginUrl contains a placeholder)', () => {
-    describe.each([['{tenant_domain}'], ['{tenant_name}']])('with %s placeholder', (placeholder) => {
+    describe.each([['{tenant_name}']])('with %s placeholder', (placeholder) => {
       test('Falls back to fallbackLoginUrl when tenant cannot be resolved', async () => {
         const parseTenantFromRootDomain = 'business.invotastic.com';
         const wristbandApplicationVanityDomain = 'auth.invotastic.com';

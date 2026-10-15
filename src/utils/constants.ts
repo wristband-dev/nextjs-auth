@@ -10,9 +10,8 @@ export const API_RETRY_DELAY_MS: number = 100;
 export const API_RETRY_DELAY_MULTIPLIER: number = 2;
 export const NO_CACHE_HEADERS = { 'Cache-Control': 'no-store', Pragma: 'no-cache' };
 export const REDIRECT_RESPONSE_INIT = { status: 302, headers: NO_CACHE_HEADERS };
-
-export const TENANT_DOMAIN_PLACEHOLDER: string = '{tenant_domain}';
 export const TENANT_NAME_PLACEHOLDER: string = '{tenant_name}';
-// Regex to match either placeholder
-export const TENANT_PLACEHOLDER_REGEX = /\{tenant_(?:domain|name)\}/;
-export const TENANT_PLACEHOLDER_MSG = '"{tenant_name}" or "{tenant_domain}" placeholder';
+// Regexes to match the {tenant_name} placeholder
+export const LEADING_TENANT_PLACEHOLDER_REGEX = /^https?:\/\/\{tenant_name\}\./;
+export const TENANT_PLACEHOLDER_REGEX = /\{tenant_name\}/;
+export const TENANT_PLACEHOLDER_MSG = '"{tenant_name}" placeholder';

@@ -114,7 +114,7 @@ export function normalizeMiddlewareConfig(config: AuthMiddlewareConfig): Normali
  * Extracts the pathname from a login URL, removing the protocol, host, and any tenant placeholders. This
  * is used to create a default redirect URL for the default for onPageUnauthenticated() middleware config.
  *
- * This handles URLs with tenant subdomains (containing `{tenant_name}` or `{tenant_domain}` placeholders)
+ * This handles URLs with tenant subdomains (containing `{tenant_name}` placeholder)
  * by removing the placeholder and the dot separator that follows it.
  *
  * @param loginUrl - The full login URL from WristbandAuth config
@@ -126,7 +126,7 @@ export function normalizeMiddlewareConfig(config: AuthMiddlewareConfig): Normali
  * extractLoginPath('http://localhost/login');
  * // Returns: '/login'
  *
- * extractLoginPath('https://{tenant_domain}.app.com/api/auth/login');
+ * extractLoginPath('https://{tenant_name}.app.com/api/auth/login');
  * // Returns: '/api/auth/login'
  *
  * extractLoginPath('https://{tenant_name}.app.com/login');
@@ -143,7 +143,7 @@ function extractLoginPath(loginUrl: string): string {
 
   try {
     // Remove tenant placeholders and the dot separator that follows them
-    const normalizedUrl = loginUrl.replace(/\{tenant_domain\}\./g, '').replace(/\{tenant_name\}\./g, '');
+    const normalizedUrl = loginUrl.replace(/\{tenant_name\}\./g, '');
 
     const url = new URL(normalizedUrl);
     return url.pathname;

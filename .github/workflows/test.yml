@@ -19,8 +19,8 @@ jobs:
       contents: read
     strategy:
       matrix:
-        node: [20.x, 22.x, 24.x]
-    name: Use Node.js ${{ matrix.node-version }}
+        node: [22.x, 24.x, 26.x]
+    name: Use Node.js ${{ matrix.node }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js

@@ -13,7 +13,7 @@ import { mockWristbandFetch } from '../helpers/mock-fetch';
 function validateRedirectResponse(
   mockRes: MockResponse<NextApiResponse>,
   authorizeUrl: string,
-  exprectedOrigin: string,
+  expectedOrigin: string,
   expectedRedirectUri: string
 ) {
   expect(mockRes.getHeader('Cache-Control')).toBe('no-store');
@@ -21,7 +21,7 @@ function validateRedirectResponse(
 
   const url: URL = new URL(authorizeUrl);
   const { pathname, origin, searchParams } = url;
-  expect(origin).toEqual(exprectedOrigin);
+  expect(origin).toEqual(expectedOrigin);
   expect(pathname).toEqual('/api/v1/oauth2/authorize');
 
   // Validate query parameters of the Authorize URL
@@ -122,7 +122,7 @@ describe('pagesRouter.login()', () => {
         `https://devs4you-${wristbandApplicationVanityDomain}`,
         redirectUri
       );
-      validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
     });
 
     test('Dangerously Disable Secure Cookies Configuration', async () => {
@@ -195,8 +195,8 @@ describe('pagesRouter.login()', () => {
 
     test('Tenant Subdomains Configuration', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -228,7 +228,7 @@ describe('pagesRouter.login()', () => {
         `https://devs4you-${wristbandApplicationVanityDomain}`,
         redirectUri
       );
-      validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
 
       // App-level authorization requests are not enabled, so the cookie stays host-only
       // even though parseTenantFromRootDomain is set.
@@ -239,8 +239,8 @@ describe('pagesRouter.login()', () => {
     test('Custom Domains and Tenant Subdomains Configuration', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -273,14 +273,14 @@ describe('pagesRouter.login()', () => {
         `https://devs4you.${wristbandApplicationVanityDomain}`,
         redirectUri
       );
-      validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
     });
 
     test('Custom Domains with Tenant Custom Domain', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -309,7 +309,7 @@ describe('pagesRouter.login()', () => {
 
       // Validate Redirect response
       validateRedirectResponse(mockRes, authorizeUrl, `https://tenant.custom.com`, redirectUri);
-      validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
     });
 
     test('Custom Domains with All Domain Params', async () => {
@@ -344,14 +344,14 @@ describe('pagesRouter.login()', () => {
 
       // Validate Redirect response
       validateRedirectResponse(mockRes, authorizeUrl, `https://tenant.custom.com`, redirectUri);
-      validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
     });
 
     test('With login_hint, idp_hint, and return_url query params', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -417,8 +417,8 @@ describe('pagesRouter.login()', () => {
     test('Clear old login state cookie', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -532,8 +532,8 @@ describe('pagesRouter.login()', () => {
     test('Unresolved tenant subdomain', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -568,8 +568,8 @@ describe('pagesRouter.login()', () => {
     test('Custom application login URL redirect', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
