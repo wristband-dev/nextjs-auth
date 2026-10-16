@@ -12,16 +12,10 @@ import {
 import { createMockNextRequest, CLIENT_ID } from '../../test-utils';
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
 
-jest.mock('../../../src/utils/crypto', () => {
+jest.mock('../../../src/utils/auth/common-utils', () => {
   return {
-    base64ToURLSafe: jest.fn((input) => {
-      return input.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-    }),
     generateRandomString: jest.fn((length) => {
       return 'a'.repeat(length);
-    }),
-    sha256Base64: jest.fn(async (input) => {
-      return `mocked-hash-${input}`;
     }),
   };
 });
@@ -521,7 +515,7 @@ describe('getAuthorizationUrlParams', () => {
     expect(result.get('response_type')).toBe('code');
     expect(result.get('state')).toBe('test-state');
     expect(result.get('scope')).toBe('openid profile');
-    expect(result.get('code_challenge')).toBeTruthy();
+    expect(result.get('code_challenge')).toBe('0FLIKahrX7kqxncwhV5WD82lu_wi5GA8FsRSLubaOpU');
     expect(result.get('code_challenge_method')).toBe('S256');
     expect(result.get('nonce')).toBeTruthy();
   });

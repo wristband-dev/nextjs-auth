@@ -6,7 +6,7 @@ import {
   ValidateTenantCustomDomainResponse,
   WristbandUserinfoResponse,
 } from './types';
-import { encodeBase64 } from './utils/crypto';
+import { Base64 } from './utils/base64';
 import { FORM_URLENCODED_MEDIA_TYPE, JSON_MEDIA_TYPE } from './utils/constants';
 import { withRetry } from './utils/retry';
 import { WristbandApiClient } from './wristband-api-client';
@@ -32,7 +32,7 @@ export class WristbandService {
     this.basicAuthHeaders = {
       'Content-Type': FORM_URLENCODED_MEDIA_TYPE,
       Accept: JSON_MEDIA_TYPE,
-      Authorization: `Basic ${encodeBase64(`${clientId}:${clientSecret}`)}`,
+      Authorization: `Basic ${Base64.encodeStr(`${clientId}:${clientSecret}`)}`,
     };
     this.clientId = clientId;
   }

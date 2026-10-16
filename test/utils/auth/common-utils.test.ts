@@ -1,12 +1,18 @@
 import { FetchError, InvalidGrantError, WristbandError } from '../../../src/error';
+import { CryptoError } from '../../../src/error/crypto-error';
+import { LoginState } from '../../../src/types';
 import { WristbandService } from '../../../src/wristband-service';
 import {
+  decryptLoginState,
+  encryptLoginState,
+  generateRandomString,
   getAppLevelAuthorizationUrl,
   getAppLevelLoginUrl,
   getTenantLevelAuthorizationUrl,
   refreshExpiredToken,
   resolveValidTenantCustomDomain,
 } from '../../../src/utils/auth/common-utils';
+import { CookieCrypto } from '../../../src/utils/crypto';
 
 // Mock WristbandService
 jest.mock('../../../src/wristband-service');
@@ -337,6 +343,7 @@ describe('refreshExpiredToken()', () => {
 
   describe('Error Handling - InvalidGrantError', () => {
     test('should throw WristbandError with invalid_refresh_token when InvalidGrantError occurs', async () => {
+      expect.assertions(4);
       const expiredTime = Date.now() - 1000;
       const invalidGrantError = new InvalidGrantError('Token is invalid');
 
@@ -344,7 +351,6 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('invalid-token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Token is invalid'); // message is the errorDescription
@@ -369,6 +375,7 @@ describe('refreshExpiredToken()', () => {
 
   describe('Error Handling - FetchError (4xx)', () => {
     test('should throw WristbandError for 400 FetchError', async () => {
+      expect.assertions(4);
       const expiredTime = Date.now() - 1000;
       const fetchError = new FetchError('Bad Request', {
         status: 400,
@@ -381,7 +388,6 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('bad-token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Invalid token format'); // message is errorDescription
@@ -410,6 +416,7 @@ describe('refreshExpiredToken()', () => {
     });
 
     test('should use default error message when error_description is missing', async () => {
+      expect.assertions(3);
       const expiredTime = Date.now() - 1000;
       const fetchError = new FetchError('Bad Request', {
         status: 400,
@@ -421,7 +428,6 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('bad-token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Invalid Refresh Token'); // message is errorDescription
@@ -430,6 +436,7 @@ describe('refreshExpiredToken()', () => {
     });
 
     test('should use default error message when body is missing', async () => {
+      expect.assertions(3);
       const expiredTime = Date.now() - 1000;
       const fetchError = new FetchError('Bad Request', {
         status: 400,
@@ -441,7 +448,6 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('bad-token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Invalid Refresh Token'); // message is errorDescription
@@ -487,6 +493,7 @@ describe('refreshExpiredToken()', () => {
   // tests, so refreshExpiredToken calls it exactly once and only maps the surfacing error.
   describe('Error Handling - Server Errors (5xx)', () => {
     test('should throw unexpected_error for 500 errors without retrying at this layer', async () => {
+      expect.assertions(4);
       const expiredTime = Date.now() - 1000;
       const fetchError = new FetchError('Internal Server Error', {
         status: 500,
@@ -496,7 +503,6 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Unexpected Error'); // message is errorDescription
@@ -531,13 +537,13 @@ describe('refreshExpiredToken()', () => {
     });
 
     test('should throw unexpected_error with an undefined originalError for a non-Error rejection', async () => {
+      expect.assertions(5);
       const expiredTime = Date.now() - 1000;
       // eslint-disable-next-line prefer-promise-reject-errors
       mockWristbandService.refreshToken.mockRejectedValue('a non-Error rejection value');
 
       try {
         await refreshExpiredToken('token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.code).toBe('unexpected_error');
@@ -629,6 +635,7 @@ describe('refreshExpiredToken()', () => {
     });
 
     test('should throw WristbandError if tokenResponse is null', async () => {
+      expect.assertions(3);
       const expiredTime = Date.now() - 1000;
 
       // Mock a scenario where refreshToken somehow returns null
@@ -636,12 +643,239 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Unexpected Error'); // message is errorDescription
         expect(error.errorDescription).toBe('Unexpected Error');
       }
     });
+  });
+});
+
+describe('generateRandomString', () => {
+  let getRandomValuesSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Mock globalThis.crypto.getRandomValues to return predictable values for testing
+    getRandomValuesSpy = jest.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation((array: any) => {
+      const uint8Array = array as Uint8Array;
+      for (let i = 0; i < uint8Array.length; i += 1) {
+        uint8Array[i] = i % 256; // Predictable pattern
+      }
+      return array;
+    });
+  });
+
+  afterEach(() => {
+    getRandomValuesSpy.mockRestore();
+  });
+
+  it('should generate string of specified length', () => {
+    const result = generateRandomString(10);
+    expect(typeof result).toBe('string');
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('should generate different results for different lengths', () => {
+    const result1 = generateRandomString(5);
+    const result2 = generateRandomString(10);
+    expect(result1.length).not.toBe(result2.length);
+  });
+
+  it('should return URL-safe characters only', () => {
+    const result = generateRandomString(20);
+    // Should only contain URL-safe base64 characters (no +, /, =)
+    expect(result).toMatch(/^[A-Za-z0-9_-]*$/);
+  });
+
+  it('should handle length of 1', () => {
+    const result = generateRandomString(1);
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('should call crypto.getRandomValues with correct array size', () => {
+    generateRandomString(10);
+    expect(getRandomValuesSpy).toHaveBeenCalledWith(expect.any(Uint8Array));
+    expect(getRandomValuesSpy).toHaveBeenCalledWith(expect.objectContaining({ length: 10 }));
+  });
+
+  it('should generate strings without padding characters', () => {
+    const result = generateRandomString(50);
+    expect(result).not.toContain('=');
+    expect(result).not.toContain('+');
+    expect(result).not.toContain('/');
+  });
+
+  it('should generate URL-safe strings that are different each time', () => {
+    // Since we're mocking getRandomValues with a pattern, we can predict behavior
+    const result1 = generateRandomString(10);
+    const result2 = generateRandomString(10);
+
+    // Both should be URL-safe
+    expect(result1).toMatch(/^[A-Za-z0-9_-]*$/);
+    expect(result2).toMatch(/^[A-Za-z0-9_-]*$/);
+  });
+});
+
+describe('encryptLoginState and decryptLoginState', () => {
+  const loginStateSecret = '12345678901234567890123456789012'; // 32 chars
+
+  test('Encrypts and decrypts login state successfully', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+    const decrypted = await decryptLoginState(encrypted, loginStateSecret);
+
+    expect(decrypted).toEqual(loginState);
+  });
+
+  test('Encrypts and decrypts login state with custom state', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+      customState: { userId: '123', feature: 'test' },
+    };
+
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+    const decrypted = await decryptLoginState(encrypted, loginStateSecret);
+
+    expect(decrypted).toEqual(loginState);
+  });
+
+  test('Encrypts and decrypts login state with return URL', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+      returnUrl: 'https://example.com/dashboard',
+    };
+
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+    const decrypted = await decryptLoginState(encrypted, loginStateSecret);
+
+    expect(decrypted).toEqual(loginState);
+  });
+
+  test('Encrypts and decrypts login state with domain', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+    const decrypted = await decryptLoginState(encrypted, loginStateSecret);
+
+    expect(decrypted).toEqual(loginState);
+  });
+
+  test('Throws error when encrypted state exceeds 4kB', async () => {
+    const largeCustomState = {
+      data: 'x'.repeat(5000), // Large data to exceed 4kB
+    };
+
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+      customState: largeCustomState,
+    };
+
+    await expect(encryptLoginState(loginState, loginStateSecret)).rejects.toThrow(
+      'Login state cookie exceeds 4kB in size'
+    );
+  });
+
+  test('Throws TypeError when customState is not JSON-serializable', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+      customState: { id: BigInt(1) },
+    };
+
+    await expect(encryptLoginState(loginState, loginStateSecret)).rejects.toThrow(TypeError);
+    await expect(encryptLoginState(loginState, loginStateSecret)).rejects.toThrow(
+      'The [customState] value must be JSON-serializable.'
+    );
+  });
+
+  test('Passes through other crypto errors from encryption unchanged', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+
+    await expect(encryptLoginState(loginState, 'too-short-secret')).rejects.toThrow(CryptoError);
+    await expect(encryptLoginState(loginState, 'too-short-secret')).rejects.toMatchObject({
+      code: 'INVALID_SECRET',
+    });
+  });
+
+  test('Returns null when decrypting with the wrong secret', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+
+    await expect(decryptLoginState(encrypted, 'x'.repeat(32))).resolves.toBeNull();
+  });
+
+  test('Decrypts a login state cookie that is still within its 1 hour max age', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+    const startTime = Date.now();
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+
+    jest.spyOn(Date, 'now').mockReturnValue(startTime + 3600 * 1000);
+    try {
+      await expect(decryptLoginState(encrypted, loginStateSecret)).resolves.toEqual(loginState);
+    } finally {
+      jest.restoreAllMocks();
+    }
+  });
+
+  test('Returns null when the login state cookie is older than its 1 hour max age', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+    const startTime = Date.now();
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+
+    // 1 hour max age plus the 60-second clock skew tolerance, plus 1 second
+    jest.spyOn(Date, 'now').mockReturnValue(startTime + (3600 + 60 + 1) * 1000);
+    try {
+      await expect(decryptLoginState(encrypted, loginStateSecret)).resolves.toBeNull();
+    } finally {
+      jest.restoreAllMocks();
+    }
+  });
+
+  test('Returns null when the login state cookie is malformed', async () => {
+    await expect(decryptLoginState('not-a-valid-cookie', loginStateSecret)).resolves.toBeNull();
+  });
+
+  test('Rethrows non-crypto errors from decryption unchanged', async () => {
+    const unexpectedError = new Error('Unexpected failure');
+    jest.spyOn(CookieCrypto, 'decrypt').mockRejectedValue(unexpectedError);
+    try {
+      await expect(decryptLoginState('any-cookie-value', loginStateSecret)).rejects.toBe(unexpectedError);
+    } finally {
+      jest.restoreAllMocks();
+    }
   });
 });

@@ -21,9 +21,10 @@ import {
 } from '../../utils/auth/pages-router-utils';
 import { InvalidGrantError, WristbandError } from '../../error';
 import { LOGIN_REQUIRED_ERROR, TENANT_PLACEHOLDER_REGEX } from '../../utils/constants';
-import { decryptLoginState, encryptLoginState } from '../../utils/crypto';
 import { ConfigResolver } from '../../config-resolver';
 import {
+  decryptLoginState,
+  encryptLoginState,
   getAppLevelAuthorizationUrl,
   getAppLevelLoginUrl,
   getTenantLevelAuthorizationUrl,
@@ -205,7 +206,10 @@ export class PagesRouterAuthHandler {
     clearLoginStateCookie(response, cookieName, dangerouslyDisableSecureCookies, cookieDomain);
 
     // Extract the login state from the cookie.
-    const loginState: LoginState = await decryptLoginState(loginStateCookie, loginStateSecret);
+    const loginState: LoginState | null = await decryptLoginState(loginStateCookie, loginStateSecret);
+    if (!loginState) {
+      return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'invalid_login_state' };
+    }
     const { codeVerifier, customState, redirectUri, returnUrl, state: cookieState } = loginState;
 
     // Check for any potential error conditions

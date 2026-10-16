@@ -3,6 +3,7 @@ export const JSON_MEDIA_TYPE: string = 'application/json;charset=UTF-8';
 export const LOGIN_REQUIRED_ERROR: string = 'login_required';
 export const LOGIN_STATE_COOKIE_SEPARATOR = '#';
 export const LOGIN_STATE_COOKIE_PREFIX: string = `login${LOGIN_STATE_COOKIE_SEPARATOR}`;
+export const LOGIN_STATE_COOKIE_MAX_AGE_SEC: number = 3600;
 // Common retry settings applied to all Wristband API calls made from WristbandService.
 export const MAX_API_RETRY_ATTEMPTS: number = 3;
 export const API_RETRY_DELAY_MS: number = 100;

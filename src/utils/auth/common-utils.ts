@@ -1,6 +1,10 @@
 import { FetchError, InvalidGrantError, WristbandError } from '../../error';
-import { TokenData, TokenResponse } from '../../types';
+import { LoginState, TokenData, TokenResponse } from '../../types';
 import { WristbandService } from '../../wristband-service';
+import { Base64 } from '../base64';
+import { CookieCrypto } from '../crypto';
+import { CryptoError } from '../../error/crypto-error';
+import { LOGIN_STATE_COOKIE_MAX_AGE_SEC } from '../constants';
 
 /**
  * Resolves a tenant custom domain to itself when it is verified and belongs to your Wristband
@@ -178,4 +182,45 @@ export async function refreshExpiredToken(
     idToken,
     refreshToken: responseRefreshToken,
   };
+}
+
+export function generateRandomString(length: number): string {
+  return Base64.urlEncode(globalThis.crypto.getRandomValues(new Uint8Array(length)));
+}
+
+export async function encryptLoginState(loginState: LoginState, loginStateSecret: string): Promise<string> {
+  try {
+    return await CookieCrypto.encrypt(loginState, loginStateSecret);
+  } catch (error) {
+    if (error instanceof CryptoError && error.code === 'DATA_TOO_LARGE') {
+      throw new TypeError(
+        'Login state cookie exceeds 4kB in size. Ensure your [customState] and [returnUrl] values are a reasonable size.'
+      );
+    }
+    if (
+      error instanceof CryptoError &&
+      error.code === 'ENCRYPTION_FAILED' &&
+      error.message === 'Data must be JSON-serializable'
+    ) {
+      throw new TypeError('The [customState] value must be JSON-serializable.');
+    }
+    throw error;
+  }
+}
+
+export async function decryptLoginState(
+  loginStateCookie: string,
+  loginStateSecret: string
+): Promise<LoginState | null> {
+  try {
+    // The max age matches the login state cookie's Max-Age (1 hour)
+    return await CookieCrypto.decrypt(loginStateCookie, loginStateSecret, LOGIN_STATE_COOKIE_MAX_AGE_SEC);
+  } catch (error) {
+    // Any crypto failure (tampered, expired, malformed, legacy format, or encrypted with a different secret)
+    // means the cookie can't be trusted. Return null so the callback can redirect to login instead of failing.
+    if (error instanceof CryptoError) {
+      return null;
+    }
+    throw error;
+  }
 }

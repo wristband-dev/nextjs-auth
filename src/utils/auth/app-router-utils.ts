@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
 import { AppRouterLoginStateCookie, LoginState, LoginStateMapConfig } from '../../types';
-import { base64ToURLSafe, generateRandomString, sha256Base64 } from '../crypto';
+import { Base64 } from '../base64';
+import { generateRandomString } from './common-utils';
 
 function parseCookies(cookieHeader: string | null): Record<string, string> {
   if (!cookieHeader) return {};
@@ -152,7 +153,7 @@ export async function getAuthorizationUrlParams(
     throw new TypeError('More than one [idp_hint] query parameter was encountered');
   }
 
-  const digest = await sha256Base64(config.codeVerifier);
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(config.codeVerifier));
 
   return new URLSearchParams({
     client_id: config.clientId,
@@ -160,7 +161,7 @@ export async function getAuthorizationUrlParams(
     response_type: 'code',
     state: config.state,
     scope: config.scopes.join(' '),
-    code_challenge: base64ToURLSafe(digest),
+    code_challenge: Base64.urlEncode(new Uint8Array(digest)),
     code_challenge_method: 'S256',
     nonce: generateRandomString(32),
     ...(loginHint.length > 0 ? { login_hint: loginHint[0] } : {}),

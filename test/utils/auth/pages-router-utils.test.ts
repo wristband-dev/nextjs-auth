@@ -11,22 +11,18 @@ import {
 } from '../../../src/utils/auth/pages-router-utils';
 import { LoginStateMapConfig } from '../../../src/types';
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
-import * as commonUtils from '../../../src/utils/crypto';
+import * as authCommonUtils from '../../../src/utils/auth/common-utils';
 
 // Mock common utils
-jest.mock('../../../src/utils/crypto');
-const mockGenerateRandomString = commonUtils.generateRandomString as jest.MockedFunction<
-  typeof commonUtils.generateRandomString
+jest.mock('../../../src/utils/auth/common-utils');
+const mockGenerateRandomString = authCommonUtils.generateRandomString as jest.MockedFunction<
+  typeof authCommonUtils.generateRandomString
 >;
-const mockSha256Base64 = commonUtils.sha256Base64 as jest.MockedFunction<typeof commonUtils.sha256Base64>;
-const mockBase64ToURLSafe = commonUtils.base64ToURLSafe as jest.MockedFunction<typeof commonUtils.base64ToURLSafe>;
 
 describe('Page Router Utils', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGenerateRandomString.mockReturnValue('mock-random-string');
-    mockSha256Base64.mockResolvedValue('mock-sha256-hash');
-    mockBase64ToURLSafe.mockReturnValue('mock-url-safe-hash');
   });
 
   describe('parseTenantSubdomain', () => {
@@ -543,7 +539,7 @@ describe('Page Router Utils', () => {
       expect(params.get('response_type')).toBe('code');
       expect(params.get('state')).toBe('test-state');
       expect(params.get('scope')).toBe('openid email');
-      expect(params.get('code_challenge')).toBe('mock-url-safe-hash');
+      expect(params.get('code_challenge')).toBe('0FLIKahrX7kqxncwhV5WD82lu_wi5GA8FsRSLubaOpU');
       expect(params.get('code_challenge_method')).toBe('S256');
       expect(params.get('nonce')).toBe('mock-nonce-32');
     });
@@ -588,13 +584,11 @@ describe('Page Router Utils', () => {
       );
     });
 
-    it('should call crypto functions correctly', async () => {
+    it('should generate the nonce with 32 bytes', async () => {
       const req = { query: {} } as NextApiRequest;
 
       await getAuthorizationUrlParams(req, baseConfig);
 
-      expect(mockSha256Base64).toHaveBeenCalledWith('test-code-verifier');
-      expect(mockBase64ToURLSafe).toHaveBeenCalledWith('mock-sha256-hash');
       expect(mockGenerateRandomString).toHaveBeenCalledWith(32);
     });
   });

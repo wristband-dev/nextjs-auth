@@ -27,13 +27,14 @@ import {
   resolveTenantName,
 } from '../../utils/auth/app-router-utils';
 import {
+  decryptLoginState,
+  encryptLoginState,
   getAppLevelAuthorizationUrl,
   getAppLevelLoginUrl,
   getTenantLevelAuthorizationUrl,
   refreshExpiredToken,
   resolveValidTenantCustomDomain,
 } from '../../utils/auth/common-utils';
-import { decryptLoginState, encryptLoginState } from '../../utils/crypto';
 import { LOGIN_REQUIRED_ERROR, REDIRECT_RESPONSE_INIT, TENANT_PLACEHOLDER_REGEX } from '../../utils/constants';
 import { WristbandService } from '../../wristband-service';
 
@@ -214,7 +215,10 @@ export class AppRouterAuthHandler {
     }
 
     // Extract the login state from the cookie.
-    const loginState: LoginState = await decryptLoginState(loginStateCookie.value, loginStateSecret);
+    const loginState: LoginState | null = await decryptLoginState(loginStateCookie.value, loginStateSecret);
+    if (!loginState) {
+      return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'invalid_login_state' };
+    }
     const { codeVerifier, customState, redirectUri, returnUrl, state: cookieState } = loginState;
 
     // Check for any potential error conditions

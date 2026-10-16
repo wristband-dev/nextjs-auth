@@ -4,7 +4,7 @@ import type { MockResponse } from 'node-mocks-http';
 
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
 import { CallbackResult, LoginState } from '../../src/types';
-import { encryptLoginState } from '../../src/utils/crypto';
+import { encryptLoginState } from '../../src/utils/auth/common-utils';
 import { CLIENT_ID, CLIENT_SECRET, createMockNextRequest, LOGIN_STATE_COOKIE_SECRET } from '../test-utils';
 import { expectValidateCalled, expectValidateNotCalled, mockWristbandFetch } from '../helpers/mock-fetch';
 
@@ -142,7 +142,7 @@ describe('Callback - Tenant Custom Domain Validation', () => {
       // The pages router reads the login state from req.cookies rather than a raw cookie header.
       const loginState: LoginState = { codeVerifier: 'codeVerifier', redirectUri, state: 'state' };
       const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
-      const cookies = withCookie ? { 'login#state#1234567890': encryptedLoginState } : {};
+      const cookies: Record<string, string> = withCookie ? { 'login#state#1234567890': encryptedLoginState } : {};
       const { req, res } = createMocks({
         method: 'GET',
         url: redirectUri,

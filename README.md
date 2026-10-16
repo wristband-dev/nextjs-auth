@@ -1362,7 +1362,7 @@ The `UserInfo` type is defined as follows:
 | phoneNumberVerified | boolean or `undefined` | No | True if the End-User's phone number has been verified (requires `phone` scope). |
 | updatedAt | number or `undefined` | No | Time the End-User's information was last updated as Unix timestamp (requires `profile` scope). |
 | roles | `UserInfoRole[]` or `undefined` | No | The roles assigned to the user (requires `roles` scope). |
-| customClaims | `Record<string, any>` or `undefined` | No | Object containing any configured custom claims. |
+| customClaims | `Record<string, unknown>` or `undefined` | No | Object containing any configured custom claims. |
 
 The `UserInfoRole` type is defined as follows:
 

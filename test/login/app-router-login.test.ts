@@ -10,7 +10,7 @@ import {
 } from '../test-utils';
 import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
 import { LoginState } from '../../src/types';
-import { decryptLoginState } from '../../src/utils/crypto';
+import { decryptLoginState } from '../../src/utils/auth/common-utils';
 
 describe('appRouter.login()', () => {
   let wristbandAuth: WristbandAuth;

@@ -1,7 +1,7 @@
 import { createMocks } from 'node-mocks-http';
 import { NextResponse } from 'next/server';
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
-import { encryptLoginState } from '../../src/utils/crypto';
+import { encryptLoginState } from '../../src/utils/auth/common-utils';
 import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
 import { LoginState, CallbackResult, CallbackData } from '../../src/types';
 import { createMockNextRequest, parseSetCookies } from '../test-utils';
