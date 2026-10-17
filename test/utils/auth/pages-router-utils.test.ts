@@ -1,15 +1,16 @@
+import httpMocks from 'node-mocks-http';
 import { NextApiRequest, NextApiResponse } from 'next';
 import {
   parseTenantSubdomain,
   resolveTenantName,
   resolveTenantCustomDomainParam,
-  createLoginState,
+  resolveReturnUrl,
+  validateReturnUrl,
   createLoginStateCookie,
   getAuthorizationUrlParams,
   getLoginStateCookie,
   clearLoginStateCookie,
 } from '../../../src/utils/auth/pages-router-utils';
-import { LoginStateMapConfig } from '../../../src/types';
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
 import * as authCommonUtils from '../../../src/utils/auth/common-utils';
 
@@ -230,138 +231,326 @@ describe('Page Router Utils', () => {
     });
   });
 
-  describe('createLoginState', () => {
-    beforeEach(() => {
-      mockGenerateRandomString.mockReset();
-      mockGenerateRandomString
-        .mockReturnValueOnce('mock-state-32')
-        .mockReturnValueOnce('mock-code-verifier-32')
-        .mockReturnValue('mock-nonce-32');
+  describe('resolveReturnUrl', () => {
+    test('Returns undefined when no return URL is provided anywhere', () => {
+      const req = httpMocks.createRequest() as any;
+
+      expect(resolveReturnUrl(req)).toBeUndefined();
     });
 
-    it('should create basic login state', () => {
-      const req = {
-        query: {},
-      } as NextApiRequest;
+    test('Returns the return_url query parameter when no config is provided', () => {
+      const req = httpMocks.createRequest({
+        query: { return_url: 'https://example.com/dashboard' },
+      }) as any;
 
-      const result = createLoginState(req, 'https://app.com/callback');
-
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
-      });
+      expect(resolveReturnUrl(req)).toBe('https://example.com/dashboard');
     });
 
-    it('should include return_url from query params', () => {
-      const req = {
-        query: { return_url: 'https://app.com/dashboard' },
-      } as unknown as NextApiRequest;
+    test('Returns LoginConfig.returnUrl when no query parameter is present', () => {
+      const req = httpMocks.createRequest() as any;
 
-      const result = createLoginState(req, 'https://app.com/callback');
-
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
-        returnUrl: 'https://app.com/dashboard',
-      });
+      expect(resolveReturnUrl(req, { returnUrl: 'https://example.com/config' })).toBe('https://example.com/config');
     });
 
-    it('should include returnUrl from config over query param', () => {
-      const req = {
-        query: { return_url: 'https://app.com/dashboard' },
-      } as unknown as NextApiRequest;
+    test('LoginConfig.returnUrl takes precedence over the return_url query parameter', () => {
+      const req = httpMocks.createRequest({
+        query: { return_url: 'https://example.com/query' },
+      }) as any;
 
-      const config: LoginStateMapConfig = {
-        returnUrl: 'https://app.com/admin',
-      };
-
-      const result = createLoginState(req, 'https://app.com/callback', config);
-
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
-        returnUrl: 'https://app.com/admin',
-      });
+      expect(resolveReturnUrl(req, { returnUrl: 'https://example.com/config' })).toBe('https://example.com/config');
     });
 
-    it('should include customState from config', () => {
-      const req = {
-        query: {},
-      } as NextApiRequest;
+    test('Falls back to the query parameter when LoginConfig.returnUrl is an empty string', () => {
+      const req = httpMocks.createRequest({
+        query: { return_url: 'https://example.com/query' },
+      }) as any;
 
-      const config: LoginStateMapConfig = {
-        customState: { userId: '123', tenantId: 'tenant-456' },
-      };
-
-      const result = createLoginState(req, 'https://app.com/callback', config);
-
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
-        customState: { userId: '123', tenantId: 'tenant-456' },
-      });
+      expect(resolveReturnUrl(req, { returnUrl: '' })).toBe('https://example.com/query');
     });
 
-    it('should include both returnUrl and customState', () => {
-      const req = {
-        query: { return_url: 'https://app.com/dashboard' },
-      } as unknown as NextApiRequest;
+    test('Returns undefined when the return_url query parameter is an empty string', () => {
+      const req = httpMocks.createRequest({
+        query: { return_url: '' },
+      }) as any;
 
-      const config: LoginStateMapConfig = {
-        returnUrl: 'https://app.com/admin',
-        customState: { role: 'admin' },
-      };
-
-      const result = createLoginState(req, 'https://app.com/callback', config);
-
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
-        returnUrl: 'https://app.com/admin',
-        customState: { role: 'admin' },
-      });
+      expect(resolveReturnUrl(req)).toBeUndefined();
     });
 
-    it('should throw error when multiple return_url query params are provided', () => {
-      const req = {
+    test('Throws error for multiple return_url query parameters', () => {
+      const req = httpMocks.createRequest({
         query: { return_url: ['url1', 'url2'] },
-      } as unknown as NextApiRequest;
+      }) as any;
 
       expect(() => {
-        return createLoginState(req, 'https://app.com/callback');
+        return resolveReturnUrl(req);
       }).toThrow('More than one [return_url] query parameter was encountered');
     });
 
-    it('should not include customState when empty object', () => {
-      const req = { query: {} } as NextApiRequest;
+    test('Does not throw for multiple return_url query parameters when LoginConfig.returnUrl is set', () => {
+      const req = httpMocks.createRequest({
+        query: { return_url: ['url1', 'url2'] },
+      }) as any;
 
-      const config: LoginStateMapConfig = {
-        customState: {},
-      };
+      expect(resolveReturnUrl(req, { returnUrl: 'https://example.com/config' })).toBe('https://example.com/config');
+    });
+  });
 
-      const result = createLoginState(req, 'https://app.com/callback', config);
+  describe('validateReturnUrl', () => {
+    // Minimal request mock exposing only what validateReturnUrl reads.
+    const buildReq = (host: string, protocol: string = 'https') => {
+      return {
+        headers: { host, 'x-forwarded-proto': protocol },
+      } as unknown as NextApiRequest;
+    };
 
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
+    const rootDomain = 'myapp.com';
+    const tenantName = 'acme';
+
+    describe('Input guards', () => {
+      test('Throws when tenantName is empty', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(() => {
+          return validateReturnUrl(req, '/settings', '', true, rootDomain);
+        }).toThrow('Tenant name is required to validate returnUrl');
       });
-      expect(result).not.toHaveProperty('customState');
+
+      test('Throws when tenantName is empty even if returnUrl is missing', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(() => {
+          return validateReturnUrl(req, undefined, '', true, rootDomain);
+        }).toThrow('Tenant name is required to validate returnUrl');
+      });
+
+      test('Returns undefined when returnUrl is undefined', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, undefined, tenantName, true, rootDomain)).toBeUndefined();
+      });
+
+      test('Returns undefined when returnUrl is an empty string', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, '', tenantName, true, rootDomain)).toBeUndefined();
+      });
     });
 
-    it('should call generateRandomString with correct parameters', () => {
-      const req = { query: {} } as NextApiRequest;
+    describe('Allowed hosts', () => {
+      test('Allows a relative path and returns it unchanged', () => {
+        const req = buildReq('acme.myapp.com');
 
-      createLoginState(req, 'https://app.com/callback');
+        expect(validateReturnUrl(req, '/settings?tab=1#top', tenantName, true, rootDomain)).toBe('/settings?tab=1#top');
+      });
 
-      expect(mockGenerateRandomString).toHaveBeenCalledTimes(2);
-      expect(mockGenerateRandomString).toHaveBeenNthCalledWith(1, 32);
-      expect(mockGenerateRandomString).toHaveBeenNthCalledWith(2, 32);
+      test('Allows an absolute URL on the same host as the request', () => {
+        const req = buildReq('acme.myapp.com');
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Ignores port when comparing hostnames', () => {
+        const req = buildReq('acme.myapp.com');
+        const returnUrl = 'https://acme.myapp.com:9999/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Allows same-host URLs when parseTenantFromRootDomain is not set', () => {
+        const req = buildReq('app.example.com');
+        const returnUrl = 'https://app.example.com/home';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, false)).toBe(returnUrl);
+      });
+    });
+
+    describe('Rejected hosts', () => {
+      test('Rejects a different domain', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'https://evil.com/phish', tenantName, true, rootDomain)).toBeUndefined();
+      });
+
+      test('Rejects a different tenant subdomain', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(
+          validateReturnUrl(req, 'https://other.myapp.com/dashboard', tenantName, true, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Rejects a protocol-relative URL to another host', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, '//evil.com/phish', tenantName, true, rootDomain)).toBeUndefined();
+      });
+
+      test('Rejects a backslash-prefixed URL to another host', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, '/\\evil.com/phish', tenantName, true, rootDomain)).toBeUndefined();
+      });
+
+      test('Rejects a lookalike domain that starts with the root domain', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'https://myapp.com.evil.com/', tenantName, true, rootDomain)).toBeUndefined();
+      });
+
+      test('Rejects a URL using userinfo to disguise the real host', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(
+          validateReturnUrl(req, 'https://acme.myapp.com@evil.com/', tenantName, true, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Rejects a javascript: URL', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'javascript:alert(1)', tenantName, true, rootDomain)).toBeUndefined();
+      });
+
+      test('Rejects the root domain when parseTenantFromRootDomain is not set', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'https://myapp.com/dashboard', tenantName, true)).toBeUndefined();
+      });
+
+      test('Returns undefined for a malformed URL', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'https://', tenantName, true, rootDomain)).toBeUndefined();
+      });
+    });
+
+    describe('Root domain tenant rewrite', () => {
+      test('Prepends the tenant subdomain to a root domain URL', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'https://myapp.com/dashboard?x=1#top', tenantName, true, rootDomain)).toBe(
+          'https://acme.myapp.com/dashboard?x=1#top'
+        );
+      });
+
+      test('Preserves the port when rewriting', () => {
+        const req = buildReq('acme.localhost:6001', 'http');
+
+        expect(validateReturnUrl(req, 'http://localhost:6001/home', tenantName, true, 'localhost')).toBe(
+          'http://acme.localhost:6001/home'
+        );
+      });
+
+      test('Does not rewrite when applicationAuthorizationRequestsEnabled is false', () => {
+        const req = buildReq('acme.myapp.com');
+        const returnUrl = 'https://myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, false, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Does not rewrite a relative path even when rewrite is enabled', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, '/dashboard', tenantName, true, rootDomain)).toBe('/dashboard');
+      });
+    });
+
+    describe('Protocol matching', () => {
+      test('Rejects an http returnUrl when the request is https', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'http://acme.myapp.com/dashboard', tenantName, true, rootDomain)).toBeUndefined();
+      });
+
+      test('Rejects an https returnUrl when the request is http', () => {
+        const req = buildReq('acme.localhost:6001', 'http');
+
+        expect(
+          validateReturnUrl(req, 'https://acme.localhost:6001/home', tenantName, true, 'localhost')
+        ).toBeUndefined();
+      });
+
+      test('Rejects a root domain returnUrl with a mismatched protocol instead of rewriting it', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'http://myapp.com/dashboard', tenantName, true, rootDomain)).toBeUndefined();
+      });
+
+      test('Rejects a non-http protocol on an allowed host', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'ftp://acme.myapp.com/file', tenantName, true, rootDomain)).toBeUndefined();
+      });
+
+      test('Allows a relative path on an http request', () => {
+        const req = buildReq('acme.localhost:6001', 'http');
+
+        expect(validateReturnUrl(req, '/home', tenantName, true, 'localhost')).toBe('/home');
+      });
+    });
+
+    describe('Request protocol resolution', () => {
+      // Request mock with raw headers and socket, for exercising how the protocol is resolved.
+      const buildRawReq = (headers: Record<string, string | string[]>, encrypted?: boolean) => {
+        return {
+          headers,
+          socket: encrypted === undefined ? {} : { encrypted },
+        } as unknown as NextApiRequest;
+      };
+
+      test('Uses https from a TLS socket when x-forwarded-proto is missing', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com' }, true);
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Uses http from a plain socket when x-forwarded-proto is missing', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com' });
+
+        expect(validateReturnUrl(req, 'http://acme.myapp.com/dashboard', tenantName, true, rootDomain)).toBe(
+          'http://acme.myapp.com/dashboard'
+        );
+        expect(
+          validateReturnUrl(req, 'https://acme.myapp.com/dashboard', tenantName, true, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Falls back to the socket when x-forwarded-proto is not http or https', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com', 'x-forwarded-proto': 'ftp' }, true);
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Falls back to the socket when x-forwarded-proto is an array', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com', 'x-forwarded-proto': ['https', 'http'] });
+
+        expect(
+          validateReturnUrl(req, 'https://acme.myapp.com/dashboard', tenantName, true, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Uses the first value of a comma-separated x-forwarded-proto', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com', 'x-forwarded-proto': 'https, http' });
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Accepts x-forwarded-proto regardless of case', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com', 'x-forwarded-proto': 'HTTPS' });
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Returns undefined when the host header is missing', () => {
+        const req = buildRawReq({ 'x-forwarded-proto': 'https' });
+
+        expect(validateReturnUrl(req, '/settings', tenantName, true, rootDomain)).toBeUndefined();
+      });
     });
   });
 

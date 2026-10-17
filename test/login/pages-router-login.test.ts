@@ -66,7 +66,7 @@ async function validateLoginStateCookie(
 
   const cookieValue: string = loginStateCookie.value;
   expect(cookieValue).toBeTruthy();
-  const loginState: LoginState = await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET);
+  const loginState = (await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
   expect(loginState.state).toEqual(keyParts[1]);
   expect(searchParams.get('state')).toEqual(keyParts[1]);
   expect(loginState.codeVerifier).toBeTruthy();
@@ -184,7 +184,7 @@ describe('pagesRouter.login()', () => {
 
       const cookieValue: string = loginStateCookie.value;
       expect(cookieValue).toBeTruthy();
-      const loginState: LoginState = await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET);
+      const loginState = (await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
       expect(loginState.state).toEqual(keyParts[1]);
       expect(searchParams.get('state')).toEqual(keyParts[1]);
       expect(loginState.codeVerifier).toBeTruthy();
@@ -409,7 +409,7 @@ describe('pagesRouter.login()', () => {
 
       const cookieValue: string = loginStateCookie.value;
       expect(cookieValue).toBeTruthy();
-      const loginState: LoginState = await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET);
+      const loginState = (await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
       expect(loginState.state).toEqual(keyParts[1]);
       expect(loginState.returnUrl).toBe(`https://devs4you.${parseTenantFromRootDomain}/settings`);
     });
@@ -496,7 +496,7 @@ describe('pagesRouter.login()', () => {
 
       const cookieValue: string = loginStateCookie.value;
       expect(cookieValue).toBeTruthy();
-      const loginState: LoginState = await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET);
+      const loginState = (await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
       expect(loginState.state).toEqual(keyParts[1]);
       expect(searchParams.get('state')).toEqual(keyParts[1]);
     });

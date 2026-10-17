@@ -87,7 +87,7 @@ describe('appRouter.login() - Application-Level Authorization Requests', () => {
       expect(loginStateCookie.samesite).toBe('Lax');
       expect(loginStateCookie.secure).toBe(true);
 
-      const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+      const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
       expect(loginState.state).toEqual(keyParts[1]);
       expect(new URL(authorizeUrl).searchParams.get('state')).toEqual(keyParts[1]);
     });

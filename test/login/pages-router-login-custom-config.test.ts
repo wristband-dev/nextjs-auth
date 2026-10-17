@@ -45,7 +45,7 @@ async function validateLoginStateCookie(mockRes: MockResponse<NextApiResponse>) 
   expect(loginStateCookie.samesite).toBe('Lax');
   expect(loginStateCookie.secure).toBe(true);
 
-  const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+  const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
   expect(loginState.state).toEqual(keyParts[1]);
   expect(loginState.customState).toBeUndefined();
 }
@@ -129,7 +129,7 @@ describe('Custom Login Configurations', () => {
 
           const cookieValue: string = loginStateCookie.value;
           expect(cookieValue).toBeTruthy();
-          const loginState: LoginState = await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET);
+          const loginState = (await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
           expect(loginState.state).toEqual(keyParts[1]);
           expect(searchParams.get('state')).toEqual(keyParts[1]);
           expect(loginState.codeVerifier).toBeTruthy();
@@ -186,7 +186,7 @@ describe('Custom Login Configurations', () => {
           expect(loginStateCookie.samesite).toBe('Lax');
           expect(loginStateCookie.secure).toBe(true);
 
-          const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+          const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
           expect(loginState.state).toEqual(keyParts[1]);
           expect(loginState.customState).toEqual(CUSTOM_STATE);
         });
@@ -664,7 +664,7 @@ describe('Custom Login Configurations', () => {
           const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
           const loginStateCookie = parsedCookies[0];
 
-          const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+          const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
           expect(loginState.returnUrl).toBe(returnUrl);
         });
 
@@ -697,7 +697,7 @@ describe('Custom Login Configurations', () => {
           const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
           const loginStateCookie = parsedCookies[0];
 
-          const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+          const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
           expect(loginState.returnUrl).toBe(returnUrl);
         });
 
@@ -730,7 +730,7 @@ describe('Custom Login Configurations', () => {
           const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
           const loginStateCookie = parsedCookies[0];
 
-          const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+          const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
           expect(loginState.returnUrl).toBe(returnUrl);
         });
 
@@ -764,7 +764,7 @@ describe('Custom Login Configurations', () => {
           const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
           const loginStateCookie = parsedCookies[0];
 
-          const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+          const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
           expect(loginState.returnUrl).toBe(configReturnUrl);
         });
 
@@ -797,7 +797,7 @@ describe('Custom Login Configurations', () => {
           const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
           const loginStateCookie = parsedCookies[0];
 
-          const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+          const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
           expect(loginState.returnUrl).toBe('/query-return-url');
         });
 
@@ -829,11 +829,11 @@ describe('Custom Login Configurations', () => {
           const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
           const loginStateCookie = parsedCookies[0];
 
-          const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+          const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
           expect(loginState.returnUrl).toBeUndefined();
         });
 
-        test(`empty string returnUrl config should not be stored using ${placeholderName}`, async () => {
+        test(`empty string returnUrl config falls back to the return_url query param using ${placeholderName}`, async () => {
           wristbandAuth = createWristbandAuth({
             clientId: CLIENT_ID,
             clientSecret: CLIENT_SECRET,
@@ -862,8 +862,8 @@ describe('Custom Login Configurations', () => {
           const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
           const loginStateCookie = parsedCookies[0];
 
-          const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
-          expect(loginState.returnUrl).toBeUndefined();
+          const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
+          expect(loginState.returnUrl).toBe('/fallback-url');
         });
 
         test(`returnUrl combined with customState using ${placeholderName}`, async () => {
@@ -900,7 +900,7 @@ describe('Custom Login Configurations', () => {
           const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
           const loginStateCookie = parsedCookies[0];
 
-          const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+          const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
           expect(loginState.returnUrl).toBe(returnUrl);
           expect(loginState.customState).toEqual(customState);
         });
@@ -934,7 +934,7 @@ describe('Custom Login Configurations', () => {
           const parsedCookies = parseSetCookies(setCookieHeaders as string | string[]);
           const loginStateCookie = parsedCookies[0];
 
-          const loginState: LoginState = await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET);
+          const loginState = (await decryptLoginState(loginStateCookie.value, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
           expect(loginState.returnUrl).toBe(returnUrl);
         });
       }

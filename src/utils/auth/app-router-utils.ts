@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
-import { AppRouterLoginStateCookie, LoginState, LoginStateMapConfig } from '../../types';
+import { AppRouterLoginStateCookie, LoginConfig } from '../../types';
 import { Base64 } from '../base64';
 import { generateRandomString } from './common-utils';
+import { WristbandError } from '../../error';
 
 function parseCookies(cookieHeader: string | null): Record<string, string> {
   if (!cookieHeader) return {};
@@ -55,27 +56,136 @@ export function resolveTenantCustomDomainParam(request: NextRequest): string {
   return tenantCustomDomainParam[0] || '';
 }
 
-export function createLoginState(
-  request: NextRequest,
-  redirectUri: string,
-  config: LoginStateMapConfig = {}
-): LoginState {
+export function resolveReturnUrl(request: NextRequest, config: LoginConfig = {}): string | undefined {
+  // The return URL from the LoginConfig takes priority over the query param.
+  if (config.returnUrl) {
+    return config.returnUrl;
+  }
+
   const returnUrlParam = request.nextUrl.searchParams.getAll('return_url');
 
   if (returnUrlParam.length > 1) {
     throw new TypeError('More than one [return_url] query parameter was encountered');
   }
 
-  const resolvedReturnUrlParam = returnUrlParam.length > 0 ? returnUrlParam[0] : '';
-  const returnUrl = config.returnUrl ?? resolvedReturnUrlParam;
+  // If no return URL in either location, return undefined.
+  return returnUrlParam[0] || undefined;
+}
 
-  return {
-    state: generateRandomString(32),
-    codeVerifier: generateRandomString(32),
-    redirectUri,
-    ...(!!returnUrl && typeof returnUrl === 'string' ? { returnUrl } : {}),
-    ...(!!config.customState && !!Object.keys(config.customState).length ? { customState: config.customState } : {}),
-  };
+/**
+ * Resolves the protocol the browser used for the incoming request.
+ *
+ * TLS often terminates at a reverse proxy or hosting platform, so the connection
+ * from the proxy to Next.js can be plain HTTP even when the browser used HTTPS.
+ * X-Forwarded-Proto carries the original protocol in that case. Only "http" and
+ * "https" are accepted; anything else falls back to the protocol of the request URL.
+ *
+ * This value is used only to validate the post-callback returnUrl, not to make
+ * access-control decisions.
+ */
+function getRequestProtocol(request: NextRequest): string {
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+
+  if (forwardedProto) {
+    // Proxies may provide a comma-separated list of forwarded protocols.
+    const protocol = forwardedProto.split(',')[0].trim().toLowerCase();
+
+    if (protocol === 'http' || protocol === 'https') {
+      return protocol;
+    }
+  }
+
+  // Web requests have no socket to inspect, so fall back to the protocol of the request URL.
+  return new URL(request.url).protocol === 'https:' ? 'https' : 'http';
+}
+
+/**
+ * Validates the returnUrl that the auth callback could potentially redirect the browser
+ * to after a successful login, preventing open redirects.
+ *
+ * An attacker can supply an arbitrary returnUrl through a crafted login link. The
+ * returnUrl hostname must match either the hostname that served this request or the
+ * configured root domain, so an external host is rejected independently of the
+ * protocol check. The protocol check additionally requires the returnUrl to use the
+ * same scheme as the incoming request as resolved by getRequestProtocol, which blocks
+ * downgrades such as HTTPS to HTTP when that protocol is resolved correctly.
+ *
+ * This helper does not perform the redirect. The validated URL is returned to the
+ * application through the callback result, and the application decides whether and
+ * how to use it. Because applications commonly pass it straight to a redirect, this
+ * validation is the main safeguard against open redirects, not an optional extra.
+ *
+ * Returns the validated URL, or undefined if the returnUrl is missing, malformed, or
+ * points to a host that isn't allowed.
+ */
+export function validateReturnUrl(
+  request: NextRequest,
+  returnUrl: string | undefined,
+  tenantName: string,
+  applicationAuthorizationRequestsEnabled: boolean,
+  parseTenantFromRootDomain?: string
+): string | undefined {
+  // Safety check: a tenant name is required for validation.
+  if (!tenantName) {
+    throw new WristbandError('missing_tenant_name', 'Tenant name is required to validate returnUrl');
+  }
+
+  // A return URL is optional during login.
+  if (!returnUrl) {
+    return undefined;
+  }
+
+  // Read the Host header rather than request.nextUrl, whose host is the server's own
+  // address (e.g. localhost) when running behind a reverse proxy.
+  const host = request.headers.get('host');
+
+  // Without a host, the request origin cannot be established safely.
+  if (!host) {
+    return undefined;
+  }
+
+  try {
+    // Resolve the incoming request's protocol, accounting for reverse proxies.
+    const protocol = getRequestProtocol(request);
+
+    // Parse the request origin using URL rather than splitting the host
+    // on colons, which would mishandle IPv6 addresses and ports.
+    const requestUrl = new URL(`${protocol}://${host}`);
+    const { hostname: requestHostname } = requestUrl;
+
+    // Resolve relative return URLs against the incoming request origin.
+    // Absolute URLs ignore the base. URL parsing normalizes URL syntax
+    // before the redirect target's protocol and hostname are checked.
+    const url = new URL(returnUrl, requestUrl);
+
+    // Only allow redirects to the configured root domain or the exact
+    // hostname that served this request, using the same protocol.
+    // This rejects external hosts and HTTP/HTTPS protocol downgrades.
+    if (
+      url.protocol !== `${protocol}:` ||
+      (url.hostname !== parseTenantFromRootDomain && url.hostname !== requestHostname)
+    ) {
+      return undefined;
+    }
+
+    // When authorization requests are enabled, rewrite a return URL
+    // targeting the root domain to the resolved tenant's subdomain.
+    // The URL API preserves the remaining URL components.
+    if (
+      parseTenantFromRootDomain &&
+      applicationAuthorizationRequestsEnabled &&
+      url.hostname === parseTenantFromRootDomain
+    ) {
+      url.hostname = `${tenantName}.${url.hostname}`;
+      return url.toString();
+    }
+
+    // Preserve the original URL when no tenant rewrite is necessary.
+    return returnUrl;
+  } catch {
+    // Malformed origins or return URLs are treated as unsafe.
+    return undefined;
+  }
 }
 
 export function createLoginStateCookie(

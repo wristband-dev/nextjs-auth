@@ -19,14 +19,16 @@ import {
 } from '../../types';
 import {
   clearLoginStateCookie,
-  createLoginState,
   createLoginStateCookie,
   getAuthorizationUrlParams,
   getLoginStateCookie,
+  resolveReturnUrl,
   resolveTenantCustomDomainParam,
   resolveTenantName,
+  validateReturnUrl,
 } from '../../utils/auth/app-router-utils';
 import {
+  createLoginState,
   decryptLoginState,
   encryptLoginState,
   getAppLevelAuthorizationUrl,
@@ -71,11 +73,10 @@ export class AppRouterAuthHandler {
     const defaultTenantName: string = loginConfig.defaultTenantName || '';
 
     // Create the login state which will be cached in a cookie so that it can be accessed in the callback.
-    const customState =
-      !!loginConfig.customState && !!Object.keys(loginConfig.customState).length ? loginConfig.customState : undefined;
-    const loginState: LoginState = createLoginState(request, redirectUri, {
-      customState,
-      returnUrl: loginConfig.returnUrl,
+    const resolvedReturnUrl = resolveReturnUrl(request, loginConfig);
+    const loginState: LoginState = createLoginState(redirectUri, {
+      customState: loginConfig.customState,
+      returnUrl: resolvedReturnUrl,
     });
 
     // Create the authorization request params needed, regardless if using app-level or tenant-level Authorize Endpoint.
@@ -119,7 +120,7 @@ export class AppRouterAuthHandler {
       return NextResponse.redirect(apploginUrl, REDIRECT_RESPONSE_INIT);
     }
 
-    // Create the tenant-level Wristband Authorize Endpoint URL which the user will get redirectd to.
+    // Create the tenant-level Wristband Authorize Endpoint URL which the user will get redirected to.
     const authorizationParams = await getAuthorizationUrlParams(request, authorizationParamConfig);
     const tenantAuthorizeUrl: string = getTenantLevelAuthorizationUrl(
       wristbandApplicationVanityDomain,
@@ -150,6 +151,8 @@ export class AppRouterAuthHandler {
 
   async callback(request: NextRequest): Promise<CallbackResult> {
     // Fetch our SDK configs
+    const applicationAuthorizationRequestsEnabled =
+      await this.configResolver.getApplicationAuthorizationRequestsEnabled();
     const loginStateSecret = this.configResolver.getLoginStateSecret();
     const loginUrl = await this.configResolver.getLoginUrl();
     const parseTenantFromRootDomain = await this.configResolver.getParseTenantFromRootDomain();
@@ -261,6 +264,15 @@ export class AppRouterAuthHandler {
     const resolvedExpiresIn = expiresIn - (tokenExpirationBuffer || 0);
     const resolvedExpiresAt = Date.now() + resolvedExpiresIn * 1000;
 
+    // Prevent open redirects by validating the returnUrl against allowed hosts.
+    const validatedReturnUrl = validateReturnUrl(
+      request,
+      returnUrl,
+      resolvedTenantName,
+      applicationAuthorizationRequestsEnabled,
+      parseTenantFromRootDomain
+    );
+
     const callbackData: CallbackData = {
       accessToken,
       ...(!!customState && { customState }),
@@ -268,7 +280,7 @@ export class AppRouterAuthHandler {
       expiresIn: resolvedExpiresIn,
       idToken,
       ...(!!refreshToken && { refreshToken }),
-      ...(!!returnUrl && { returnUrl }),
+      ...(!!validatedReturnUrl && { returnUrl: validatedReturnUrl }),
       ...(!!tenantCustomDomainParam && { tenantCustomDomain: tenantCustomDomainParam }),
       tenantName: resolvedTenantName,
       userinfo,

@@ -1,8 +1,9 @@
 import { FetchError, InvalidGrantError, WristbandError } from '../../../src/error';
 import { CryptoError } from '../../../src/error/crypto-error';
-import { LoginState } from '../../../src/types';
+import { LoginState, LoginStateMapConfig } from '../../../src/types';
 import { WristbandService } from '../../../src/wristband-service';
 import {
+  createLoginState,
   decryptLoginState,
   encryptLoginState,
   generateRandomString,
@@ -56,6 +57,80 @@ describe('resolveValidTenantCustomDomain()', () => {
 
     expect(result).toBe('');
     expect(mockWristbandService.validateTenantCustomDomain).toHaveBeenCalledWith('tenant.custom.com');
+  });
+});
+
+describe('createLoginState', () => {
+  const redirectUri = 'https://example.com/callback';
+
+  test('Creates basic login state', () => {
+    const result = createLoginState(redirectUri);
+
+    expect(result.state).toBeDefined();
+    expect(result.codeVerifier).toBeDefined();
+    expect(result.redirectUri).toBe(redirectUri);
+    expect(result.returnUrl).toBeUndefined();
+    expect(result.customState).toBeUndefined();
+  });
+
+  test('Does not include returnUrl or customState keys when not provided', () => {
+    const result = createLoginState(redirectUri, {});
+
+    expect(Object.keys(result).sort()).toEqual(['codeVerifier', 'redirectUri', 'state']);
+  });
+
+  test('Generates a different state and codeVerifier on each call', () => {
+    const result1 = createLoginState(redirectUri);
+    const result2 = createLoginState(redirectUri);
+
+    expect(result1.state).not.toBe(result2.state);
+    expect(result1.codeVerifier).not.toBe(result2.codeVerifier);
+  });
+
+  test('Includes return URL from config', () => {
+    const config: LoginStateMapConfig = { returnUrl: 'https://example.com/dashboard' };
+
+    const result = createLoginState(redirectUri, config);
+
+    expect(result.returnUrl).toBe('https://example.com/dashboard');
+  });
+
+  test('Excludes return URL when it is an empty string', () => {
+    const config: LoginStateMapConfig = { returnUrl: '' };
+
+    const result = createLoginState(redirectUri, config);
+
+    expect(result).not.toHaveProperty('returnUrl');
+  });
+
+  test('Includes custom state from config', () => {
+    const customState = { userId: '123', feature: 'test' };
+    const config: LoginStateMapConfig = { customState };
+
+    const result = createLoginState(redirectUri, config);
+
+    expect(result.customState).toEqual(customState);
+  });
+
+  test('Excludes empty custom state object', () => {
+    const config: LoginStateMapConfig = { customState: {} };
+
+    const result = createLoginState(redirectUri, config);
+
+    expect(result).not.toHaveProperty('customState');
+  });
+
+  test('Includes both return URL and custom state', () => {
+    const customState = { userId: '123' };
+    const config: LoginStateMapConfig = {
+      returnUrl: 'https://example.com/dashboard',
+      customState,
+    };
+
+    const result = createLoginState(redirectUri, config);
+
+    expect(result.returnUrl).toBe('https://example.com/dashboard');
+    expect(result.customState).toEqual(customState);
   });
 });
 

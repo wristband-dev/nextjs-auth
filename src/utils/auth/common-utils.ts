@@ -1,5 +1,5 @@
 import { FetchError, InvalidGrantError, WristbandError } from '../../error';
-import { LoginState, TokenData, TokenResponse } from '../../types';
+import { LoginState, LoginStateMapConfig, TokenData, TokenResponse } from '../../types';
 import { WristbandService } from '../../wristband-service';
 import { Base64 } from '../base64';
 import { CookieCrypto } from '../crypto';
@@ -25,6 +25,16 @@ export async function resolveValidTenantCustomDomain(
 
   const isValid = await wristbandService.validateTenantCustomDomain(tenantCustomDomain);
   return isValid ? tenantCustomDomain : '';
+}
+
+export function createLoginState(redirectUri: string, config: LoginStateMapConfig = {}): LoginState {
+  return {
+    state: generateRandomString(32),
+    codeVerifier: generateRandomString(32),
+    redirectUri,
+    ...(!!config.returnUrl && typeof config.returnUrl === 'string' ? { returnUrl: config.returnUrl } : {}),
+    ...(!!config.customState && !!Object.keys(config.customState).length ? { customState: config.customState } : {}),
+  };
 }
 
 export function getAppLevelLoginUrl(
