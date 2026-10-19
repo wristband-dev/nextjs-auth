@@ -30,6 +30,7 @@ describe('Login - Tenant Custom Domain Validation', () => {
       redirectUri,
       wristbandApplicationVanityDomain,
       autoConfigureEnabled: false,
+      applicationAuthorizationRequestsEnabled: false,
     });
   });
 

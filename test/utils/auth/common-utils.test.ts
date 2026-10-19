@@ -5,11 +5,14 @@ import { WristbandService } from '../../../src/wristband-service';
 import {
   createLoginState,
   decryptLoginState,
+  deriveFallbackLoginUrl,
+  deriveTenantRootDomain,
   encryptLoginState,
   generateRandomString,
   getAppLevelAuthorizationUrl,
   getAppLevelLoginUrl,
   getTenantLevelAuthorizationUrl,
+  isTenantPlaceholderPositionValid,
   refreshExpiredToken,
   resolveValidTenantCustomDomain,
 } from '../../../src/utils/auth/common-utils';
@@ -1023,5 +1026,85 @@ describe('encryptLoginState and decryptLoginState', () => {
     } finally {
       jest.restoreAllMocks();
     }
+  });
+});
+
+describe('deriveFallbackLoginUrl', () => {
+  test('Removes the leading placeholder from the login URL', () => {
+    expect(deriveFallbackLoginUrl('https://{tenant_name}.myapp.com/api/auth/login')).toBe(
+      'https://myapp.com/api/auth/login'
+    );
+  });
+
+  test('Keeps the port, path, and query string', () => {
+    expect(deriveFallbackLoginUrl('http://{tenant_name}.localhost:6001/api/auth/login?x=1')).toBe(
+      'http://localhost:6001/api/auth/login?x=1'
+    );
+  });
+
+  test('Handles a nested root domain', () => {
+    expect(deriveFallbackLoginUrl('https://{tenant_name}.business.myapp.com/login')).toBe(
+      'https://business.myapp.com/login'
+    );
+  });
+
+  test('Returns an empty string when the login URL has no placeholder', () => {
+    expect(deriveFallbackLoginUrl('https://myapp.com/api/auth/login')).toBe('');
+  });
+
+  test('Returns an empty string when the login URL is empty', () => {
+    expect(deriveFallbackLoginUrl('')).toBe('');
+  });
+});
+
+describe('deriveTenantRootDomain', () => {
+  test('Returns the hostname without the leading placeholder', () => {
+    expect(deriveTenantRootDomain('https://{tenant_name}.myapp.com/api/auth/login')).toBe('myapp.com');
+  });
+
+  test('Excludes the port', () => {
+    expect(deriveTenantRootDomain('http://{tenant_name}.localhost:6001/api/auth/login')).toBe('localhost');
+  });
+
+  test('Handles a nested root domain', () => {
+    expect(deriveTenantRootDomain('https://{tenant_name}.business.myapp.com/login')).toBe('business.myapp.com');
+  });
+
+  test('Returns an empty string when the login URL has no placeholder', () => {
+    expect(deriveTenantRootDomain('https://myapp.com/api/auth/login')).toBe('');
+  });
+
+  test('Returns an empty string when the login URL is empty', () => {
+    expect(deriveTenantRootDomain('')).toBe('');
+  });
+});
+
+describe('isTenantPlaceholderPositionValid', () => {
+  test('Returns true when the URL has no placeholder', () => {
+    expect(isTenantPlaceholderPositionValid('https://myapp.com/api/auth/login')).toBe(true);
+  });
+
+  test('Returns true when the placeholder is the leftmost part of the hostname (https)', () => {
+    expect(isTenantPlaceholderPositionValid('https://{tenant_name}.myapp.com/api/auth/login')).toBe(true);
+  });
+
+  test('Returns true when the placeholder is the leftmost part of the hostname (http)', () => {
+    expect(isTenantPlaceholderPositionValid('http://{tenant_name}.localhost:6001/api/auth/login')).toBe(true);
+  });
+
+  test('Returns false when the placeholder is not the leftmost part of the hostname', () => {
+    expect(isTenantPlaceholderPositionValid('https://app.{tenant_name}.myapp.com/api/auth/login')).toBe(false);
+  });
+
+  test('Returns false when the placeholder is in the path', () => {
+    expect(isTenantPlaceholderPositionValid('https://myapp.com/{tenant_name}/api/auth/login')).toBe(false);
+  });
+
+  test('Returns false when the placeholder is the entire hostname', () => {
+    expect(isTenantPlaceholderPositionValid('https://{tenant_name}/api/auth/login')).toBe(false);
+  });
+
+  test('Returns false when the placeholder appears more than once', () => {
+    expect(isTenantPlaceholderPositionValid('https://{tenant_name}.myapp.com/{tenant_name}/login')).toBe(false);
   });
 });

@@ -574,7 +574,6 @@ describe('Callback Errors', () => {
           loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
           loginUrl,
           redirectUri,
-          parseTenantFromRootDomain,
           wristbandApplicationVanityDomain,
           autoConfigureEnabled: false,
         });

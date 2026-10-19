@@ -1,5 +1,6 @@
 /**
  * Represents the configuration for Wristband authentication.
+ *
  * @typedef {Object} AuthConfig
  * @property {boolean} [applicationAuthorizationRequestsEnabled] Flag indicating whether application-level authorization requests are enabled. Defaults to false. If true, for login and logout scenarios where neither a tenant name nor a tenant custom domain can be deduced, then the user will get redirected to the Wristband Authorize Endpoint using the application vanity domain to initiate an app-level authorization request.
  * @property {boolean} [autoConfigureEnabled] Flag that tells the SDK to automatically set some of the SDK configuration values by calling to Wristband's SDK Auto-Configuration Endpoint. Any manually provided configurations will take precedence over the configs returned from the endpoint. Auto-configure is enabled by default. When disabled, if manual configurations are not provided, then an error will be thrown.
@@ -7,12 +8,10 @@
  * @property {string} clientSecret The client secret for the application.
  * @property {string} [customApplicationLoginPageUrl] Custom application login (tenant discovery) page URL if you are self-hosting the application login/tenant discovery UI.
  * @property {boolean} [dangerouslyDisableSecureCookies] If set to true, the "Secure" attribute will not be included in any cookie settings. This should only be done when testing in local development (if necessary).
- * @property {string} [fallbackLoginUrl] Fallback login URL to redirect to in the event the `{tenant_name}` token in your `loginUrl` cannot be resolved. Only applicable when `applicationAuthorizationRequestsEnabled` is true. This value is auto-configured via the SDK Auto-Configuration Endpoint when not manually provided.
- * @property {boolean} [isApplicationCustomDomainActive] Indicates whether custom domains are used for authentication.
+ * @property {boolean} [isApplicationCustomDomainActive] Indicates whether an application-level custom domain is active in your Wristband application.
  * @property {string} [loginStateSecret] A secret (32 or more characters in length) used for encryption and decryption of login state cookies.
  * @property {string} [loginUrl] The URL for initiating the login request.
  * @property {string} [redirectUri] The redirect URI for callback after authentication.
- * @property {string} [parseTenantFromRootDomain] The root domain for your application from which to parse out the tenant name. Indicates whether tenant subdomains are used for authentication. This value is auto-configured via the SDK Auto-Configuration Endpoint when not manually provided.
  * @property {string[]} [scopes] The scopes required for authentication.
  * @property {number} [tokenExpirationBuffer] Buffer time (in seconds) to subtract from the access token’s expiration time. This causes the token to be treated as expired before its actual expiration, helping to avoid token expiration during API calls.
  * @property {string} wristbandApplicationVanityDomain The vanity domain of the Wristband application.
@@ -24,12 +23,10 @@ export type AuthConfig = {
   clientSecret: string;
   customApplicationLoginPageUrl?: string;
   dangerouslyDisableSecureCookies?: boolean;
-  fallbackLoginUrl?: string;
   isApplicationCustomDomainActive?: boolean;
   loginStateSecret?: string;
   loginUrl?: string;
   redirectUri?: string;
-  parseTenantFromRootDomain?: string;
   scopes?: string[];
   tokenExpirationBuffer?: number;
   wristbandApplicationVanityDomain: string;
@@ -239,7 +236,7 @@ export interface UserInfo {
  * @property {Record<string, unknown>} [customState] Custom state data received in the callback.
  * @property {string} [returnUrl] The URL to return to after authentication.
  * @property {string} [tenantCustomDomain] The tenant custom domain for the tenant that the user belongs to.
- * @property {string} [tenantName] The domain name of the tenant the user belongs to.
+ * @property {string} [tenantName] The name of the tenant the user belongs to.
  * @property {UserInfo} userinfo User information received in the callback.
  */
 export type CallbackData = TokenData & {

@@ -4,7 +4,13 @@ import { WristbandService } from '../../wristband-service';
 import { Base64 } from '../base64';
 import { CookieCrypto } from '../crypto';
 import { CryptoError } from '../../error/crypto-error';
-import { LOGIN_STATE_COOKIE_MAX_AGE_SEC, STATE_PARAM_MAX_CHAR_LENGTH } from '../constants';
+import {
+  LEADING_TENANT_PLACEHOLDER_REGEX,
+  LOGIN_STATE_COOKIE_MAX_AGE_SEC,
+  STATE_PARAM_MAX_CHAR_LENGTH,
+  TENANT_NAME_PLACEHOLDER,
+  TENANT_PLACEHOLDER_REGEX,
+} from '../constants';
 
 /**
  * Resolves a tenant custom domain to itself when it is verified and belongs to your Wristband
@@ -240,4 +246,57 @@ export async function decryptLoginState(
     }
     throw error;
   }
+}
+
+/**
+ * Derives the fallback login URL from a login URL that uses the {tenant_name} placeholder.
+ *
+ * The placeholder must be the leftmost part of the hostname, e.g. https://{tenant_name}.example.com/auth/login.
+ * The fallback login URL is the login URL with the placeholder removed, e.g. https://example.com/auth/login.
+ * When the login URL has no placeholder, the result is an empty string.
+ *
+ * @param {string} loginUrl The application's login URL.
+ * @returns {string} The derived fallback login URL, or an empty string.
+ */
+export function deriveFallbackLoginUrl(loginUrl: string): string {
+  if (!loginUrl || !TENANT_PLACEHOLDER_REGEX.test(loginUrl)) {
+    return '';
+  }
+  return loginUrl.replace(`${TENANT_NAME_PLACEHOLDER}.`, '');
+}
+
+/**
+ * Derives the root domain used for parsing tenant subdomains from a login URL that uses the {tenant_name}
+ * placeholder.
+ *
+ * The placeholder must be the leftmost part of the hostname, e.g. https://{tenant_name}.example.com/auth/login.
+ * The root domain is the hostname with the placeholder removed, without any port, e.g. example.com.
+ * When the login URL has no placeholder, the result is an empty string.
+ *
+ * @param {string} loginUrl The application's login URL.
+ * @returns {string} The derived root domain, or an empty string.
+ */
+export function deriveTenantRootDomain(loginUrl: string): string {
+  const fallbackLoginUrl = deriveFallbackLoginUrl(loginUrl);
+  return fallbackLoginUrl ? new URL(fallbackLoginUrl).hostname : '';
+}
+
+/**
+ * Checks that a URL containing the {tenant_name} placeholder has it exactly once, as the leftmost part of the
+ * hostname. URLs without the placeholder are always considered valid.
+ *
+ * @param {string} url The URL to check.
+ * @returns {boolean} True if the placeholder is absent or correctly positioned.
+ */
+export function isTenantPlaceholderPositionValid(url: string): boolean {
+  if (!TENANT_PLACEHOLDER_REGEX.test(url)) {
+    return true;
+  }
+
+  // The placeholder must be at the start of the hostname (e.g. https://{tenant_name}.example.com), and it must
+  // be the only one. Removing that leading placeholder should leave no other {tenant_name} anywhere in the URL.
+  return (
+    LEADING_TENANT_PLACEHOLDER_REGEX.test(url) &&
+    !TENANT_PLACEHOLDER_REGEX.test(url.replace(`${TENANT_NAME_PLACEHOLDER}.`, ''))
+  );
 }

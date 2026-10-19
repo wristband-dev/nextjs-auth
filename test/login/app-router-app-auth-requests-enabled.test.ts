@@ -325,10 +325,8 @@ describe('appRouter.login() - Application-Level Authorization Requests', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         applicationAuthorizationRequestsEnabled: true,
-        fallbackLoginUrl: `https://${wristbandApplicationVanityDomain}/login`,
         autoConfigureEnabled: false,
       });
 
@@ -360,10 +358,8 @@ describe('appRouter.login() - Application-Level Authorization Requests', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         applicationAuthorizationRequestsEnabled: true,
-        fallbackLoginUrl: `https://${wristbandApplicationVanityDomain}/login`,
         autoConfigureEnabled: false,
       });
 
@@ -414,10 +410,8 @@ describe('appRouter.login() - Application-Level Authorization Requests', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         applicationAuthorizationRequestsEnabled: true,
-        fallbackLoginUrl: `https://${wristbandApplicationVanityDomain}/login`,
         autoConfigureEnabled: false,
       });
 
@@ -447,10 +441,8 @@ describe('appRouter.login() - Application-Level Authorization Requests', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         applicationAuthorizationRequestsEnabled: true,
-        fallbackLoginUrl: `https://${wristbandApplicationVanityDomain}/login`,
         autoConfigureEnabled: false,
       });
 
@@ -499,7 +491,6 @@ describe('appRouter.login() - Application-Level Authorization Requests', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         applicationAuthorizationRequestsEnabled: false,
         autoConfigureEnabled: false,

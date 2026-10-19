@@ -12,40 +12,35 @@ describe('appRouter.logout() - Application-Level Authorization Requests', () => 
   });
 
   describe('Tenant subdomain configuration (loginUrl contains a placeholder)', () => {
-    describe.each([['{tenant_name}']])('with %s placeholder', (placeholder) => {
-      test('Falls back to fallbackLoginUrl when tenant cannot be resolved', async () => {
-        const parseTenantFromRootDomain = 'business.invotastic.com';
-        const wristbandApplicationVanityDomain = 'auth.invotastic.com';
-        const loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        const redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
-        const fallbackLoginUrl = 'https://fallback.invotastic.com/login';
+    test('Falls back to the fallback login URL derived from loginUrl when tenant cannot be resolved', async () => {
+      const parseTenantFromRootDomain = 'business.invotastic.com';
+      const wristbandApplicationVanityDomain = 'auth.invotastic.com';
+      const loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      const redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
-        wristbandAuth = createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl,
-          redirectUri,
-          parseTenantFromRootDomain,
-          wristbandApplicationVanityDomain,
-          applicationAuthorizationRequestsEnabled: true,
-          fallbackLoginUrl,
-          autoConfigureEnabled: false,
-        });
-
-        // No subdomain present on the host, so tenant cannot be resolved
-        const { req } = createMocks({
-          method: 'GET',
-          url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
-          headers: { host: parseTenantFromRootDomain },
-        });
-        const mockNextRequest = createMockNextRequest(req);
-
-        const response = await wristbandAuth.appRouter.logout(mockNextRequest);
-
-        expect(response.status).toBe(302);
-        expect(response.headers.get('location')).toBe(fallbackLoginUrl);
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        applicationAuthorizationRequestsEnabled: true,
+        autoConfigureEnabled: false,
       });
+
+      // No subdomain present on the host, so tenant cannot be resolved
+      const { req } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: parseTenantFromRootDomain },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const response = await wristbandAuth.appRouter.logout(mockNextRequest);
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe(`https://${parseTenantFromRootDomain}/api/auth/login`);
     });
   });
 
@@ -86,7 +81,6 @@ describe('appRouter.logout() - Application-Level Authorization Requests', () => 
       const wristbandApplicationVanityDomain = 'auth.invotastic.com';
       const loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
       const redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
-      const fallbackLoginUrl = 'https://fallback.invotastic.com/login';
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -94,10 +88,8 @@ describe('appRouter.logout() - Application-Level Authorization Requests', () => 
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         applicationAuthorizationRequestsEnabled: true,
-        fallbackLoginUrl,
         autoConfigureEnabled: false,
       });
 
@@ -122,7 +114,6 @@ describe('appRouter.logout() - Application-Level Authorization Requests', () => 
       const wristbandApplicationVanityDomain = 'auth.invotastic.com';
       const loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
       const redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
-      const fallbackLoginUrl = 'https://fallback.invotastic.com/login';
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -130,10 +121,8 @@ describe('appRouter.logout() - Application-Level Authorization Requests', () => 
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         applicationAuthorizationRequestsEnabled: true,
-        fallbackLoginUrl,
         autoConfigureEnabled: false,
       });
 

@@ -1,7 +1,7 @@
 import { SessionData } from '@wristband/typescript-session';
 import { saveSessionWithCookies } from '../../src/session/from-cookies-session';
 import { WristbandError } from '../../src/error';
-import { NextJsCookieStore, ReadonlySession, SERVER_COMPONENT_SESSION } from '../../src/types';
+import { NextJsCookieStore, ReadOnlySession, SERVER_COMPONENT_SESSION } from '../../src/types';
 
 describe('saveSessionWithCookies', () => {
   let mockCookieStore: NextJsCookieStore;
@@ -49,7 +49,7 @@ describe('saveSessionWithCookies', () => {
       });
     }
 
-    return session as ReadonlySession<SessionData> & SessionData;
+    return session as ReadOnlySession<SessionData> & SessionData;
   };
 
   describe('Happy Path', () => {
@@ -146,7 +146,7 @@ describe('saveSessionWithCookies', () => {
         };
       }
 
-      const session = createMockSession() as ReadonlySession<CustomSessionData> & CustomSessionData;
+      const session = createMockSession() as ReadOnlySession<CustomSessionData> & CustomSessionData;
 
       await saveSessionWithCookies(mockCookieStore, session);
 

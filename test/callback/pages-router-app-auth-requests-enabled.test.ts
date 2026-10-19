@@ -14,7 +14,7 @@ describe('pagesRouter.callback() - Application-Level Authorization Requests', ()
     mockWristbandFetch();
   });
 
-  test('Clears the app-level login state cookie with a Domain attribute matching parseTenantFromRootDomain', async () => {
+  test('Clears the app-level login state cookie with a Domain attribute matching the root domain derived from loginUrl', async () => {
     const parseTenantFromRootDomain = 'business.invotastic.com';
     const wristbandApplicationVanityDomain = 'auth.invotastic.com';
     const loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
@@ -26,10 +26,8 @@ describe('pagesRouter.callback() - Application-Level Authorization Requests', ()
       loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
       loginUrl,
       redirectUri,
-      parseTenantFromRootDomain,
       wristbandApplicationVanityDomain,
       applicationAuthorizationRequestsEnabled: true,
-      fallbackLoginUrl: `https://${wristbandApplicationVanityDomain}/login`,
       autoConfigureEnabled: false,
     });
 
@@ -70,7 +68,7 @@ describe('pagesRouter.callback() - Application-Level Authorization Requests', ()
     expect(clearedCookie.domain).toBe(`.${parseTenantFromRootDomain}`);
   });
 
-  test('Clears the tenant-level login state cookie with a Domain attribute matching parseTenantFromRootDomain', async () => {
+  test('Clears the tenant-level login state cookie with a Domain attribute matching the root domain derived from loginUrl', async () => {
     const parseTenantFromRootDomain = 'business.invotastic.com';
     const wristbandApplicationVanityDomain = 'auth.invotastic.com';
     const loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
@@ -82,10 +80,8 @@ describe('pagesRouter.callback() - Application-Level Authorization Requests', ()
       loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
       loginUrl,
       redirectUri,
-      parseTenantFromRootDomain,
       wristbandApplicationVanityDomain,
       applicationAuthorizationRequestsEnabled: true,
-      fallbackLoginUrl: `https://${wristbandApplicationVanityDomain}/login`,
       autoConfigureEnabled: false,
     });
 
@@ -127,7 +123,7 @@ describe('pagesRouter.callback() - Application-Level Authorization Requests', ()
     expect(clearedCookie.domain).toBe(`.${parseTenantFromRootDomain}`);
   });
 
-  test('Clears the login state cookie without a Domain attribute when parseTenantFromRootDomain is not set', async () => {
+  test('Clears the login state cookie without a Domain attribute when loginUrl has no tenant placeholder', async () => {
     const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
     const loginUrl = 'https://localhost:6001/api/auth/login';
     const redirectUri = 'https://localhost:6001/api/auth/callback';
@@ -177,7 +173,7 @@ describe('pagesRouter.callback() - Application-Level Authorization Requests', ()
     expect(clearedCookie.domain).toBeUndefined();
   });
 
-  test('Clears the tenant-level login state cookie without a Domain attribute when parseTenantFromRootDomain is not set', async () => {
+  test('Clears the tenant-level login state cookie without a Domain attribute when loginUrl has no tenant placeholder', async () => {
     const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
     const loginUrl = 'https://localhost:6001/api/auth/login';
     const redirectUri = 'https://localhost:6001/api/auth/callback';
@@ -236,16 +232,16 @@ describe('pagesRouter.callback() - Application-Level Authorization Requests', ()
     const loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
     const redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
-    // applicationAuthorizationRequestsEnabled intentionally omitted (defaults to false)
+    // applicationAuthorizationRequestsEnabled explicitly disabled (it defaults to true)
     wristbandAuth = createWristbandAuth({
       clientId: CLIENT_ID,
       clientSecret: CLIENT_SECRET,
       loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
       loginUrl,
       redirectUri,
-      parseTenantFromRootDomain,
       isApplicationCustomDomainActive: true,
       wristbandApplicationVanityDomain,
+      applicationAuthorizationRequestsEnabled: false,
       autoConfigureEnabled: false,
     });
 
@@ -297,10 +293,8 @@ describe('pagesRouter.callback() - Application-Level Authorization Requests', ()
       loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
       loginUrl,
       redirectUri,
-      parseTenantFromRootDomain,
       wristbandApplicationVanityDomain,
       applicationAuthorizationRequestsEnabled: true,
-      fallbackLoginUrl: `https://${wristbandApplicationVanityDomain}/login`,
       autoConfigureEnabled: false,
     });
 

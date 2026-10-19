@@ -20,11 +20,11 @@
   "source": "./src/index.ts",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
-  "types": "./dist/types/index.d.js",
+  "types": "./dist/types/index.d.ts",
   "exports": {
+    "types": "./dist/types/index.d.ts",
     "import": "./dist/esm/index.js",
     "require": "./dist/cjs/index.js",
-    "types": "./dist/types/index.d.ts",
     "default": "./dist/esm/index.js"
   },
   "files": [
@@ -79,9 +79,9 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^20.19.43",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@typescript-eslint/eslint-plugin": "^8.71.0",
     "@typescript-eslint/parser": "^8.71.0",
     "eslint": "^8.57.1",

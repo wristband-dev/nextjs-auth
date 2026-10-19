@@ -33,10 +33,8 @@ describe('appRouter.createCallbackResponse() - Application-Level Authorization R
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         applicationAuthorizationRequestsEnabled: true,
-        fallbackLoginUrl: `https://${wristbandApplicationVanityDomain}/login`,
         autoConfigureEnabled: false,
       });
 
@@ -70,10 +68,8 @@ describe('appRouter.createCallbackResponse() - Application-Level Authorization R
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         applicationAuthorizationRequestsEnabled: true,
-        fallbackLoginUrl: `https://${wristbandApplicationVanityDomain}/login`,
         autoConfigureEnabled: false,
       });
 
@@ -107,7 +103,6 @@ describe('appRouter.createCallbackResponse() - Application-Level Authorization R
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         applicationAuthorizationRequestsEnabled: false,
         autoConfigureEnabled: false,
@@ -137,7 +132,6 @@ describe('appRouter.createCallbackResponse() - Application-Level Authorization R
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         applicationAuthorizationRequestsEnabled: false,
         autoConfigureEnabled: false,

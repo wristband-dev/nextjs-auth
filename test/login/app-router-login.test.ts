@@ -196,10 +196,10 @@ describe('appRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Create mock request
@@ -256,6 +256,7 @@ describe('appRouter.login()', () => {
         redirectUri,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // tenant_name and tenant_custom_domain query param is missing, which should redirect to app-level login.
@@ -476,10 +477,10 @@ describe('appRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Subdomain is missing from host, which should redirect to app-level login.
@@ -510,11 +511,11 @@ describe('appRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         customApplicationLoginPageUrl: 'https://google.com',
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Subdomain is missing from host, which should redirect to app-level login.
@@ -543,7 +544,6 @@ describe('appRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
@@ -578,7 +578,6 @@ describe('appRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         customApplicationLoginPageUrl: 'https://google.com',

@@ -204,9 +204,9 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Create mock request and response
@@ -231,7 +231,7 @@ describe('pagesRouter.login()', () => {
       await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
 
       // App-level authorization requests are not enabled, so the cookie stays host-only
-      // even though parseTenantFromRootDomain is set.
+      // even though the loginUrl contains the tenant placeholder.
       const parsedCookies = parseSetCookies(mockRes.getHeader('Set-Cookie') as string | string[]);
       expect(parsedCookies[0].domain).toBeUndefined();
     });
@@ -248,10 +248,10 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Create mock request and response
@@ -288,10 +288,10 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Create mock request and response
@@ -359,10 +359,10 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Create mock request and response
@@ -426,10 +426,10 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Mock login states
@@ -512,6 +512,7 @@ describe('pagesRouter.login()', () => {
         redirectUri,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // tenant_name and tenant_custom_domain query param is missing, which should redirect to app-level login.
@@ -736,10 +737,10 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Subdomain is missing from host, which should redirect to app-level login.
@@ -772,11 +773,11 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         customApplicationLoginPageUrl: 'https://google.com',
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Subdomain is missing from host, which should redirect to app-level login.
@@ -806,7 +807,6 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
@@ -842,7 +842,6 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         customApplicationLoginPageUrl: 'https://google.com',

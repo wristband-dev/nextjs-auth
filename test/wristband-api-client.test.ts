@@ -123,7 +123,7 @@ describe('WristbandApiClient', () => {
     it('should merge custom headers with default headers for POST', async () => {
       const mockResponse = { created: true };
       const customHeaders = { Authorization: 'Bearer token456' };
-      const requestBody = { name: 'test' };
+      const requestBody = 'name=test';
 
       mockFetch.mockResolvedValueOnce({
         status: 201,
@@ -244,7 +244,7 @@ describe('WristbandApiClient', () => {
 
       mockFetch.mockResolvedValueOnce(mockResponse as any);
 
-      await expect(client.post('/test-endpoint', {})).rejects.toThrow(FetchError);
+      await expect(client.post('/test-endpoint', '')).rejects.toThrow(FetchError);
     });
 
     it('should pass response and parsed body to FetchError', async () => {
@@ -257,7 +257,7 @@ describe('WristbandApiClient', () => {
       mockFetch.mockResolvedValueOnce(mockResponse as any);
 
       try {
-        await client.post('/test-endpoint', {});
+        await client.post('/test-endpoint', '');
       } catch (error) {
         expect(error).toBeInstanceOf(FetchError);
         expect((error as FetchError<any>).response).toBe(mockResponse);
@@ -321,7 +321,8 @@ describe('WristbandApiClient', () => {
         text: jest.fn().mockResolvedValue(JSON.stringify(mockResponse)),
       } as any);
 
-      await client.post('/test-endpoint', null);
+      // post() is typed to take BodyInit, so null needs a cast; this checks it is passed through unchanged.
+      await client.post('/test-endpoint', null as unknown as BodyInit);
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.any(String),

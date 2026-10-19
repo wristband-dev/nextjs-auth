@@ -305,7 +305,6 @@ export function clearLoginStateCookie(
   dangerouslyDisableSecureCookies: boolean,
   domain?: string
 ): void {
-  // NOTE: Due to a bug in iron, we set both maxAge and Expires
   const cookieAttributes: string = [
     `${cookieName}=`,
     'Path=/',
