@@ -21,7 +21,7 @@ import {
   validateReturnUrl,
 } from '../../utils/auth/pages-router-utils';
 import { InvalidGrantError, WristbandError } from '../../error';
-import { LOGIN_REQUIRED_ERROR, TENANT_PLACEHOLDER_REGEX } from '../../utils/constants';
+import { LOGIN_REQUIRED_ERROR, STATE_PARAM_MAX_CHAR_LENGTH, TENANT_PLACEHOLDER_REGEX } from '../../utils/constants';
 import { ConfigResolver } from '../../config-resolver';
 import {
   createLoginState,
@@ -105,7 +105,10 @@ export class PagesRouterAuthHandler {
       }
 
       // For the login URL scenario, we don't actually want to touch any login state cookies.
-      return getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, customApplicationLoginPageUrl);
+      return getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {
+        customApplicationLoginPageUrl,
+        returnUrl: resolvedReturnUrl,
+      });
     }
 
     // Clear any stale login state cookies and add a new one for the current request.
@@ -305,8 +308,8 @@ export class PagesRouterAuthHandler {
       }
     }
 
-    if (logoutConfig.state && logoutConfig.state.length > 512) {
-      throw new TypeError('The [state] logout config cannot exceed 512 characters.');
+    if (logoutConfig.state && logoutConfig.state.length > STATE_PARAM_MAX_CHAR_LENGTH) {
+      throw new TypeError(`The [state] logout config cannot exceed ${STATE_PARAM_MAX_CHAR_LENGTH} characters.`);
     }
 
     // The client ID is always required by the Wristband Logout Endpoint.
@@ -355,6 +358,6 @@ export class PagesRouterAuthHandler {
 
     // 7a) If a custom page URL is set, fallback to that appropriate Application-Level Login when tenant cannot be resolved.
     // 7b) Finally, fallback to the Wristband-hosted Application-Level Login Page when tenant cannot be resolved.
-    return getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, customApplicationLoginPageUrl);
+    return getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, { customApplicationLoginPageUrl });
   }
 }

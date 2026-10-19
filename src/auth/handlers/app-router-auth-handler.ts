@@ -37,7 +37,12 @@ import {
   refreshExpiredToken,
   resolveValidTenantCustomDomain,
 } from '../../utils/auth/common-utils';
-import { LOGIN_REQUIRED_ERROR, REDIRECT_RESPONSE_INIT, TENANT_PLACEHOLDER_REGEX } from '../../utils/constants';
+import {
+  LOGIN_REQUIRED_ERROR,
+  REDIRECT_RESPONSE_INIT,
+  STATE_PARAM_MAX_CHAR_LENGTH,
+  TENANT_PLACEHOLDER_REGEX,
+} from '../../utils/constants';
 import { WristbandService } from '../../wristband-service';
 
 export class AppRouterAuthHandler {
@@ -112,11 +117,10 @@ export class AppRouterAuthHandler {
       }
 
       // For the login URL scenario, we don't actually want to touch any login state cookies.
-      const apploginUrl = getAppLevelLoginUrl(
-        wristbandApplicationVanityDomain,
-        clientId,
-        customApplicationLoginPageUrl
-      );
+      const apploginUrl = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {
+        customApplicationLoginPageUrl,
+        returnUrl: resolvedReturnUrl,
+      });
       return NextResponse.redirect(apploginUrl, REDIRECT_RESPONSE_INIT);
     }
 
@@ -341,8 +345,8 @@ export class AppRouterAuthHandler {
       }
     }
 
-    if (logoutConfig.state && logoutConfig.state.length > 512) {
-      throw new TypeError('The [state] logout config cannot exceed 512 characters.');
+    if (logoutConfig.state && logoutConfig.state.length > STATE_PARAM_MAX_CHAR_LENGTH) {
+      throw new TypeError(`The [state] logout config cannot exceed ${STATE_PARAM_MAX_CHAR_LENGTH} characters.`);
     }
 
     // The client ID is always required by the Wristband Logout Endpoint.
@@ -400,7 +404,9 @@ export class AppRouterAuthHandler {
 
     // 7a) If a custom page URL is set, fallback to that appropriate Application-Level Login when tenant cannot be resolved.
     // 7b) Finally, fallback to the Wristband-hosted Application-Level Login Page when tenant cannot be resolved.
-    const apploginUrl = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, customApplicationLoginPageUrl);
+    const apploginUrl = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {
+      customApplicationLoginPageUrl,
+    });
     return NextResponse.redirect(apploginUrl, REDIRECT_RESPONSE_INIT);
   }
 

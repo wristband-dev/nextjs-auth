@@ -4,7 +4,7 @@ import { WristbandService } from '../../wristband-service';
 import { Base64 } from '../base64';
 import { CookieCrypto } from '../crypto';
 import { CryptoError } from '../../error/crypto-error';
-import { LOGIN_STATE_COOKIE_MAX_AGE_SEC } from '../constants';
+import { LOGIN_STATE_COOKIE_MAX_AGE_SEC, STATE_PARAM_MAX_CHAR_LENGTH } from '../constants';
 
 /**
  * Resolves a tenant custom domain to itself when it is verified and belongs to your Wristband
@@ -40,7 +40,10 @@ export function createLoginState(redirectUri: string, config: LoginStateMapConfi
 export function getAppLevelLoginUrl(
   wristbandApplicationVanityDomain: string,
   clientId: string,
-  customApplicationLoginPageUrl?: string
+  options: {
+    customApplicationLoginPageUrl?: string;
+    returnUrl?: string;
+  } = {}
 ): string {
   // Safety check: this should never happen.
   if (!wristbandApplicationVanityDomain) {
@@ -50,8 +53,12 @@ export function getAppLevelLoginUrl(
     throw new Error('clientId cannot be null or undefined');
   }
 
+  const { customApplicationLoginPageUrl, returnUrl } = options;
+
   const apploginUrl = customApplicationLoginPageUrl || `https://${wristbandApplicationVanityDomain}/login`;
-  return `${apploginUrl}?client_id=${clientId}`;
+  const stateParam =
+    returnUrl && returnUrl.length <= STATE_PARAM_MAX_CHAR_LENGTH ? `&state=${encodeURIComponent(returnUrl)}` : '';
+  return `${apploginUrl}?client_id=${clientId}${stateParam}`;
 }
 
 export function getAppLevelAuthorizationUrl(

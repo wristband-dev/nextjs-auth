@@ -14,6 +14,7 @@ import {
   resolveValidTenantCustomDomain,
 } from '../../../src/utils/auth/common-utils';
 import { CookieCrypto } from '../../../src/utils/crypto';
+import { STATE_PARAM_MAX_CHAR_LENGTH } from '../../../src/utils/constants';
 
 // Mock WristbandService
 jest.mock('../../../src/wristband-service');
@@ -135,26 +136,96 @@ describe('createLoginState', () => {
 });
 
 describe('getAppLevelLoginUrl()', () => {
-  test('should throw Error when wristbandApplicationVanityDomain is empty', () => {
+  const wristbandApplicationVanityDomain = 'auth.example.com';
+  const clientId = 'test-client-id';
+
+  test('Returns Wristband-hosted app login URL when no options are provided', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId);
+
+    expect(result).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${clientId}`);
+  });
+
+  test('Returns Wristband-hosted app login URL when an empty options object is provided', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {});
+
+    expect(result).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${clientId}`);
+  });
+
+  test('Returns custom application login page URL with client_id appended when provided', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {
+      customApplicationLoginPageUrl: 'https://custom.example.com/login',
+    });
+
+    expect(result).toBe(`https://custom.example.com/login?client_id=${clientId}`);
+  });
+
+  test('Appends the return URL as the state query parameter', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {
+      returnUrl: '/settings',
+    });
+
+    expect(result).toBe(
+      `https://${wristbandApplicationVanityDomain}/login?client_id=${clientId}&state=${encodeURIComponent('/settings')}`
+    );
+  });
+
+  test('URL-encodes the return URL so its own query params do not leak into the login URL', () => {
+    const returnUrl = 'https://app.example.com/settings?tab=billing&x=1#top';
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, { returnUrl });
+
+    const { searchParams } = new URL(result);
+    expect(searchParams.get('client_id')).toBe(clientId);
+    expect(searchParams.get('state')).toBe(returnUrl);
+    expect(searchParams.has('tab')).toBe(false);
+    expect(searchParams.has('x')).toBe(false);
+    expect(result).toContain(`&state=${encodeURIComponent(returnUrl)}`);
+  });
+
+  test('Appends the return URL to the custom application login page URL', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {
+      customApplicationLoginPageUrl: 'https://custom.example.com/login',
+      returnUrl: '/dashboard',
+    });
+
+    expect(result).toBe(
+      `https://custom.example.com/login?client_id=${clientId}&state=${encodeURIComponent('/dashboard')}`
+    );
+  });
+
+  test('Includes the return URL when it is exactly the max state length', () => {
+    const returnUrl = `/${'a'.repeat(STATE_PARAM_MAX_CHAR_LENGTH - 1)}`;
+    expect(returnUrl).toHaveLength(STATE_PARAM_MAX_CHAR_LENGTH);
+
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, { returnUrl });
+
+    expect(new URL(result).searchParams.get('state')).toBe(returnUrl);
+  });
+
+  test('Drops the return URL when it exceeds the max state length', () => {
+    const returnUrl = `/${'a'.repeat(STATE_PARAM_MAX_CHAR_LENGTH)}`;
+    expect(returnUrl).toHaveLength(STATE_PARAM_MAX_CHAR_LENGTH + 1);
+
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, { returnUrl });
+
+    expect(result).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${clientId}`);
+  });
+
+  test('Does not append state when the return URL is an empty string', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, { returnUrl: '' });
+
+    expect(result).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${clientId}`);
+  });
+
+  test('Throws error when wristbandApplicationVanityDomain is missing', () => {
     expect(() => {
-      return getAppLevelLoginUrl('', 'clientId');
+      return getAppLevelLoginUrl('', clientId);
     }).toThrow('wristbandApplicationVanityDomain cannot be null or undefined');
   });
 
-  test('should throw Error when clientId is empty', () => {
+  test('Throws error when clientId is missing', () => {
     expect(() => {
-      return getAppLevelLoginUrl('auth.invotastic.com', '');
+      return getAppLevelLoginUrl(wristbandApplicationVanityDomain, '');
     }).toThrow('clientId cannot be null or undefined');
-  });
-
-  test('should build the Wristband-hosted app-level login URL when no custom page URL is provided', () => {
-    const url = getAppLevelLoginUrl('auth.invotastic.com', 'clientId');
-    expect(url).toBe('https://auth.invotastic.com/login?client_id=clientId');
-  });
-
-  test('should use the custom application login page URL when provided', () => {
-    const url = getAppLevelLoginUrl('auth.invotastic.com', 'clientId', 'https://business.invotastic.com/custom-login');
-    expect(url).toBe('https://business.invotastic.com/custom-login?client_id=clientId');
   });
 });
 
