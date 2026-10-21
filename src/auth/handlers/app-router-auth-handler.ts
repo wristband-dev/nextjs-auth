@@ -6,7 +6,7 @@ import { ConfigResolver } from '../../config-resolver';
 import { InvalidGrantError, WristbandError } from '../../error';
 import { getMutableSessionFromCookies, saveSessionWithCookies } from '../../session';
 import {
-  CallbackResult,
+  AppRouterCallbackResult,
   LoginConfig,
   LogoutConfig,
   LoginState,
@@ -18,13 +18,14 @@ import {
   ServerActionAuthResult,
 } from '../../types';
 import {
-  clearLoginStateCookie,
+  createCallbackRedirectResponse,
   createLoginStateCookie,
   getAuthorizationUrlParams,
   getLoginStateCookie,
   resolveReturnUrl,
   resolveTenantCustomDomainParam,
   resolveTenantName,
+  toAbsoluteUrl,
   validateReturnUrl,
 } from '../../utils/auth/app-router-utils';
 import {
@@ -153,10 +154,14 @@ export class AppRouterAuthHandler {
     return tenantAuthorizeResponse;
   }
 
-  async callback(request: NextRequest): Promise<CallbackResult> {
+  async callback(
+    request: NextRequest,
+    resolveRedirectUrl: (request: NextRequest, callbackData: CallbackData) => string | Promise<string>
+  ): Promise<AppRouterCallbackResult> {
     // Fetch our SDK configs
     const applicationAuthorizationRequestsEnabled =
       await this.configResolver.getApplicationAuthorizationRequestsEnabled();
+    const dangerouslyDisableSecureCookies = this.configResolver.getDangerouslyDisableSecureCookies();
     const loginStateSecret = this.configResolver.getLoginStateSecret();
     const loginUrl = await this.configResolver.getLoginUrl();
     const parseTenantFromRootDomain = await this.configResolver.getParseTenantFromRootDomain();
@@ -215,26 +220,70 @@ export class AppRouterAuthHandler {
       tenantLoginUrl = `${tenantLoginUrl}${parseTenantFromRootDomain ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
     }
 
-    // Make sure the login state cookie exists.
+    // The login state cookie is cleared on every redirect response, if it exists.
     const loginStateCookie: AppRouterLoginStateCookie | null = getLoginStateCookie(request);
+
+    // Determine whether to use the root domain for clearing the login state cookie.
+    const cookieDomain =
+      applicationAuthorizationRequestsEnabled && parseTenantFromRootDomain
+        ? `.${parseTenantFromRootDomain}`
+        : undefined;
+
+    // Make sure the login state cookie exists.
     if (!loginStateCookie) {
-      return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'missing_login_state' };
+      return {
+        type: 'redirect_required',
+        reason: 'missing_login_state',
+        response: createCallbackRedirectResponse(
+          tenantLoginUrl,
+          loginStateCookie,
+          dangerouslyDisableSecureCookies,
+          cookieDomain
+        ),
+      };
     }
 
     // Extract the login state from the cookie.
     const loginState: LoginState | null = await decryptLoginState(loginStateCookie.value, loginStateSecret);
     if (!loginState) {
-      return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'invalid_login_state' };
+      return {
+        type: 'redirect_required',
+        reason: 'invalid_login_state',
+        response: createCallbackRedirectResponse(
+          tenantLoginUrl,
+          loginStateCookie,
+          dangerouslyDisableSecureCookies,
+          cookieDomain
+        ),
+      };
     }
     const { codeVerifier, customState, redirectUri, returnUrl, state: cookieState } = loginState;
 
     // Check for any potential error conditions
     if (paramState !== cookieState) {
-      return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'invalid_login_state' };
+      return {
+        type: 'redirect_required',
+        reason: 'invalid_login_state',
+        response: createCallbackRedirectResponse(
+          tenantLoginUrl,
+          loginStateCookie,
+          dangerouslyDisableSecureCookies,
+          cookieDomain
+        ),
+      };
     }
     if (error) {
       if (error.toLowerCase() === LOGIN_REQUIRED_ERROR) {
-        return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'login_required' };
+        return {
+          type: 'redirect_required',
+          reason: 'login_required',
+          response: createCallbackRedirectResponse(
+            tenantLoginUrl,
+            loginStateCookie,
+            dangerouslyDisableSecureCookies,
+            cookieDomain
+          ),
+        };
       }
       throw new WristbandError(error, errorDescription || '');
     }
@@ -249,7 +298,16 @@ export class AppRouterAuthHandler {
       tokenResponse = await this.wristbandService.getTokens(code, redirectUri, codeVerifier);
     } catch (err: unknown) {
       if (err instanceof InvalidGrantError) {
-        return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'invalid_grant' };
+        return {
+          type: 'redirect_required',
+          reason: 'invalid_grant',
+          response: createCallbackRedirectResponse(
+            tenantLoginUrl,
+            loginStateCookie,
+            dangerouslyDisableSecureCookies,
+            cookieDomain
+          ),
+        };
       }
       throw new WristbandError('unexpected_error', 'Unexpected error', err instanceof Error ? err : undefined);
     }
@@ -289,38 +347,24 @@ export class AppRouterAuthHandler {
       tenantName: resolvedTenantName,
       userinfo,
     };
-    return { type: 'completed', callbackData };
-  }
 
-  async createCallbackResponse(request: NextRequest, redirectUrl: string): Promise<NextResponse> {
-    // Fetch our SDK configs
-    const applicationAuthorizationRequestsEnabled =
-      await this.configResolver.getApplicationAuthorizationRequestsEnabled();
-    const dangerouslyDisableSecureCookies = this.configResolver.getDangerouslyDisableSecureCookies();
-    const parseTenantFromRootDomain = await this.configResolver.getParseTenantFromRootDomain();
-
+    // Let the application decide where to send the user after a successful login.
+    const redirectUrl = await resolveRedirectUrl(request, callbackData);
     if (!redirectUrl) {
-      throw new TypeError('redirectUrl cannot be null or empty');
+      throw new TypeError('resolveRedirectUrl must return a non-empty URL');
     }
 
-    const redirectResponse = NextResponse.redirect(redirectUrl, REDIRECT_RESPONSE_INIT);
-
-    const loginStateCookie: AppRouterLoginStateCookie | null = getLoginStateCookie(request);
-    if (loginStateCookie) {
-      // Determine whether to use the root domain for clearing the login state cookie.
-      const cookieDomain =
-        applicationAuthorizationRequestsEnabled && parseTenantFromRootDomain
-          ? `.${parseTenantFromRootDomain}`
-          : undefined;
-      await clearLoginStateCookie(
-        redirectResponse,
-        loginStateCookie.name,
+    // NextResponse.redirect() only accepts absolute URLs, so relative URLs are converted first.
+    return {
+      type: 'completed',
+      callbackData,
+      response: createCallbackRedirectResponse(
+        toAbsoluteUrl(request, redirectUrl),
+        loginStateCookie,
         dangerouslyDisableSecureCookies,
         cookieDomain
-      );
-    }
-
-    return redirectResponse;
+      ),
+    };
   }
 
   async logout(request: NextRequest, logoutConfig: LogoutConfig = {}): Promise<NextResponse> {

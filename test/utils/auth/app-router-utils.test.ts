@@ -5,10 +5,12 @@ import {
   resolveTenantCustomDomainParam,
   resolveReturnUrl,
   validateReturnUrl,
+  toAbsoluteUrl,
   createLoginStateCookie,
   getAuthorizationUrlParams,
   getLoginStateCookie,
   clearLoginStateCookie,
+  createCallbackRedirectResponse,
 } from '../../../src/utils/auth/app-router-utils';
 import { createMockNextRequest, CLIENT_ID } from '../../test-utils';
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
@@ -569,6 +571,71 @@ describe('validateReturnUrl', () => {
   });
 });
 
+describe('toAbsoluteUrl', () => {
+  test('Resolves a relative path against the host header and forwarded protocol', () => {
+    const req = createMockNextRequest({
+      url: 'http://localhost:3000/api/auth/callback',
+      headers: { host: 'acme.myapp.com', 'x-forwarded-proto': 'https' },
+    });
+
+    expect(toAbsoluteUrl(req, '/dashboard')).toBe('https://acme.myapp.com/dashboard');
+  });
+
+  test('Preserves the query string and hash of a relative path', () => {
+    const req = createMockNextRequest({
+      url: 'http://localhost:3000/api/auth/callback',
+      headers: { host: 'acme.myapp.com', 'x-forwarded-proto': 'https' },
+    });
+
+    expect(toAbsoluteUrl(req, '/settings?tab=1#top')).toBe('https://acme.myapp.com/settings?tab=1#top');
+  });
+
+  test('Preserves the port from the host header', () => {
+    const req = createMockNextRequest({
+      url: 'http://localhost:3000/api/auth/callback',
+      headers: { host: 'acme.localhost:6001', 'x-forwarded-proto': 'http' },
+    });
+
+    expect(toAbsoluteUrl(req, '/home')).toBe('http://acme.localhost:6001/home');
+  });
+
+  test('Returns an absolute URL unchanged', () => {
+    const req = createMockNextRequest({
+      url: 'http://localhost:3000/api/auth/callback',
+      headers: { host: 'acme.myapp.com', 'x-forwarded-proto': 'https' },
+    });
+
+    expect(toAbsoluteUrl(req, 'https://onboarding.otherapp.com/start')).toBe('https://onboarding.otherapp.com/start');
+  });
+
+  test('Uses the host header rather than the request URL host', () => {
+    const req = createMockNextRequest({
+      url: 'https://localhost:3000/api/auth/callback',
+      headers: { host: 'acme.myapp.com', 'x-forwarded-proto': 'https' },
+    });
+
+    expect(toAbsoluteUrl(req, '/dashboard')).toBe('https://acme.myapp.com/dashboard');
+  });
+
+  test('Falls back to the request URL protocol when x-forwarded-proto is missing', () => {
+    const req = createMockNextRequest({
+      url: 'https://localhost:3000/api/auth/callback',
+      headers: { host: 'acme.myapp.com' },
+    });
+
+    expect(toAbsoluteUrl(req, '/dashboard')).toBe('https://acme.myapp.com/dashboard');
+  });
+
+  test('Falls back to the request URL when the host header is missing', () => {
+    const req = createMockNextRequest({
+      url: 'https://localhost:3000/api/auth/callback',
+      headers: {},
+    });
+
+    expect(toAbsoluteUrl(req, '/dashboard')).toBe('https://localhost:3000/dashboard');
+  });
+});
+
 describe('createLoginStateCookie', () => {
   let mockResponse: NextResponse;
 
@@ -655,7 +722,7 @@ describe('createLoginStateCookie', () => {
     expect(mockResponse.headers.append).toHaveBeenCalledWith(
       'Set-Cookie',
       expect.stringContaining(
-        `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure`
+        `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure`
       )
     );
 
@@ -684,10 +751,10 @@ describe('createLoginStateCookie', () => {
 
     createLoginStateCookie(req, mockResponse, 'state4', 'encrypted-data', true);
 
-    // Stale cookie removal header should end right after Max-Age=0, with no Secure flag
+    // Stale cookie removal header should end right after Expires, with no Secure flag
     expect(mockResponse.headers.append).toHaveBeenCalledWith(
       'Set-Cookie',
-      `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+      `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
     );
   });
 
@@ -713,7 +780,7 @@ describe('createLoginStateCookie', () => {
     expect(mockResponse.headers.append).toHaveBeenCalledWith(
       'Set-Cookie',
       expect.stringContaining(
-        `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Secure`
+        `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure`
       )
     );
 
@@ -968,6 +1035,57 @@ describe('clearLoginStateCookie', () => {
     clearLoginStateCookie(mockResponse, cookieName, false);
 
     expect(mockResponse.headers.append).toHaveBeenCalledWith('Set-Cookie', expect.stringContaining(cookieName));
+  });
+});
+
+describe('createCallbackRedirectResponse', () => {
+  const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890`;
+  const loginStateCookie = { name: cookieName, value: 'encrypted-value' };
+
+  test('should return a 302 redirect to the given URL with no-cache headers', () => {
+    const response = createCallbackRedirectResponse('https://acme.myapp.com/home', loginStateCookie, false);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('https://acme.myapp.com/home');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('pragma')).toBe('no-cache');
+  });
+
+  test('should clear the login state cookie when it exists', () => {
+    const response = createCallbackRedirectResponse('https://acme.myapp.com/home', loginStateCookie, false);
+
+    expect(response.headers.get('set-cookie')).toBe(
+      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure`
+    );
+  });
+
+  test('should not set any cookie when the login state cookie does not exist', () => {
+    const response = createCallbackRedirectResponse('https://acme.myapp.com/login', null, false);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('https://acme.myapp.com/login');
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
+
+  test('should include the Domain attribute when domain is provided', () => {
+    const response = createCallbackRedirectResponse(
+      'https://acme.myapp.com/home',
+      loginStateCookie,
+      false,
+      '.business.invotastic.com'
+    );
+
+    expect(response.headers.get('set-cookie')).toBe(
+      `${cookieName}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure`
+    );
+  });
+
+  test('should not include the Secure flag when dangerouslyDisableSecureCookies is true', () => {
+    const response = createCallbackRedirectResponse('https://acme.myapp.com/home', loginStateCookie, true);
+
+    expect(response.headers.get('set-cookie')).toBe(
+      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
+    );
   });
 });
 

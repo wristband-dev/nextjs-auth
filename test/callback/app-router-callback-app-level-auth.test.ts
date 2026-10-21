@@ -12,235 +12,298 @@ import { mockWristbandFetch } from '../helpers/mock-fetch';
 
 const APP_HOME_URL = 'https://myapp.com/home';
 
-describe('appRouter.createCallbackResponse() - Application-Level Authorization Requests', () => {
+const resolveRedirectUrl = () => {
+  return APP_HOME_URL;
+};
+
+const mockTokens = {
+  access_token: 'accessToken',
+  expires_in: 1800,
+  id_token: 'idToken',
+  refresh_token: 'refreshToken',
+  token_type: 'bearer',
+};
+const mockUserinfo = {
+  sub: '5q6j4qe2cva3dm3cbdvjoxvuze',
+  tnt_id: 'fr2vishnqjdvfbcijxa3a4adhe',
+  app_id: 'dy42gabu5jebreq6jajskk2n34',
+  idp_name: 'wristband',
+};
+
+describe('appRouter.callback() - Application-Level Authorization Requests', () => {
   let wristbandAuth: WristbandAuth;
-  let wristbandApplicationVanityDomain: string;
 
   beforeEach(() => {
-    mockWristbandFetch();
-    wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
+    // The callback runs through the token exchange, since the App Router clears the cookie on the returned response
+    mockWristbandFetch({ tokens: mockTokens, userinfo: mockUserinfo });
   });
 
-  describe('Tenant subdomain configuration (parseTenantFromRootDomain set)', () => {
+  test('Clears the app-level login state cookie with a Domain attribute matching the root domain derived from loginUrl', async () => {
     const parseTenantFromRootDomain = 'business.invotastic.com';
+    const wristbandApplicationVanityDomain = 'auth.invotastic.com';
     const loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
     const redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
-    test('Clears the cookie with a Domain attribute when the flag is enabled', async () => {
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        wristbandApplicationVanityDomain,
-        applicationAuthorizationRequestsEnabled: true,
-        autoConfigureEnabled: false,
-      });
-
-      const { req } = createMocks({
-        method: 'GET',
-        url: `${redirectUri}?state=state`,
-        headers: { host: parseTenantFromRootDomain, cookie: 'login#state#1234567890=encrypted-login-state' },
-      });
-      const mockNextRequest = createMockNextRequest(req);
-
-      const response = await wristbandAuth.appRouter.createCallbackResponse(mockNextRequest, APP_HOME_URL);
-
-      expect(response.status).toBe(302);
-      expect(response.headers.get('location')).toBe(APP_HOME_URL);
-
-      const setCookieHeaders = response.headers.getSetCookie();
-      expect(setCookieHeaders).toHaveLength(1);
-
-      const parsedCookies = parseSetCookies(setCookieHeaders);
-      const clearedCookie = parsedCookies[0];
-      expect(clearedCookie.name).toBe('login#state#1234567890');
-      expect(clearedCookie.value).toBeFalsy();
-      expect(clearedCookie['max-age']).toBe('0');
-      expect(clearedCookie.domain).toBe(`.${parseTenantFromRootDomain}`);
+    wristbandAuth = createWristbandAuth({
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+      loginUrl,
+      redirectUri,
+      wristbandApplicationVanityDomain,
+      applicationAuthorizationRequestsEnabled: true,
+      autoConfigureEnabled: false,
     });
 
-    test('Clears the tenant-level login state cookie with a Domain attribute matching parseTenantFromRootDomain', async () => {
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        wristbandApplicationVanityDomain,
-        applicationAuthorizationRequestsEnabled: true,
-        autoConfigureEnabled: false,
-      });
+    // Step 1: login() with an unresolved tenant sets the app-level login state cookie
+    const { req: loginReq } = createMocks({
+      method: 'GET',
+      url: `https://${parseTenantFromRootDomain}/api/auth/login`,
+      headers: { host: parseTenantFromRootDomain },
+    });
+    const loginResponse = await wristbandAuth.appRouter.login(createMockNextRequest(loginReq));
+    const state = new URL(loginResponse.headers.get('location')!).searchParams.get('state');
+    const [loginStateCookie] = parseSetCookies(loginResponse.headers.getSetCookie());
 
-      // Tenant subdomain present on the host, so this is the tenant-level scenario
-      const { req } = createMocks({
-        method: 'GET',
-        url: `${redirectUri}?state=state`,
-        headers: {
-          host: `devs4you.${parseTenantFromRootDomain}`,
-          cookie: 'login#state#1234567890=encrypted-login-state',
-        },
-      });
-      const mockNextRequest = createMockNextRequest(req);
-
-      const response = await wristbandAuth.appRouter.createCallbackResponse(mockNextRequest, APP_HOME_URL);
-
-      expect(response.status).toBe(302);
-      expect(response.headers.get('location')).toBe(APP_HOME_URL);
-
-      const parsedCookies = parseSetCookies(response.headers.getSetCookie());
-      expect(parsedCookies).toHaveLength(1);
-      expect(parsedCookies[0].name).toBe('login#state#1234567890');
-      expect(parsedCookies[0]['max-age']).toBe('0');
-      expect(parsedCookies[0].domain).toBe(`.${parseTenantFromRootDomain}`);
+    // Step 2: simulate the callback landing on a resolved tenant subdomain, carrying that same cookie
+    const { req: callbackReq } = createMocks({
+      method: 'GET',
+      url: `https://devs4you.${parseTenantFromRootDomain}/api/auth/callback?state=${state}&code=code`,
+      headers: {
+        host: `devs4you.${parseTenantFromRootDomain}`,
+        cookie: `${loginStateCookie.name}=${loginStateCookie.value}`,
+      },
     });
 
-    test('Clears the tenant-level login state cookie without a Domain attribute when the flag is disabled', async () => {
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        wristbandApplicationVanityDomain,
-        applicationAuthorizationRequestsEnabled: false,
-        autoConfigureEnabled: false,
-      });
+    const { response, type } = await wristbandAuth.appRouter.callback(
+      createMockNextRequest(callbackReq),
+      resolveRedirectUrl
+    );
+    expect(type).toBe('completed');
 
-      const { req } = createMocks({
-        method: 'GET',
-        url: `${redirectUri}?state=state`,
-        headers: {
-          host: `devs4you.${parseTenantFromRootDomain}`,
-          cookie: 'login#state#1234567890=encrypted-login-state',
-        },
-      });
-      const mockNextRequest = createMockNextRequest(req);
-
-      const response = await wristbandAuth.appRouter.createCallbackResponse(mockNextRequest, APP_HOME_URL);
-
-      const parsedCookies = parseSetCookies(response.headers.getSetCookie());
-      expect(parsedCookies).toHaveLength(1);
-      expect(parsedCookies[0].domain).toBeUndefined();
-    });
-
-    test('Clears the cookie without a Domain attribute when the flag is disabled', async () => {
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        wristbandApplicationVanityDomain,
-        applicationAuthorizationRequestsEnabled: false,
-        autoConfigureEnabled: false,
-      });
-
-      const { req } = createMocks({
-        method: 'GET',
-        url: `${redirectUri}?state=state`,
-        headers: { host: parseTenantFromRootDomain, cookie: 'login#state#1234567890=encrypted-login-state' },
-      });
-      const mockNextRequest = createMockNextRequest(req);
-
-      const response = await wristbandAuth.appRouter.createCallbackResponse(mockNextRequest, APP_HOME_URL);
-
-      const setCookieHeaders = response.headers.getSetCookie();
-      expect(setCookieHeaders).toHaveLength(1);
-
-      const parsedCookies = parseSetCookies(setCookieHeaders);
-      // Even though parseTenantFromRootDomain is set, the Domain attribute is only added when
-      // applicationAuthorizationRequestsEnabled is also true -- the cookie in login() would never
-      // have been scoped to the root domain in the first place for this configuration.
-      expect(parsedCookies[0].domain).toBeUndefined();
-    });
+    const [clearedCookie] = parseSetCookies(response.headers.getSetCookie());
+    expect(clearedCookie.name).toBe(loginStateCookie.name);
+    expect(clearedCookie['max-age']).toBe('0');
+    expect(clearedCookie.domain).toBe(`.${parseTenantFromRootDomain}`);
   });
 
-  describe('Fixed host configuration (no parseTenantFromRootDomain)', () => {
+  test('Clears the tenant-level login state cookie with a Domain attribute matching the root domain derived from loginUrl', async () => {
+    const parseTenantFromRootDomain = 'business.invotastic.com';
+    const wristbandApplicationVanityDomain = 'auth.invotastic.com';
+    const loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+    const redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+    wristbandAuth = createWristbandAuth({
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+      loginUrl,
+      redirectUri,
+      wristbandApplicationVanityDomain,
+      applicationAuthorizationRequestsEnabled: true,
+      autoConfigureEnabled: false,
+    });
+
+    // Step 1: login() on a resolved tenant subdomain (tenant-level flow) with the flag enabled still
+    // sets the login state cookie on the root domain
+    const { req: loginReq } = createMocks({
+      method: 'GET',
+      url: `https://devs4you.${parseTenantFromRootDomain}/api/auth/login`,
+      headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+    });
+    const loginResponse = await wristbandAuth.appRouter.login(createMockNextRequest(loginReq));
+    const state = new URL(loginResponse.headers.get('location')!).searchParams.get('state');
+    const [loginStateCookie] = parseSetCookies(loginResponse.headers.getSetCookie());
+    expect(loginStateCookie.domain).toBe(`.${parseTenantFromRootDomain}`);
+
+    // Step 2: the callback clears that cookie with the matching root Domain
+    const { req: callbackReq } = createMocks({
+      method: 'GET',
+      url: `https://devs4you.${parseTenantFromRootDomain}/api/auth/callback?state=${state}&code=code`,
+      headers: {
+        host: `devs4you.${parseTenantFromRootDomain}`,
+        cookie: `${loginStateCookie.name}=${loginStateCookie.value}`,
+      },
+    });
+
+    const { response, type } = await wristbandAuth.appRouter.callback(
+      createMockNextRequest(callbackReq),
+      resolveRedirectUrl
+    );
+    expect(type).toBe('completed');
+
+    const [clearedCookie] = parseSetCookies(response.headers.getSetCookie());
+    expect(clearedCookie.name).toBe(loginStateCookie.name);
+    expect(clearedCookie['max-age']).toBe('0');
+    expect(clearedCookie.domain).toBe(`.${parseTenantFromRootDomain}`);
+  });
+
+  test('Clears the login state cookie without a Domain attribute when loginUrl has no tenant placeholder', async () => {
+    const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
     const loginUrl = 'https://localhost:6001/api/auth/login';
     const redirectUri = 'https://localhost:6001/api/auth/callback';
 
-    test('Clears the cookie without a Domain attribute when parseTenantFromRootDomain is unset', async () => {
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        wristbandApplicationVanityDomain,
-        applicationAuthorizationRequestsEnabled: true,
-        autoConfigureEnabled: false,
-      });
-
-      const { req } = createMocks({
-        method: 'GET',
-        url: `${redirectUri}?state=state`,
-        headers: { host: 'localhost:6001', cookie: 'login#state#1234567890=encrypted-login-state' },
-      });
-      const mockNextRequest = createMockNextRequest(req);
-
-      const response = await wristbandAuth.appRouter.createCallbackResponse(mockNextRequest, APP_HOME_URL);
-
-      const setCookieHeaders = response.headers.getSetCookie();
-      expect(setCookieHeaders).toHaveLength(1);
-
-      const parsedCookies = parseSetCookies(setCookieHeaders);
-      expect(parsedCookies[0].domain).toBeUndefined();
+    wristbandAuth = createWristbandAuth({
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+      loginUrl,
+      redirectUri,
+      wristbandApplicationVanityDomain,
+      applicationAuthorizationRequestsEnabled: true,
+      autoConfigureEnabled: false,
     });
 
-    test('Clears the tenant-level login state cookie without a Domain attribute when a tenant_name is resolvable and parseTenantFromRootDomain is not set', async () => {
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        wristbandApplicationVanityDomain,
-        applicationAuthorizationRequestsEnabled: true,
-        autoConfigureEnabled: false,
-      });
+    const { req: loginReq } = createMocks({
+      method: 'GET',
+      url: loginUrl,
+      headers: { host: 'localhost:6001' },
+    });
+    const loginResponse = await wristbandAuth.appRouter.login(createMockNextRequest(loginReq));
+    const state = new URL(loginResponse.headers.get('location')!).searchParams.get('state');
+    const [loginStateCookie] = parseSetCookies(loginResponse.headers.getSetCookie());
 
-      const { req } = createMocks({
-        method: 'GET',
-        url: `${redirectUri}?state=state&tenant_name=devs4you`,
-        headers: { host: 'localhost:6001', cookie: 'login#state#1234567890=encrypted-login-state' },
-      });
-      const mockNextRequest = createMockNextRequest(req);
-
-      const response = await wristbandAuth.appRouter.createCallbackResponse(mockNextRequest, APP_HOME_URL);
-
-      const parsedCookies = parseSetCookies(response.headers.getSetCookie());
-      expect(parsedCookies).toHaveLength(1);
-      expect(parsedCookies[0].domain).toBeUndefined();
+    const { req: callbackReq } = createMocks({
+      method: 'GET',
+      url: `${redirectUri}?state=${state}&code=code&tenant_name=devs4you`,
+      headers: { host: 'localhost:6001', cookie: `${loginStateCookie.name}=${loginStateCookie.value}` },
     });
 
-    test('Does not set any Set-Cookie header when no login state cookie is present', async () => {
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        wristbandApplicationVanityDomain,
-        applicationAuthorizationRequestsEnabled: true,
-        autoConfigureEnabled: false,
-      });
+    const { response, type } = await wristbandAuth.appRouter.callback(
+      createMockNextRequest(callbackReq),
+      resolveRedirectUrl
+    );
+    expect(type).toBe('completed');
 
-      const { req } = createMocks({
-        method: 'GET',
-        url: `${redirectUri}?state=state`,
-        headers: { host: 'localhost:6001' },
-      });
-      const mockNextRequest = createMockNextRequest(req);
+    const [clearedCookie] = parseSetCookies(response.headers.getSetCookie());
+    expect(clearedCookie.name).toBe(loginStateCookie.name);
+    expect(clearedCookie['max-age']).toBe('0');
+    expect(clearedCookie.domain).toBeUndefined();
+  });
 
-      const response = await wristbandAuth.appRouter.createCallbackResponse(mockNextRequest, APP_HOME_URL);
+  test('Clears the tenant-level login state cookie without a Domain attribute when loginUrl has no tenant placeholder', async () => {
+    const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
+    const loginUrl = 'https://localhost:6001/api/auth/login';
+    const redirectUri = 'https://localhost:6001/api/auth/callback';
 
-      expect(response.status).toBe(302);
-      expect(response.headers.get('location')).toBe(APP_HOME_URL);
-
-      const setCookieHeaders = response.headers.getSetCookie();
-      expect(setCookieHeaders).toHaveLength(0);
+    wristbandAuth = createWristbandAuth({
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+      loginUrl,
+      redirectUri,
+      wristbandApplicationVanityDomain,
+      applicationAuthorizationRequestsEnabled: true,
+      autoConfigureEnabled: false,
     });
+
+    // Login resolves the tenant via the tenant_name query param (tenant-level flow, not app-level)
+    const { req: loginReq } = createMocks({
+      method: 'GET',
+      url: `${loginUrl}?tenant_name=devs4you`,
+      headers: { host: 'localhost:6001' },
+    });
+    const loginResponse = await wristbandAuth.appRouter.login(createMockNextRequest(loginReq));
+    const state = new URL(loginResponse.headers.get('location')!).searchParams.get('state');
+    const [loginStateCookie] = parseSetCookies(loginResponse.headers.getSetCookie());
+    expect(loginStateCookie.domain).toBeUndefined();
+
+    const { req: callbackReq } = createMocks({
+      method: 'GET',
+      url: `${redirectUri}?state=${state}&code=code&tenant_name=devs4you`,
+      headers: { host: 'localhost:6001', cookie: `${loginStateCookie.name}=${loginStateCookie.value}` },
+    });
+
+    const { response, type } = await wristbandAuth.appRouter.callback(
+      createMockNextRequest(callbackReq),
+      resolveRedirectUrl
+    );
+    expect(type).toBe('completed');
+
+    const [clearedCookie] = parseSetCookies(response.headers.getSetCookie());
+    expect(clearedCookie.name).toBe(loginStateCookie.name);
+    expect(clearedCookie['max-age']).toBe('0');
+    expect(clearedCookie.domain).toBeUndefined();
+  });
+
+  test('Clears the login state cookie without a Domain attribute when applicationAuthorizationRequestsEnabled is false', async () => {
+    const parseTenantFromRootDomain = 'business.invotastic.com';
+    const wristbandApplicationVanityDomain = 'auth.invotastic.com';
+    const loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+    const redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+    // applicationAuthorizationRequestsEnabled explicitly disabled (it defaults to true)
+    wristbandAuth = createWristbandAuth({
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+      loginUrl,
+      redirectUri,
+      isApplicationCustomDomainActive: true,
+      wristbandApplicationVanityDomain,
+      applicationAuthorizationRequestsEnabled: false,
+      autoConfigureEnabled: false,
+    });
+
+    // Login resolves the tenant subdomain normally here (tenant-level flow, not app-level)
+    const { req: loginReq } = createMocks({
+      method: 'GET',
+      url: `https://devs4you.${parseTenantFromRootDomain}/api/auth/login`,
+      headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+    });
+    const loginResponse = await wristbandAuth.appRouter.login(createMockNextRequest(loginReq));
+    const state = new URL(loginResponse.headers.get('location')!).searchParams.get('state');
+    const [loginStateCookie] = parseSetCookies(loginResponse.headers.getSetCookie());
+    expect(loginStateCookie.domain).toBeUndefined();
+
+    const { req: callbackReq } = createMocks({
+      method: 'GET',
+      url: `https://devs4you.${parseTenantFromRootDomain}/api/auth/callback?state=${state}&code=code`,
+      headers: {
+        host: `devs4you.${parseTenantFromRootDomain}`,
+        cookie: `${loginStateCookie.name}=${loginStateCookie.value}`,
+      },
+    });
+
+    const { response, type } = await wristbandAuth.appRouter.callback(
+      createMockNextRequest(callbackReq),
+      resolveRedirectUrl
+    );
+    expect(type).toBe('completed');
+
+    const [clearedCookie] = parseSetCookies(response.headers.getSetCookie());
+    expect(clearedCookie.name).toBe(loginStateCookie.name);
+    expect(clearedCookie['max-age']).toBe('0');
+    expect(clearedCookie.domain).toBeUndefined();
+  });
+
+  test('No login state cookie present - nothing to clear regardless of the domain logic', async () => {
+    const parseTenantFromRootDomain = 'business.invotastic.com';
+    const wristbandApplicationVanityDomain = 'auth.invotastic.com';
+    const loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+    const redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+    wristbandAuth = createWristbandAuth({
+      clientId: CLIENT_ID,
+      clientSecret: CLIENT_SECRET,
+      loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+      loginUrl,
+      redirectUri,
+      wristbandApplicationVanityDomain,
+      applicationAuthorizationRequestsEnabled: true,
+      autoConfigureEnabled: false,
+    });
+
+    const { req: callbackReq } = createMocks({
+      method: 'GET',
+      url: `https://devs4you.${parseTenantFromRootDomain}/api/auth/callback?state=some-state`,
+      headers: { host: `devs4you.${parseTenantFromRootDomain}` },
+    });
+
+    const result = await wristbandAuth.appRouter.callback(createMockNextRequest(callbackReq), resolveRedirectUrl);
+
+    expect(result.type).toBe('redirect_required');
+    expect(result.reason).toBe('missing_login_state');
+    expect(result.response.headers.getSetCookie()).toHaveLength(0);
   });
 });

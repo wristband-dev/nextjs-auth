@@ -5,7 +5,7 @@ import {
   CallbackData,
   LogoutConfig,
   LoginState,
-  CallbackResult,
+  PagesRouterCallbackResult,
   UserInfo,
   TokenResponse,
 } from '../../types';
@@ -133,7 +133,7 @@ export class PagesRouterAuthHandler {
     });
   }
 
-  async callback(request: NextApiRequest, response: NextApiResponse): Promise<CallbackResult> {
+  async callback(request: NextApiRequest, response: NextApiResponse): Promise<PagesRouterCallbackResult> {
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('Pragma', 'no-cache');
 

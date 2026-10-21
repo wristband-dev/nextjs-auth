@@ -18,11 +18,13 @@ import {
   NextJsCookieStore,
   NormalizedMiddlewareConfig,
   ServerActionAuthResult,
+  type AppRouterCallbackResult,
   type AuthConfig,
   type AuthMiddlewareConfig,
-  type CallbackResult,
+  type CallbackData,
   type LoginConfig,
   type LogoutConfig,
+  type PagesRouterCallbackResult,
   type TokenData,
 } from '../types';
 import { refreshExpiredToken } from '../utils/auth/common-utils';
@@ -77,8 +79,11 @@ export class WristbandAuthImpl implements WristbandAuth {
     /**
      * @see {@link WristbandAuth.appRouter} for full documentation
      */
-    callback: (request: NextRequest): Promise<CallbackResult> => {
-      return this.appRouterAuthHandler.callback(request);
+    callback: (
+      request: NextRequest,
+      resolveRedirectUrl: (request: NextRequest, callbackData: CallbackData) => string | Promise<string>
+    ): Promise<AppRouterCallbackResult> => {
+      return this.appRouterAuthHandler.callback(request, resolveRedirectUrl);
     },
     /**
      * @see {@link WristbandAuth.appRouter} for full documentation
@@ -86,13 +91,6 @@ export class WristbandAuthImpl implements WristbandAuth {
     logout: (request: NextRequest, logoutConfig?: LogoutConfig): Promise<NextResponse> => {
       return this.appRouterAuthHandler.logout(request, logoutConfig);
     },
-    /**
-     * @see {@link WristbandAuth.appRouter} for full documentation
-     */
-    createCallbackResponse: (request: NextRequest, redirectUrl: string): Promise<NextResponse> => {
-      return this.appRouterAuthHandler.createCallbackResponse(request, redirectUrl);
-    },
-
     /**
      * @see {@link WristbandAuth.appRouter} for full documentation
      */
@@ -122,7 +120,7 @@ export class WristbandAuthImpl implements WristbandAuth {
     /**
      * @see {@link WristbandAuth.pagesRouter} for full documentation
      */
-    callback: (request: NextApiRequest, response: NextApiResponse): Promise<CallbackResult> => {
+    callback: (request: NextApiRequest, response: NextApiResponse): Promise<PagesRouterCallbackResult> => {
       return this.pagesRouterAuthHandler.callback(request, response);
     },
     /**

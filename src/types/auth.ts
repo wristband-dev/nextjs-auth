@@ -1,8 +1,10 @@
+import type { NextResponse } from 'next/server';
+
 /**
  * Represents the configuration for Wristband authentication.
  *
  * @typedef {Object} AuthConfig
- * @property {boolean} [applicationAuthorizationRequestsEnabled] Flag indicating whether application-level authorization requests are enabled. Defaults to false. If true, for login and logout scenarios where neither a tenant name nor a tenant custom domain can be deduced, then the user will get redirected to the Wristband Authorize Endpoint using the application vanity domain to initiate an app-level authorization request.
+ * @property {boolean} [applicationAuthorizationRequestsEnabled] Flag indicating whether application-level authorization requests are enabled. Defaults to true. If true, for login and logout scenarios where neither a tenant name nor a tenant custom domain can be deduced, then the user will get redirected to the Wristband Authorize Endpoint using the application vanity domain to initiate an app-level authorization request.
  * @property {boolean} [autoConfigureEnabled] Flag that tells the SDK to automatically set some of the SDK configuration values by calling to Wristband's SDK Auto-Configuration Endpoint. Any manually provided configurations will take precedence over the configs returned from the endpoint. Auto-configure is enabled by default. When disabled, if manual configurations are not provided, then an error will be thrown.
  * @property {string} clientId The client ID for the application.
  * @property {string} clientSecret The client secret for the application.
@@ -71,14 +73,14 @@ export type CallbackResultType = 'completed' | 'redirect_required';
 export type CallbackFailureReason = 'missing_login_state' | 'invalid_login_state' | 'login_required' | 'invalid_grant';
 
 /**
- * Represents the result of the callback execution after authentication. It can contain the set of callback
- * data necessary for creating an authenticated session.
+ * Represents the result of the Pages Router callback execution after authentication. It can contain the set of
+ * callback data necessary for creating an authenticated session.
  *
  * This is a discriminated union type based on the `type` field:
  * - When `type` is `'completed'`, `callbackData` is present and `redirectUrl` is never present
  * - When `type` is `'redirect_required'`, `redirectUrl` is present and `callbackData` is never present
  */
-export type CallbackResult =
+export type PagesRouterCallbackResult =
   | {
       /** The callback data received after authentication */
       callbackData: CallbackData;
@@ -96,6 +98,39 @@ export type CallbackResult =
       reason: CallbackFailureReason;
       /** The URL to redirect to */
       redirectUrl: string;
+      /** Indicates a redirect is required */
+      type: 'redirect_required';
+    };
+
+/**
+ * Represents the result of the App Router callback execution after authentication. It can contain the set of
+ * callback data necessary for creating an authenticated session, and it always contains a redirect response
+ * with the login state cookie already cleared.
+ *
+ * This is a discriminated union type based on the `type` field:
+ * - When `type` is `'completed'`, `callbackData` is present and `response` redirects to the URL returned by the
+ *   application's redirect URL resolver
+ * - When `type` is `'redirect_required'`, `reason` is present, `callbackData` is never present, and `response`
+ *   redirects to the Login Endpoint
+ */
+export type AppRouterCallbackResult =
+  | {
+      /** The callback data received after authentication */
+      callbackData: CallbackData;
+      /** Never present when type is completed */
+      reason?: never;
+      /** The redirect response to the URL returned by the application's redirect URL resolver */
+      response: NextResponse;
+      /** Indicates successful completion with callback data */
+      type: 'completed';
+    }
+  | {
+      /** Never present when type is redirect_required */
+      callbackData?: never;
+      /** Why the redirect is required */
+      reason: CallbackFailureReason;
+      /** The redirect response to the Login Endpoint */
+      response: NextResponse;
       /** Indicates a redirect is required */
       type: 'redirect_required';
     };

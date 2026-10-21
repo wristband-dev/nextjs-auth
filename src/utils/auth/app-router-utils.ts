@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
+import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR, REDIRECT_RESPONSE_INIT } from '../constants';
 import { AppRouterLoginStateCookie, LoginConfig } from '../../types';
 import { Base64 } from '../base64';
 import { generateRandomString } from './common-utils';
@@ -80,8 +80,8 @@ export function resolveReturnUrl(request: NextRequest, config: LoginConfig = {})
  * X-Forwarded-Proto carries the original protocol in that case. Only "http" and
  * "https" are accepted; anything else falls back to the protocol of the request URL.
  *
- * This value is used only to validate the post-callback returnUrl, not to make
- * access-control decisions.
+ * This value is used only to validate the post-callback returnUrl and to build
+ * absolute redirect URLs, not to make access-control decisions.
  */
 function getRequestProtocol(request: NextRequest): string {
   const forwardedProto = request.headers.get('x-forwarded-proto');
@@ -188,6 +188,21 @@ export function validateReturnUrl(
   }
 }
 
+/**
+ * Converts a relative URL to an absolute URL using the origin the browser used for
+ * the incoming request. Absolute URLs are returned unchanged.
+ *
+ * NextResponse.redirect() only accepts absolute URLs, so a relative URL must be
+ * converted before it is used as a redirect target.
+ */
+export function toAbsoluteUrl(request: NextRequest, url: string): string {
+  // Read the Host header rather than request.url, whose host is the server's own
+  // address (e.g. localhost) when running behind a reverse proxy.
+  const host = request.headers.get('host');
+  const origin = host ? `${getRequestProtocol(request)}://${host}` : request.url;
+  return new URL(url, origin).toString();
+}
+
 export function createLoginStateCookie(
   request: NextRequest,
   response: NextResponse,
@@ -223,6 +238,7 @@ export function createLoginStateCookie(
       ...(domain ? [`Domain=${domain}`] : []),
       'SameSite=Lax',
       'Max-Age=0',
+      'Expires=Thu, 01 Jan 1970 00:00:00 GMT',
       ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
     ].join('; ');
     response.headers.append('Set-Cookie', staleCookieHeaderValue);
@@ -316,4 +332,21 @@ export function clearLoginStateCookie(
     ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
   ].join('; ');
   response.headers.append('Set-Cookie', cookieAttributes);
+}
+
+/**
+ * Creates the auth callback's redirect response and clears the login state cookie on it, if the
+ * cookie exists.
+ */
+export function createCallbackRedirectResponse(
+  redirectUrl: string,
+  loginStateCookie: AppRouterLoginStateCookie | null,
+  dangerouslyDisableSecureCookies: boolean,
+  domain?: string
+): NextResponse {
+  const redirectResponse = NextResponse.redirect(redirectUrl, REDIRECT_RESPONSE_INIT);
+  if (loginStateCookie) {
+    clearLoginStateCookie(redirectResponse, loginStateCookie.name, dangerouslyDisableSecureCookies, domain);
+  }
+  return redirectResponse;
 }

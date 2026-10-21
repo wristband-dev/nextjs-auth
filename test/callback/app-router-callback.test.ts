@@ -1,9 +1,8 @@
 import { createMocks } from 'node-mocks-http';
-import { NextResponse } from 'next/server';
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
 import { encryptLoginState } from '../../src/utils/auth/common-utils';
 import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
-import { LoginState, CallbackResult, CallbackData } from '../../src/types';
+import { LoginState, AppRouterCallbackResult, CallbackData } from '../../src/types';
 import { createMockNextRequest, parseSetCookies } from '../test-utils';
 
 const CLIENT_ID = 'clientId';
@@ -117,10 +116,12 @@ describe('Multi Tenant Callback - App Router', () => {
       });
       const mockNextRequest = createMockNextRequest(req);
 
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+      const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+        return APP_HOME_URL;
+      });
 
       // First verify result and data
-      const { callbackData, type, reason } = callbackResult;
+      const { callbackData, response, type, reason } = callbackResult;
       expect(type).toBe('completed');
       expect(reason).toBeUndefined();
       expect(callbackData).toBeTruthy();
@@ -130,11 +131,6 @@ describe('Multi Tenant Callback - App Router', () => {
       }
 
       // Now verify the response
-      const response: NextResponse = await wristbandAuth.appRouter.createCallbackResponse(
-        mockNextRequest,
-        APP_HOME_URL
-      );
-
       const { headers, status } = response;
       const locationUrl: string = headers.get('location')!;
       expect(status).toBe(302);
@@ -197,7 +193,9 @@ describe('Multi Tenant Callback - App Router', () => {
       });
       const mockNextRequest = createMockNextRequest(req);
 
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+      const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+        return APP_HOME_URL;
+      });
 
       // With the buffer explicitly disabled, expiresIn should equal the raw token response value,
       // not the default-buffered value (1740) asserted in validateMockCallbackData().
@@ -237,8 +235,10 @@ describe('Multi Tenant Callback - App Router', () => {
         const mockNextRequest = createMockNextRequest(req);
 
         // Validate callback data contents
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-        const { callbackData, type, reason } = callbackResult;
+        const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+          return APP_HOME_URL;
+        });
+        const { callbackData, response, type, reason } = callbackResult;
         expect(type).toBe('completed');
         expect(reason).toBeUndefined();
         expect(callbackData).toBeTruthy();
@@ -249,10 +249,6 @@ describe('Multi Tenant Callback - App Router', () => {
         }
 
         // Now verify the response
-        const response: NextResponse = await wristbandAuth.appRouter.createCallbackResponse(
-          mockNextRequest,
-          APP_HOME_URL
-        );
         const { headers, status } = response;
         const locationUrl: string = headers.get('location')!;
         expect(status).toBe(302);
@@ -298,8 +294,10 @@ describe('Multi Tenant Callback - App Router', () => {
         const mockNextRequest = createMockNextRequest(req);
 
         // Validate callback data contents
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-        const { callbackData, type, reason } = callbackResult;
+        const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+          return APP_HOME_URL;
+        });
+        const { callbackData, response, type, reason } = callbackResult;
         expect(type).toBe('completed');
         expect(reason).toBeUndefined();
         expect(callbackData).toBeTruthy();
@@ -310,10 +308,6 @@ describe('Multi Tenant Callback - App Router', () => {
         }
 
         // Now verify the response
-        const response: NextResponse = await wristbandAuth.appRouter.createCallbackResponse(
-          mockNextRequest,
-          APP_HOME_URL
-        );
         const { headers, status } = response;
         const locationUrl: string = headers.get('location')!;
         expect(status).toBe(302);
@@ -377,7 +371,9 @@ describe('Multi Tenant Callback - App Router', () => {
         });
         const mockNextRequest = createMockNextRequest(req);
 
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
+        const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+          return APP_HOME_URL;
+        });
         expect(callbackResult.type).toBe('completed');
         return callbackResult.callbackData;
       }
@@ -469,13 +465,21 @@ describe('Multi Tenant Callback - App Router', () => {
       const mockNextRequest = createMockNextRequest(req);
 
       // login state cookie is missing, which should redirect to app-level login.
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-      const { callbackData, redirectUrl, type } = callbackResult;
+      const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+        return APP_HOME_URL;
+      });
+      const { callbackData, response, type } = callbackResult;
       expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
-      expect(redirectUrl).toBe(`https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you`);
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe(
+        `https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you`
+      );
+
+      // No login state cookie exists, so none is cleared
+      expect(response.headers.getSetCookie()).toHaveLength(0);
     });
 
     describe('Missing login state cookie', () => {
@@ -504,13 +508,19 @@ describe('Multi Tenant Callback - App Router', () => {
         const mockNextRequest = createMockNextRequest(req);
 
         // login state cookie is missing, which should redirect to app-level login.
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-        const { callbackData, redirectUrl, type } = callbackResult;
+        const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+          return APP_HOME_URL;
+        });
+        const { callbackData, response, type } = callbackResult;
         expect(type).toBe('redirect_required');
         expect(callbackData).toBeFalsy();
 
         // Validate Redirect response
-        expect(redirectUrl).toBe(`https://devs4you.${parseTenantFromRootDomain}/api/auth/login`);
+        expect(response.status).toBe(302);
+        expect(response.headers.get('location')).toBe(`https://devs4you.${parseTenantFromRootDomain}/api/auth/login`);
+
+        // No login state cookie exists, so none is cleared
+        expect(response.headers.getSetCookie()).toHaveLength(0);
       });
     });
 
@@ -544,13 +554,24 @@ describe('Multi Tenant Callback - App Router', () => {
       });
       const mockNextRequest = createMockNextRequest(req);
 
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-      const { callbackData, redirectUrl, type } = callbackResult;
+      const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+        return APP_HOME_URL;
+      });
+      const { callbackData, response, type } = callbackResult;
       expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
-      expect(redirectUrl).toBe(`https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you`);
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe(
+        `https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you`
+      );
+
+      // The login state cookie is cleared on the redirect response
+      const parsedCookies = parseSetCookies(response.headers.getSetCookie());
+      expect(parsedCookies).toHaveLength(1);
+      expect(parsedCookies[0].name).toBe('login#state#1234567890');
+      expect(parsedCookies[0]['max-age']).toBe('0');
     });
 
     describe('Login required error', () => {
@@ -585,13 +606,22 @@ describe('Multi Tenant Callback - App Router', () => {
         });
         const mockNextRequest = createMockNextRequest(req);
 
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-        const { callbackData, redirectUrl, type } = callbackResult;
+        const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+          return APP_HOME_URL;
+        });
+        const { callbackData, response, type } = callbackResult;
         expect(type).toBe('redirect_required');
         expect(callbackData).toBeFalsy();
 
         // Validate Redirect response
-        expect(redirectUrl).toBe(`https://devs4you.${parseTenantFromRootDomain}/api/auth/login`);
+        expect(response.status).toBe(302);
+        expect(response.headers.get('location')).toBe(`https://devs4you.${parseTenantFromRootDomain}/api/auth/login`);
+
+        // The login state cookie is cleared on the redirect response
+        const parsedCookies = parseSetCookies(response.headers.getSetCookie());
+        expect(parsedCookies).toHaveLength(1);
+        expect(parsedCookies[0].name).toBe('login#state#1234567890');
+        expect(parsedCookies[0]['max-age']).toBe('0');
       });
     });
 
@@ -622,13 +652,24 @@ describe('Multi Tenant Callback - App Router', () => {
       });
       const mockNextRequest = createMockNextRequest(req);
 
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-      const { callbackData, redirectUrl, type } = callbackResult;
+      const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+        return APP_HOME_URL;
+      });
+      const { callbackData, response, type } = callbackResult;
       expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
-      expect(redirectUrl).toBe(`https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you`);
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe(
+        `https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you`
+      );
+
+      // The login state cookie is cleared on the redirect response
+      const parsedCookies = parseSetCookies(response.headers.getSetCookie());
+      expect(parsedCookies).toHaveLength(1);
+      expect(parsedCookies[0].name).toBe('login#state#1234567890');
+      expect(parsedCookies[0]['max-age']).toBe('0');
     });
 
     test('Cookie login state not matching query param state, without subdomains, with tenant custom domain', async () => {
@@ -659,15 +700,24 @@ describe('Multi Tenant Callback - App Router', () => {
       });
       const mockNextRequest = createMockNextRequest(req);
 
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-      const { callbackData, redirectUrl, type } = callbackResult;
+      const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+        return APP_HOME_URL;
+      });
+      const { callbackData, response, type } = callbackResult;
       expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
-      expect(redirectUrl).toBe(
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe(
         `https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you&tenant_custom_domain=custom.tenant.com`
       );
+
+      // The login state cookie is cleared on the redirect response
+      const parsedCookies = parseSetCookies(response.headers.getSetCookie());
+      expect(parsedCookies).toHaveLength(1);
+      expect(parsedCookies[0].name).toBe('login#state#1234567890');
+      expect(parsedCookies[0]['max-age']).toBe('0');
     });
 
     describe('State mismatch', () => {
@@ -702,13 +752,22 @@ describe('Multi Tenant Callback - App Router', () => {
         });
         const mockNextRequest = createMockNextRequest(req);
 
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-        const { callbackData, redirectUrl, type } = callbackResult;
+        const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+          return APP_HOME_URL;
+        });
+        const { callbackData, response, type } = callbackResult;
         expect(type).toBe('redirect_required');
         expect(callbackData).toBeFalsy();
 
         // Validate Redirect response
-        expect(redirectUrl).toBe(`https://devs4you.${parseTenantFromRootDomain}/api/auth/login`);
+        expect(response.status).toBe(302);
+        expect(response.headers.get('location')).toBe(`https://devs4you.${parseTenantFromRootDomain}/api/auth/login`);
+
+        // The login state cookie is cleared on the redirect response
+        const parsedCookies = parseSetCookies(response.headers.getSetCookie());
+        expect(parsedCookies).toHaveLength(1);
+        expect(parsedCookies[0].name).toBe('login#state#1234567890');
+        expect(parsedCookies[0]['max-age']).toBe('0');
       });
     });
 
@@ -740,15 +799,24 @@ describe('Multi Tenant Callback - App Router', () => {
       });
       const mockNextRequest = createMockNextRequest(req);
 
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-      const { callbackData, redirectUrl, type } = callbackResult;
+      const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+        return APP_HOME_URL;
+      });
+      const { callbackData, response, type } = callbackResult;
       expect(type).toBe('redirect_required');
       expect(callbackData).toBeFalsy();
 
       // Validate Redirect response
-      expect(redirectUrl).toBe(
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe(
         `https://${parseTenantFromRootDomain}/api/auth/login?tenant_name=devs4you&tenant_custom_domain=custom.tenant.com`
       );
+
+      // The login state cookie is cleared on the redirect response
+      const parsedCookies = parseSetCookies(response.headers.getSetCookie());
+      expect(parsedCookies).toHaveLength(1);
+      expect(parsedCookies[0].name).toBe('login#state#1234567890');
+      expect(parsedCookies[0]['max-age']).toBe('0');
     });
 
     describe('State mismatch with custom domain', () => {
@@ -784,16 +852,155 @@ describe('Multi Tenant Callback - App Router', () => {
         });
         const mockNextRequest = createMockNextRequest(req);
 
-        const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest);
-        const { callbackData, redirectUrl, type } = callbackResult;
+        const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+          return APP_HOME_URL;
+        });
+        const { callbackData, response, type } = callbackResult;
         expect(type).toBe('redirect_required');
         expect(callbackData).toBeFalsy();
 
         // Validate Redirect response
-        expect(redirectUrl).toBe(
+        expect(response.status).toBe(302);
+        expect(response.headers.get('location')).toBe(
           `https://devs4you.${parseTenantFromRootDomain}/api/auth/login?tenant_custom_domain=custom.tenant.com`
         );
+
+        // The login state cookie is cleared on the redirect response
+        const parsedCookies = parseSetCookies(response.headers.getSetCookie());
+        expect(parsedCookies).toHaveLength(1);
+        expect(parsedCookies[0].name).toBe('login#state#1234567890');
+        expect(parsedCookies[0]['max-age']).toBe('0');
       });
+    });
+  });
+
+  describe('Redirect URL Resolution', () => {
+    const rootDomain = 'business.invotastic.com';
+    const host = `devs4you.${rootDomain}`;
+
+    // Creates the SDK and a callback request with a valid login state cookie, with the tenant taken from the host.
+    async function setupCallback(returnUrl?: string) {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl: `https://{tenant_name}.${rootDomain}/api/auth/login`,
+        redirectUri: `https://{tenant_name}.${rootDomain}/api/auth/callback`,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      const loginState: LoginState = {
+        codeVerifier: 'codeVerifier',
+        redirectUri: `https://{tenant_name}.${rootDomain}/api/auth/callback`,
+        state: 'state',
+        ...(returnUrl ? { returnUrl } : {}),
+      };
+      const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+      // The request URL host is the server's own address, as Next.js reports it behind a proxy.
+      const { req } = createMocks({
+        method: 'GET',
+        url: 'http://localhost:3000/api/auth/callback?state=state&code=code',
+        headers: { host, 'x-forwarded-proto': 'https', cookie: `login#state#1234567890=${encryptedLoginState}` },
+      });
+      return createMockNextRequest(req);
+    }
+
+    test('Converts a relative path to an absolute URL using the host header', async () => {
+      const mockNextRequest = await setupCallback();
+
+      const { response, type } = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+        return '/dashboard';
+      });
+
+      expect(type).toBe('completed');
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe(`https://${host}/dashboard`);
+    });
+
+    test('Supports an async resolver', async () => {
+      const mockNextRequest = await setupCallback();
+
+      const { response, type } = await wristbandAuth.appRouter.callback(mockNextRequest, async () => {
+        return Promise.resolve(APP_HOME_URL);
+      });
+
+      expect(type).toBe('completed');
+      expect(response.headers.get('location')).toBe(APP_HOME_URL);
+    });
+
+    test('Passes the request and callback data to the resolver', async () => {
+      const mockNextRequest = await setupCallback();
+      const resolveRedirectUrl = jest.fn().mockReturnValue(APP_HOME_URL);
+
+      const { callbackData } = await wristbandAuth.appRouter.callback(mockNextRequest, resolveRedirectUrl);
+
+      expect(resolveRedirectUrl).toHaveBeenCalledTimes(1);
+      expect(resolveRedirectUrl).toHaveBeenCalledWith(mockNextRequest, callbackData);
+    });
+
+    test('Redirects to the validated returnUrl when the resolver returns it', async () => {
+      const mockNextRequest = await setupCallback('/settings?tab=billing');
+
+      const { response } = await wristbandAuth.appRouter.callback(mockNextRequest, (req, data) => {
+        return data.returnUrl || APP_HOME_URL;
+      });
+
+      expect(response.headers.get('location')).toBe(`https://${host}/settings?tab=billing`);
+    });
+
+    test('Clears the login state cookie on the completed response', async () => {
+      const mockNextRequest = await setupCallback();
+
+      const { response } = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+        return APP_HOME_URL;
+      });
+
+      const parsedCookies = parseSetCookies(response.headers.getSetCookie());
+      expect(parsedCookies).toHaveLength(1);
+      expect(parsedCookies[0].name).toBe('login#state#1234567890');
+      expect(parsedCookies[0]['max-age']).toBe('0');
+      expect(parsedCookies[0].expires).toBe('Thu, 01 Jan 1970 00:00:00 GMT');
+    });
+
+    test('Throws when the resolver returns an empty string', async () => {
+      const mockNextRequest = await setupCallback();
+
+      await expect(
+        wristbandAuth.appRouter.callback(mockNextRequest, () => {
+          return '';
+        })
+      ).rejects.toThrow('resolveRedirectUrl must return a non-empty URL');
+    });
+
+    test('Does not call the resolver when a redirect to login is required', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl: `https://{tenant_name}.${rootDomain}/api/auth/login`,
+        redirectUri: `https://{tenant_name}.${rootDomain}/api/auth/callback`,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+      const resolveRedirectUrl = jest.fn().mockReturnValue(APP_HOME_URL);
+
+      // No login state cookie
+      const { req } = createMocks({
+        method: 'GET',
+        url: 'http://localhost:3000/api/auth/callback?state=state&code=code',
+        headers: { host, 'x-forwarded-proto': 'https' },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const { reason, type } = await wristbandAuth.appRouter.callback(mockNextRequest, resolveRedirectUrl);
+
+      expect(type).toBe('redirect_required');
+      expect(reason).toBe('missing_login_state');
+      expect(resolveRedirectUrl).not.toHaveBeenCalled();
     });
   });
 });
