@@ -236,6 +236,49 @@ describe('pagesRouter.login()', () => {
       expect(parsedCookies[0].domain).toBeUndefined();
     });
 
+    test('Tenant Subdomains Behind a Trusted Proxy Configuration', async () => {
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+        trustProxyHeaders: true,
+      });
+
+      // The proxy forwards to an internal host, so the tenant subdomain is only in X-Forwarded-Host.
+      // Create mock request and response
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: {
+          host: 'internal-app:3000',
+          'x-forwarded-host': `devs4you.${parseTenantFromRootDomain}`,
+        },
+      });
+      // Cast req and res to NextApiRequest and NextApiResponse
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+
+      // Validate Redirect response
+      validateRedirectResponse(
+        mockRes,
+        authorizeUrl,
+        `https://devs4you-${wristbandApplicationVanityDomain}`,
+        redirectUri
+      );
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+    });
+
     test('Custom Domains and Tenant Subdomains Configuration', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';

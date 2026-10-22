@@ -244,6 +244,56 @@ describe('appRouter.login()', () => {
       expect(loginState.state).toEqual(keyParts[1]);
       expect(loginState.returnUrl).toBe(returnUrl);
     });
+
+    test('Tenant Subdomains Behind a Trusted Proxy Configuration', async () => {
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+        trustProxyHeaders: true,
+      });
+
+      // The proxy forwards to an internal host, so the tenant subdomain is only in X-Forwarded-Host.
+      const { req } = createMocks({
+        method: 'GET',
+        url: 'http://internal-app:3000/api/auth/login',
+        headers: {
+          host: 'internal-app:3000',
+          'x-forwarded-host': `devs4you.${parseTenantFromRootDomain}`,
+        },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const response = await wristbandAuth.appRouter.login(mockNextRequest);
+
+      // Validate Redirect response
+      const { headers, status } = response;
+      const locationUrl: URL = new URL(headers.get('location')!);
+      const { pathname, origin, searchParams } = locationUrl;
+      expect(status).toBe(302);
+      expect(origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
+      expect(pathname).toEqual('/api/v1/oauth2/authorize');
+      expect(searchParams.get('redirect_uri')).toEqual(redirectUri);
+
+      // Validate login state cookie
+      const setCookieHeaders = response.headers.getSetCookie();
+      expect(setCookieHeaders).toHaveLength(1);
+      const parsedCookies = parseSetCookies(setCookieHeaders);
+      const loginStateCookie = parsedCookies[0];
+      const keyParts: string[] = loginStateCookie.name.split(LOGIN_STATE_COOKIE_SEPARATOR);
+      expect(keyParts).toHaveLength(3);
+      expect(keyParts[0]).toEqual('login');
+      expect(searchParams.get('state')).toEqual(keyParts[1]);
+    });
   });
 
   describe('Redirect to Application-level Login/Tenant Discovery', () => {

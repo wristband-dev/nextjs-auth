@@ -16,8 +16,38 @@ function parseCookies(cookieHeader: string | null): Record<string, string> {
   );
 }
 
-export function parseTenantSubdomain(request: NextRequest, parseTenantFromRootDomain: string): string {
-  const host = request.headers.get('host');
+/**
+ * Resolves the host the browser used for the incoming request, including any port.
+ *
+ * By default, only the Host header is used. When trustProxyHeaders is enabled, the first value of the
+ * X-Forwarded-Host header is used instead, falling back to the Host header. It should only be enabled
+ * when the application runs behind a reverse proxy that sets or overwrites X-Forwarded-Host, since
+ * clients can send the header themselves.
+ *
+ * This helper does not read the request URL, whose host is the server's own address (e.g. localhost)
+ * when running behind a reverse proxy.
+ *
+ * Returns an empty string if no host can be determined.
+ */
+function getRequestHost(request: NextRequest, trustProxyHeaders: boolean): string {
+  if (trustProxyHeaders) {
+    // Proxies may provide a comma-separated list of forwarded hosts.
+    const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0].trim();
+
+    if (forwardedHost) {
+      return forwardedHost;
+    }
+  }
+
+  return request.headers.get('host') || '';
+}
+
+export function parseTenantSubdomain(
+  request: NextRequest,
+  parseTenantFromRootDomain: string,
+  trustProxyHeaders: boolean
+): string {
+  const host = getRequestHost(request, trustProxyHeaders);
 
   // Should never happen (defensive measure)
   if (!host) {
@@ -32,9 +62,13 @@ export function parseTenantSubdomain(request: NextRequest, parseTenantFromRootDo
     : '';
 }
 
-export function resolveTenantName(request: NextRequest, parseTenantFromRootDomain: string): string {
+export function resolveTenantName(
+  request: NextRequest,
+  parseTenantFromRootDomain: string,
+  trustProxyHeaders: boolean
+): string {
   if (parseTenantFromRootDomain) {
-    return parseTenantSubdomain(request, parseTenantFromRootDomain) || '';
+    return parseTenantSubdomain(request, parseTenantFromRootDomain, trustProxyHeaders) || '';
   }
 
   const tenantNameParam = request.nextUrl.searchParams.getAll('tenant_name');
@@ -123,6 +157,7 @@ export function validateReturnUrl(
   returnUrl: string | undefined,
   tenantName: string,
   applicationAuthorizationRequestsEnabled: boolean,
+  trustProxyHeaders: boolean,
   parseTenantFromRootDomain?: string
 ): string | undefined {
   // Safety check: a tenant name is required for validation.
@@ -135,9 +170,7 @@ export function validateReturnUrl(
     return undefined;
   }
 
-  // Read the Host header rather than request.nextUrl, whose host is the server's own
-  // address (e.g. localhost) when running behind a reverse proxy.
-  const host = request.headers.get('host');
+  const host = getRequestHost(request, trustProxyHeaders);
 
   // Without a host, the request origin cannot be established safely.
   if (!host) {
@@ -195,10 +228,8 @@ export function validateReturnUrl(
  * NextResponse.redirect() only accepts absolute URLs, so a relative URL must be
  * converted before it is used as a redirect target.
  */
-export function toAbsoluteUrl(request: NextRequest, url: string): string {
-  // Read the Host header rather than request.url, whose host is the server's own
-  // address (e.g. localhost) when running behind a reverse proxy.
-  const host = request.headers.get('host');
+export function toAbsoluteUrl(request: NextRequest, url: string, trustProxyHeaders: boolean): string {
+  const host = getRequestHost(request, trustProxyHeaders);
   const origin = host ? `${getRequestProtocol(request)}://${host}` : request.url;
   return new URL(url, origin).toString();
 }

@@ -30,7 +30,7 @@ describe('parseTenantSubdomain', () => {
       headers: { host: 'tenant.example.com' },
     });
 
-    const result = parseTenantSubdomain(req, 'example.com');
+    const result = parseTenantSubdomain(req, 'example.com', false);
     expect(result).toBe('tenant');
   });
 
@@ -40,7 +40,7 @@ describe('parseTenantSubdomain', () => {
       headers: { host: 'different.otherdomain.com' },
     });
 
-    const result = parseTenantSubdomain(req, 'example.com');
+    const result = parseTenantSubdomain(req, 'example.com', false);
     expect(result).toBe('');
   });
 
@@ -50,7 +50,7 @@ describe('parseTenantSubdomain', () => {
       headers: { host: 'my-tenant-123.example.com' },
     });
 
-    const result = parseTenantSubdomain(req, 'example.com');
+    const result = parseTenantSubdomain(req, 'example.com', false);
     expect(result).toBe('my-tenant-123');
   });
 
@@ -60,7 +60,7 @@ describe('parseTenantSubdomain', () => {
       headers: { host: 'example.com' },
     });
 
-    const result = parseTenantSubdomain(req, 'example.com');
+    const result = parseTenantSubdomain(req, 'example.com', false);
     expect(result).toBe('');
   });
 
@@ -70,7 +70,7 @@ describe('parseTenantSubdomain', () => {
       headers: { host: 'tenant.example.com:3000' },
     });
 
-    const result = parseTenantSubdomain(req, 'example.com');
+    const result = parseTenantSubdomain(req, 'example.com', false);
     expect(result).toBe('tenant');
   });
 
@@ -80,7 +80,7 @@ describe('parseTenantSubdomain', () => {
       headers: { host: 'my-tenant-123.example.com:8080' },
     });
 
-    const result = parseTenantSubdomain(req, 'example.com');
+    const result = parseTenantSubdomain(req, 'example.com', false);
     expect(result).toBe('my-tenant-123');
   });
 
@@ -90,7 +90,7 @@ describe('parseTenantSubdomain', () => {
       headers: { host: 'tenant.example.com' },
     });
 
-    const result = parseTenantSubdomain(req, 'example.com');
+    const result = parseTenantSubdomain(req, 'example.com', false);
     expect(result).toBe('tenant');
   });
 
@@ -100,7 +100,7 @@ describe('parseTenantSubdomain', () => {
       headers: { host: 'tenant.otherdomain.com:3000' },
     });
 
-    const result = parseTenantSubdomain(req, 'example.com');
+    const result = parseTenantSubdomain(req, 'example.com', false);
     expect(result).toBe('');
   });
 
@@ -110,8 +110,70 @@ describe('parseTenantSubdomain', () => {
       headers: { host: 'example.com:3000' },
     });
 
-    const result = parseTenantSubdomain(req, 'example.com');
+    const result = parseTenantSubdomain(req, 'example.com', false);
     expect(result).toBe('');
+  });
+
+  describe('trustProxyHeaders', () => {
+    test('should ignore x-forwarded-host when trustProxyHeaders is false', () => {
+      const req = createMockNextRequest({
+        url: 'http://localhost:3000/path',
+        headers: { host: 'localhost:3000', 'x-forwarded-host': 'tenant.example.com' },
+      });
+
+      const result = parseTenantSubdomain(req, 'example.com', false);
+      expect(result).toBe('');
+    });
+
+    test('should use x-forwarded-host when trustProxyHeaders is true', () => {
+      const req = createMockNextRequest({
+        url: 'http://localhost:3000/path',
+        headers: { host: 'localhost:3000', 'x-forwarded-host': 'tenant.example.com' },
+      });
+
+      const result = parseTenantSubdomain(req, 'example.com', true);
+      expect(result).toBe('tenant');
+    });
+
+    test('should strip port from x-forwarded-host', () => {
+      const req = createMockNextRequest({
+        url: 'http://localhost:3000/path',
+        headers: { host: 'localhost:3000', 'x-forwarded-host': 'tenant.example.com:8443' },
+      });
+
+      const result = parseTenantSubdomain(req, 'example.com', true);
+      expect(result).toBe('tenant');
+    });
+
+    test('should use the first value of a comma-separated x-forwarded-host', () => {
+      const req = createMockNextRequest({
+        url: 'http://localhost:3000/path',
+        headers: { host: 'localhost:3000', 'x-forwarded-host': 'tenant.example.com, internal.local:8080' },
+      });
+
+      const result = parseTenantSubdomain(req, 'example.com', true);
+      expect(result).toBe('tenant');
+    });
+
+    test('should fall back to the host header when x-forwarded-host is missing', () => {
+      const req = createMockNextRequest({
+        url: 'https://tenant.example.com/path',
+        headers: { host: 'tenant.example.com' },
+      });
+
+      const result = parseTenantSubdomain(req, 'example.com', true);
+      expect(result).toBe('tenant');
+    });
+
+    test('should fall back to the host header when x-forwarded-host is empty', () => {
+      const req = createMockNextRequest({
+        url: 'https://tenant.example.com/path',
+        headers: { host: 'tenant.example.com', 'x-forwarded-host': '' },
+      });
+
+      const result = parseTenantSubdomain(req, 'example.com', true);
+      expect(result).toBe('tenant');
+    });
   });
 });
 
@@ -122,7 +184,7 @@ describe('resolveTenantName', () => {
       headers: { host: 'tenant.example.com' },
     });
 
-    const result = resolveTenantName(req, 'example.com');
+    const result = resolveTenantName(req, 'example.com', false);
     expect(result).toBe('tenant');
   });
 
@@ -132,7 +194,7 @@ describe('resolveTenantName', () => {
       headers: { host: 'example.com' },
     });
 
-    const result = resolveTenantName(req, 'example.com');
+    const result = resolveTenantName(req, 'example.com', false);
     expect(result).toBe('');
   });
 
@@ -142,7 +204,7 @@ describe('resolveTenantName', () => {
       headers: { host: 'example.com' },
     });
 
-    const result = resolveTenantName(req, '');
+    const result = resolveTenantName(req, '', false);
     expect(result).toBe('mytenant');
   });
 
@@ -152,7 +214,7 @@ describe('resolveTenantName', () => {
       headers: { host: 'example.com' },
     });
 
-    const result = resolveTenantName(req, '');
+    const result = resolveTenantName(req, '', false);
     expect(result).toBe('');
   });
 
@@ -163,7 +225,7 @@ describe('resolveTenantName', () => {
     });
 
     expect(() => {
-      return resolveTenantName(req, '');
+      return resolveTenantName(req, '', false);
     }).toThrow('More than one [tenant_name] query parameter was encountered');
   });
 
@@ -173,7 +235,7 @@ describe('resolveTenantName', () => {
       headers: { host: 'subdomain-tenant.example.com' },
     });
 
-    const result = resolveTenantName(req, 'example.com');
+    const result = resolveTenantName(req, 'example.com', false);
     expect(result).toBe('subdomain-tenant');
   });
 
@@ -183,7 +245,7 @@ describe('resolveTenantName', () => {
       headers: { host: 'tenant.example.com:3000' },
     });
 
-    const result = resolveTenantName(req, 'example.com');
+    const result = resolveTenantName(req, 'example.com', false);
     expect(result).toBe('tenant');
   });
 
@@ -193,8 +255,18 @@ describe('resolveTenantName', () => {
       headers: { host: 'subdomain-tenant.example.com:3000' },
     });
 
-    const result = resolveTenantName(req, 'example.com');
+    const result = resolveTenantName(req, 'example.com', false);
     expect(result).toBe('subdomain-tenant');
+  });
+
+  test('should resolve tenant subdomain from x-forwarded-host when trustProxyHeaders is true', () => {
+    const req = createMockNextRequest({
+      url: 'http://localhost:3000/path',
+      headers: { host: 'localhost:3000', 'x-forwarded-host': 'tenant.example.com' },
+    });
+
+    const result = resolveTenantName(req, 'example.com', true);
+    expect(result).toBe('tenant');
   });
 });
 
@@ -325,7 +397,7 @@ describe('validateReturnUrl', () => {
       const req = buildReq('acme.myapp.com');
 
       expect(() => {
-        return validateReturnUrl(req, '/settings', '', true, rootDomain);
+        return validateReturnUrl(req, '/settings', '', true, false, rootDomain);
       }).toThrow('Tenant name is required to validate returnUrl');
     });
 
@@ -333,20 +405,20 @@ describe('validateReturnUrl', () => {
       const req = buildReq('acme.myapp.com');
 
       expect(() => {
-        return validateReturnUrl(req, undefined, '', true, rootDomain);
+        return validateReturnUrl(req, undefined, '', true, false, rootDomain);
       }).toThrow('Tenant name is required to validate returnUrl');
     });
 
     test('Returns undefined when returnUrl is undefined', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, undefined, tenantName, true, rootDomain)).toBeUndefined();
+      expect(validateReturnUrl(req, undefined, tenantName, true, false, rootDomain)).toBeUndefined();
     });
 
     test('Returns undefined when returnUrl is an empty string', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, '', tenantName, true, rootDomain)).toBeUndefined();
+      expect(validateReturnUrl(req, '', tenantName, true, false, rootDomain)).toBeUndefined();
     });
   });
 
@@ -354,28 +426,30 @@ describe('validateReturnUrl', () => {
     test('Allows a relative path and returns it unchanged', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, '/settings?tab=1#top', tenantName, true, rootDomain)).toBe('/settings?tab=1#top');
+      expect(validateReturnUrl(req, '/settings?tab=1#top', tenantName, true, false, rootDomain)).toBe(
+        '/settings?tab=1#top'
+      );
     });
 
     test('Allows an absolute URL on the same host as the request', () => {
       const req = buildReq('acme.myapp.com');
       const returnUrl = 'https://acme.myapp.com/dashboard';
 
-      expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
     });
 
     test('Ignores port when comparing hostnames', () => {
       const req = buildReq('acme.myapp.com');
       const returnUrl = 'https://acme.myapp.com:9999/dashboard';
 
-      expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
     });
 
     test('Allows same-host URLs when parseTenantFromRootDomain is not set', () => {
       const req = buildReq('app.example.com');
       const returnUrl = 'https://app.example.com/home';
 
-      expect(validateReturnUrl(req, returnUrl, tenantName, false)).toBe(returnUrl);
+      expect(validateReturnUrl(req, returnUrl, tenantName, false, false)).toBe(returnUrl);
     });
   });
 
@@ -383,55 +457,61 @@ describe('validateReturnUrl', () => {
     test('Rejects a different domain', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, 'https://evil.com/phish', tenantName, true, rootDomain)).toBeUndefined();
+      expect(validateReturnUrl(req, 'https://evil.com/phish', tenantName, true, false, rootDomain)).toBeUndefined();
     });
 
     test('Rejects a different tenant subdomain', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, 'https://other.myapp.com/dashboard', tenantName, true, rootDomain)).toBeUndefined();
+      expect(
+        validateReturnUrl(req, 'https://other.myapp.com/dashboard', tenantName, true, false, rootDomain)
+      ).toBeUndefined();
     });
 
     test('Rejects a protocol-relative URL to another host', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, '//evil.com/phish', tenantName, true, rootDomain)).toBeUndefined();
+      expect(validateReturnUrl(req, '//evil.com/phish', tenantName, true, false, rootDomain)).toBeUndefined();
     });
 
     test('Rejects a backslash-prefixed URL to another host', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, '/\\evil.com/phish', tenantName, true, rootDomain)).toBeUndefined();
+      expect(validateReturnUrl(req, '/\\evil.com/phish', tenantName, true, false, rootDomain)).toBeUndefined();
     });
 
     test('Rejects a lookalike domain that starts with the root domain', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, 'https://myapp.com.evil.com/', tenantName, true, rootDomain)).toBeUndefined();
+      expect(
+        validateReturnUrl(req, 'https://myapp.com.evil.com/', tenantName, true, false, rootDomain)
+      ).toBeUndefined();
     });
 
     test('Rejects a URL using userinfo to disguise the real host', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, 'https://acme.myapp.com@evil.com/', tenantName, true, rootDomain)).toBeUndefined();
+      expect(
+        validateReturnUrl(req, 'https://acme.myapp.com@evil.com/', tenantName, true, false, rootDomain)
+      ).toBeUndefined();
     });
 
     test('Rejects a javascript: URL', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, 'javascript:alert(1)', tenantName, true, rootDomain)).toBeUndefined();
+      expect(validateReturnUrl(req, 'javascript:alert(1)', tenantName, true, false, rootDomain)).toBeUndefined();
     });
 
     test('Rejects the root domain when parseTenantFromRootDomain is not set', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, 'https://myapp.com/dashboard', tenantName, true)).toBeUndefined();
+      expect(validateReturnUrl(req, 'https://myapp.com/dashboard', tenantName, true, false)).toBeUndefined();
     });
 
     test('Returns undefined for a malformed URL', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, 'https://', tenantName, true, rootDomain)).toBeUndefined();
+      expect(validateReturnUrl(req, 'https://', tenantName, true, false, rootDomain)).toBeUndefined();
     });
   });
 
@@ -439,7 +519,7 @@ describe('validateReturnUrl', () => {
     test('Prepends the tenant subdomain to a root domain URL', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, 'https://myapp.com/dashboard?x=1#top', tenantName, true, rootDomain)).toBe(
+      expect(validateReturnUrl(req, 'https://myapp.com/dashboard?x=1#top', tenantName, true, false, rootDomain)).toBe(
         'https://acme.myapp.com/dashboard?x=1#top'
       );
     });
@@ -447,7 +527,7 @@ describe('validateReturnUrl', () => {
     test('Preserves the port when rewriting', () => {
       const req = buildReq('acme.localhost:6001', 'http');
 
-      expect(validateReturnUrl(req, 'http://localhost:6001/home', tenantName, true, 'localhost')).toBe(
+      expect(validateReturnUrl(req, 'http://localhost:6001/home', tenantName, true, false, 'localhost')).toBe(
         'http://acme.localhost:6001/home'
       );
     });
@@ -456,13 +536,13 @@ describe('validateReturnUrl', () => {
       const req = buildReq('acme.myapp.com');
       const returnUrl = 'https://myapp.com/dashboard';
 
-      expect(validateReturnUrl(req, returnUrl, tenantName, false, rootDomain)).toBe(returnUrl);
+      expect(validateReturnUrl(req, returnUrl, tenantName, false, false, rootDomain)).toBe(returnUrl);
     });
 
     test('Does not rewrite a relative path even when rewrite is enabled', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, '/dashboard', tenantName, true, rootDomain)).toBe('/dashboard');
+      expect(validateReturnUrl(req, '/dashboard', tenantName, true, false, rootDomain)).toBe('/dashboard');
     });
   });
 
@@ -470,31 +550,35 @@ describe('validateReturnUrl', () => {
     test('Rejects an http returnUrl when the request is https', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, 'http://acme.myapp.com/dashboard', tenantName, true, rootDomain)).toBeUndefined();
+      expect(
+        validateReturnUrl(req, 'http://acme.myapp.com/dashboard', tenantName, true, false, rootDomain)
+      ).toBeUndefined();
     });
 
     test('Rejects an https returnUrl when the request is http', () => {
       const req = buildReq('acme.localhost:6001', 'http');
 
-      expect(validateReturnUrl(req, 'https://acme.localhost:6001/home', tenantName, true, 'localhost')).toBeUndefined();
+      expect(
+        validateReturnUrl(req, 'https://acme.localhost:6001/home', tenantName, true, false, 'localhost')
+      ).toBeUndefined();
     });
 
     test('Rejects a root domain returnUrl with a mismatched protocol instead of rewriting it', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, 'http://myapp.com/dashboard', tenantName, true, rootDomain)).toBeUndefined();
+      expect(validateReturnUrl(req, 'http://myapp.com/dashboard', tenantName, true, false, rootDomain)).toBeUndefined();
     });
 
     test('Rejects a non-http protocol on an allowed host', () => {
       const req = buildReq('acme.myapp.com');
 
-      expect(validateReturnUrl(req, 'ftp://acme.myapp.com/file', tenantName, true, rootDomain)).toBeUndefined();
+      expect(validateReturnUrl(req, 'ftp://acme.myapp.com/file', tenantName, true, false, rootDomain)).toBeUndefined();
     });
 
     test('Allows a relative path on an http request', () => {
       const req = buildReq('acme.localhost:6001', 'http');
 
-      expect(validateReturnUrl(req, '/home', tenantName, true, 'localhost')).toBe('/home');
+      expect(validateReturnUrl(req, '/home', tenantName, true, false, 'localhost')).toBe('/home');
     });
   });
 
@@ -506,7 +590,7 @@ describe('validateReturnUrl', () => {
       });
       const returnUrl = 'https://acme.myapp.com/dashboard';
 
-      expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
     });
 
     test('Falls back to an http request URL when x-forwarded-proto is missing', () => {
@@ -515,10 +599,12 @@ describe('validateReturnUrl', () => {
         headers: { host: 'acme.myapp.com' },
       });
 
-      expect(validateReturnUrl(req, 'http://acme.myapp.com/dashboard', tenantName, true, rootDomain)).toBe(
+      expect(validateReturnUrl(req, 'http://acme.myapp.com/dashboard', tenantName, true, false, rootDomain)).toBe(
         'http://acme.myapp.com/dashboard'
       );
-      expect(validateReturnUrl(req, 'https://acme.myapp.com/dashboard', tenantName, true, rootDomain)).toBeUndefined();
+      expect(
+        validateReturnUrl(req, 'https://acme.myapp.com/dashboard', tenantName, true, false, rootDomain)
+      ).toBeUndefined();
     });
 
     test('Falls back to the request URL when x-forwarded-proto is not http or https', () => {
@@ -528,7 +614,7 @@ describe('validateReturnUrl', () => {
       });
       const returnUrl = 'https://acme.myapp.com/dashboard';
 
-      expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
     });
 
     test('Uses the first value of a comma-separated x-forwarded-proto', () => {
@@ -538,7 +624,7 @@ describe('validateReturnUrl', () => {
       });
       const returnUrl = 'https://acme.myapp.com/dashboard';
 
-      expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
     });
 
     test('Accepts x-forwarded-proto regardless of case', () => {
@@ -548,7 +634,7 @@ describe('validateReturnUrl', () => {
       });
       const returnUrl = 'https://acme.myapp.com/dashboard';
 
-      expect(validateReturnUrl(req, returnUrl, tenantName, true, rootDomain)).toBe(returnUrl);
+      expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
     });
 
     test('Uses the host header rather than the request URL host', () => {
@@ -557,7 +643,9 @@ describe('validateReturnUrl', () => {
         headers: { host: 'acme.myapp.com', 'x-forwarded-proto': 'https' },
       });
 
-      expect(validateReturnUrl(req, 'https://localhost:3000/dashboard', tenantName, true, rootDomain)).toBeUndefined();
+      expect(
+        validateReturnUrl(req, 'https://localhost:3000/dashboard', tenantName, true, false, rootDomain)
+      ).toBeUndefined();
     });
 
     test('Returns undefined when the host header is missing', () => {
@@ -566,7 +654,53 @@ describe('validateReturnUrl', () => {
         headers: { 'x-forwarded-proto': 'https' },
       });
 
-      expect(validateReturnUrl(req, '/settings', tenantName, true, rootDomain)).toBeUndefined();
+      expect(validateReturnUrl(req, '/settings', tenantName, true, false, rootDomain)).toBeUndefined();
+    });
+  });
+
+  describe('Trusted proxy headers', () => {
+    // The request's Host header is the proxy's upstream address; the browser's host is in x-forwarded-host.
+    const buildProxiedReq = (forwardedHost: string) => {
+      return createMockNextRequest({
+        url: 'http://localhost:3000/api/auth/callback',
+        headers: { host: 'localhost:3000', 'x-forwarded-host': forwardedHost, 'x-forwarded-proto': 'https' },
+      });
+    };
+
+    test('Ignores x-forwarded-host when trustProxyHeaders is false', () => {
+      const req = buildProxiedReq('acme.myapp.com');
+
+      expect(
+        validateReturnUrl(req, 'https://acme.myapp.com/dashboard', tenantName, true, false, rootDomain)
+      ).toBeUndefined();
+    });
+
+    test('Allows a URL on the forwarded host when trustProxyHeaders is true', () => {
+      const req = buildProxiedReq('acme.myapp.com');
+      const returnUrl = 'https://acme.myapp.com/dashboard';
+
+      expect(validateReturnUrl(req, returnUrl, tenantName, true, true, rootDomain)).toBe(returnUrl);
+    });
+
+    test('Rejects a URL on the Host header host when trustProxyHeaders is true', () => {
+      const req = buildProxiedReq('acme.myapp.com');
+
+      expect(
+        validateReturnUrl(req, 'https://localhost:3000/dashboard', tenantName, true, true, rootDomain)
+      ).toBeUndefined();
+    });
+
+    test('Still rejects a different domain when trustProxyHeaders is true', () => {
+      const req = buildProxiedReq('acme.myapp.com');
+
+      expect(validateReturnUrl(req, 'https://evil.com/phish', tenantName, true, true, rootDomain)).toBeUndefined();
+    });
+
+    test('Falls back to the host header when x-forwarded-host is missing', () => {
+      const req = buildReq('acme.myapp.com');
+      const returnUrl = 'https://acme.myapp.com/dashboard';
+
+      expect(validateReturnUrl(req, returnUrl, tenantName, true, true, rootDomain)).toBe(returnUrl);
     });
   });
 });
@@ -578,7 +712,7 @@ describe('toAbsoluteUrl', () => {
       headers: { host: 'acme.myapp.com', 'x-forwarded-proto': 'https' },
     });
 
-    expect(toAbsoluteUrl(req, '/dashboard')).toBe('https://acme.myapp.com/dashboard');
+    expect(toAbsoluteUrl(req, '/dashboard', false)).toBe('https://acme.myapp.com/dashboard');
   });
 
   test('Preserves the query string and hash of a relative path', () => {
@@ -587,7 +721,7 @@ describe('toAbsoluteUrl', () => {
       headers: { host: 'acme.myapp.com', 'x-forwarded-proto': 'https' },
     });
 
-    expect(toAbsoluteUrl(req, '/settings?tab=1#top')).toBe('https://acme.myapp.com/settings?tab=1#top');
+    expect(toAbsoluteUrl(req, '/settings?tab=1#top', false)).toBe('https://acme.myapp.com/settings?tab=1#top');
   });
 
   test('Preserves the port from the host header', () => {
@@ -596,7 +730,7 @@ describe('toAbsoluteUrl', () => {
       headers: { host: 'acme.localhost:6001', 'x-forwarded-proto': 'http' },
     });
 
-    expect(toAbsoluteUrl(req, '/home')).toBe('http://acme.localhost:6001/home');
+    expect(toAbsoluteUrl(req, '/home', false)).toBe('http://acme.localhost:6001/home');
   });
 
   test('Returns an absolute URL unchanged', () => {
@@ -605,7 +739,9 @@ describe('toAbsoluteUrl', () => {
       headers: { host: 'acme.myapp.com', 'x-forwarded-proto': 'https' },
     });
 
-    expect(toAbsoluteUrl(req, 'https://onboarding.otherapp.com/start')).toBe('https://onboarding.otherapp.com/start');
+    expect(toAbsoluteUrl(req, 'https://onboarding.otherapp.com/start', false)).toBe(
+      'https://onboarding.otherapp.com/start'
+    );
   });
 
   test('Uses the host header rather than the request URL host', () => {
@@ -614,7 +750,7 @@ describe('toAbsoluteUrl', () => {
       headers: { host: 'acme.myapp.com', 'x-forwarded-proto': 'https' },
     });
 
-    expect(toAbsoluteUrl(req, '/dashboard')).toBe('https://acme.myapp.com/dashboard');
+    expect(toAbsoluteUrl(req, '/dashboard', false)).toBe('https://acme.myapp.com/dashboard');
   });
 
   test('Falls back to the request URL protocol when x-forwarded-proto is missing', () => {
@@ -623,7 +759,7 @@ describe('toAbsoluteUrl', () => {
       headers: { host: 'acme.myapp.com' },
     });
 
-    expect(toAbsoluteUrl(req, '/dashboard')).toBe('https://acme.myapp.com/dashboard');
+    expect(toAbsoluteUrl(req, '/dashboard', false)).toBe('https://acme.myapp.com/dashboard');
   });
 
   test('Falls back to the request URL when the host header is missing', () => {
@@ -632,7 +768,58 @@ describe('toAbsoluteUrl', () => {
       headers: {},
     });
 
-    expect(toAbsoluteUrl(req, '/dashboard')).toBe('https://localhost:3000/dashboard');
+    expect(toAbsoluteUrl(req, '/dashboard', false)).toBe('https://localhost:3000/dashboard');
+  });
+
+  describe('trustProxyHeaders', () => {
+    test('Ignores x-forwarded-host when trustProxyHeaders is false', () => {
+      const req = createMockNextRequest({
+        url: 'http://localhost:3000/api/auth/callback',
+        headers: { host: 'localhost:3000', 'x-forwarded-host': 'acme.myapp.com', 'x-forwarded-proto': 'https' },
+      });
+
+      expect(toAbsoluteUrl(req, '/dashboard', false)).toBe('https://localhost:3000/dashboard');
+    });
+
+    test('Uses x-forwarded-host when trustProxyHeaders is true', () => {
+      const req = createMockNextRequest({
+        url: 'http://localhost:3000/api/auth/callback',
+        headers: { host: 'localhost:3000', 'x-forwarded-host': 'acme.myapp.com', 'x-forwarded-proto': 'https' },
+      });
+
+      expect(toAbsoluteUrl(req, '/dashboard', true)).toBe('https://acme.myapp.com/dashboard');
+    });
+
+    test('Preserves the port from x-forwarded-host', () => {
+      const req = createMockNextRequest({
+        url: 'http://localhost:3000/api/auth/callback',
+        headers: { host: 'localhost:3000', 'x-forwarded-host': 'acme.localhost:6001', 'x-forwarded-proto': 'http' },
+      });
+
+      expect(toAbsoluteUrl(req, '/home', true)).toBe('http://acme.localhost:6001/home');
+    });
+
+    test('Uses the first value of a comma-separated x-forwarded-host', () => {
+      const req = createMockNextRequest({
+        url: 'http://localhost:3000/api/auth/callback',
+        headers: {
+          host: 'localhost:3000',
+          'x-forwarded-host': 'acme.myapp.com, internal.local:8080',
+          'x-forwarded-proto': 'https',
+        },
+      });
+
+      expect(toAbsoluteUrl(req, '/dashboard', true)).toBe('https://acme.myapp.com/dashboard');
+    });
+
+    test('Falls back to the host header when x-forwarded-host is missing', () => {
+      const req = createMockNextRequest({
+        url: 'http://localhost:3000/api/auth/callback',
+        headers: { host: 'acme.myapp.com', 'x-forwarded-proto': 'https' },
+      });
+
+      expect(toAbsoluteUrl(req, '/dashboard', true)).toBe('https://acme.myapp.com/dashboard');
+    });
   });
 });
 
@@ -1131,7 +1318,7 @@ describe('Edge Cases and Error Handling', () => {
       headers: {},
     });
 
-    const result = parseTenantSubdomain(req, 'example.com');
+    const result = parseTenantSubdomain(req, 'example.com', false);
     expect(result).toBe(''); // Should return empty string, not throw
   });
 });

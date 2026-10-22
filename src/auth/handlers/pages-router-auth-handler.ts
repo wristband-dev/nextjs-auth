@@ -57,6 +57,7 @@ export class PagesRouterAuthHandler {
     const parseTenantFromRootDomain = await this.configResolver.getParseTenantFromRootDomain();
     const redirectUri = await this.configResolver.getRedirectUri();
     const scopes = this.configResolver.getScopes();
+    const trustProxyHeaders = this.configResolver.getTrustProxyHeaders();
     const wristbandApplicationVanityDomain = this.configResolver.getWristbandApplicationVanityDomain();
 
     // Determine if a tenant custom domain is present as it will be needed for the authorize URL, if provided.
@@ -64,7 +65,7 @@ export class PagesRouterAuthHandler {
       resolveTenantCustomDomainParam(request),
       this.wristbandService
     );
-    const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
+    const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain, trustProxyHeaders);
     const defaultTenantCustomDomain: string = loginConfig.defaultTenantCustomDomain || '';
     const defaultTenantName: string = loginConfig.defaultTenantName || '';
 
@@ -145,6 +146,7 @@ export class PagesRouterAuthHandler {
     const loginUrl = await this.configResolver.getLoginUrl();
     const parseTenantFromRootDomain = await this.configResolver.getParseTenantFromRootDomain();
     const tokenExpirationBuffer = this.configResolver.getTokenExpirationBuffer();
+    const trustProxyHeaders = this.configResolver.getTrustProxyHeaders();
 
     // Safety checks -- Wristband backend should never send bad query params
     const {
@@ -178,7 +180,7 @@ export class PagesRouterAuthHandler {
     );
 
     // Resolve and validate the tenant name
-    const resolvedTenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
+    const resolvedTenantName: string = resolveTenantName(request, parseTenantFromRootDomain, trustProxyHeaders);
     if (!resolvedTenantName) {
       throw new WristbandError(
         parseTenantFromRootDomain ? 'missing_tenant_subdomain' : 'missing_tenant_name',
@@ -261,6 +263,7 @@ export class PagesRouterAuthHandler {
       returnUrl,
       resolvedTenantName,
       applicationAuthorizationRequestsEnabled,
+      trustProxyHeaders,
       parseTenantFromRootDomain
     );
 
@@ -296,6 +299,7 @@ export class PagesRouterAuthHandler {
     const isApplicationCustomDomainActive = await this.configResolver.getIsApplicationCustomDomainActive();
     const loginUrl = await this.configResolver.getLoginUrl();
     const parseTenantFromRootDomain = await this.configResolver.getParseTenantFromRootDomain();
+    const trustProxyHeaders = this.configResolver.getTrustProxyHeaders();
     const wristbandApplicationVanityDomain = this.configResolver.getWristbandApplicationVanityDomain();
 
     // Revoke the refresh token only if present.
@@ -321,7 +325,7 @@ export class PagesRouterAuthHandler {
       resolveTenantCustomDomainParam(request),
       this.wristbandService
     );
-    const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
+    const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain, trustProxyHeaders);
 
     // Domain priority order resolution:
     // 1) If the LogoutConfig has a tenant custom domain explicitly defined, use that.

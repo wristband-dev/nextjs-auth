@@ -347,6 +347,20 @@ describe('ConfigResolver', () => {
       resolver = new ConfigResolver({ ...validAuthConfig, tokenExpirationBuffer: 120 });
       expect(resolver.getTokenExpirationBuffer()).toBe(120);
     });
+
+    it('should return trustProxyHeaders default false', () => {
+      expect(resolver.getTrustProxyHeaders()).toBe(false);
+    });
+
+    it('should return trustProxyHeaders when set to true', () => {
+      resolver = new ConfigResolver({ ...validAuthConfig, trustProxyHeaders: true });
+      expect(resolver.getTrustProxyHeaders()).toBe(true);
+    });
+
+    it('should return trustProxyHeaders when set to false', () => {
+      resolver = new ConfigResolver({ ...validAuthConfig, trustProxyHeaders: false });
+      expect(resolver.getTrustProxyHeaders()).toBe(false);
+    });
   });
 
   describe('Dynamic Configuration Getters - Auto-configure Disabled', () => {

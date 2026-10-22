@@ -16,6 +16,7 @@ import type { NextResponse } from 'next/server';
  * @property {string} [redirectUri] The redirect URI for callback after authentication.
  * @property {string[]} [scopes] The scopes required for authentication.
  * @property {number} [tokenExpirationBuffer] Buffer time (in seconds) to subtract from the access token’s expiration time. This causes the token to be treated as expired before its actual expiration, helping to avoid token expiration during API calls.
+ * @property {boolean} [trustProxyHeaders] Flag indicating whether to trust the X-Forwarded-Host header when determining the host of an incoming request. Defaults to false. When false, the host is read from the Host header only. When true, the first value of the X-Forwarded-Host header is used, falling back to the Host header. The host is used to resolve tenant subdomains, to validate return URLs, and to resolve relative redirect URLs in the App Router callback. Only enable this when your application runs behind a reverse proxy that sets or overwrites the X-Forwarded-Host header.
  * @property {string} wristbandApplicationVanityDomain The vanity domain of the Wristband application.
  */
 export type AuthConfig = {
@@ -31,6 +32,7 @@ export type AuthConfig = {
   redirectUri?: string;
   scopes?: string[];
   tokenExpirationBuffer?: number;
+  trustProxyHeaders?: boolean;
   wristbandApplicationVanityDomain: string;
 };
 

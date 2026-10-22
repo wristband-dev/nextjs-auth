@@ -920,6 +920,53 @@ describe('Multi Tenant Callback - App Router', () => {
       expect(response.headers.get('location')).toBe(`https://${host}/dashboard`);
     });
 
+    test('Converts a relative path to an absolute URL using X-Forwarded-Host behind a trusted proxy', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl: `https://{tenant_name}.${rootDomain}/api/auth/login`,
+        redirectUri: `https://{tenant_name}.${rootDomain}/api/auth/callback`,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+        trustProxyHeaders: true,
+      });
+
+      const returnUrl = `https://${host}/settings`;
+      const loginState: LoginState = {
+        codeVerifier: 'codeVerifier',
+        redirectUri: `https://{tenant_name}.${rootDomain}/api/auth/callback`,
+        state: 'state',
+        returnUrl,
+      };
+      const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+      // The proxy forwards to an internal host, so the tenant subdomain is only in X-Forwarded-Host.
+      const { req } = createMocks({
+        method: 'GET',
+        url: 'http://localhost:3000/api/auth/callback?state=state&code=code',
+        headers: {
+          host: 'internal-app:3000',
+          'x-forwarded-host': host,
+          'x-forwarded-proto': 'https',
+          cookie: `login#state#1234567890=${encryptedLoginState}`,
+        },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const { callbackData, response, type } = await wristbandAuth.appRouter.callback(mockNextRequest, () => {
+        return '/dashboard';
+      });
+
+      expect(type).toBe('completed');
+      expect(callbackData?.tenantName).toBe('devs4you');
+      // The returnUrl is validated against the forwarded host, so it is kept.
+      expect(callbackData?.returnUrl).toBe(returnUrl);
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe(`https://${host}/dashboard`);
+    });
+
     test('Supports an async resolver', async () => {
       const mockNextRequest = await setupCallback();
 

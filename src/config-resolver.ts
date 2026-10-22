@@ -278,6 +278,10 @@ export class ConfigResolver {
     return this.authConfig.tokenExpirationBuffer ?? DEFAULT_TOKEN_EXPIRATION_BUFFER;
   }
 
+  public getTrustProxyHeaders(): boolean {
+    return this.authConfig.trustProxyHeaders ?? false;
+  }
+
   // ////////////////////////////////////
   //  DYNAMIC CONFIGURATIONS
   // ////////////////////////////////////

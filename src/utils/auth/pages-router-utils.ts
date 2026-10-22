@@ -7,8 +7,38 @@ import { LoginConfig } from '../../types';
 import { generateRandomString } from './common-utils';
 import { WristbandError } from '../../error';
 
-export function parseTenantSubdomain(request: NextApiRequest, parseTenantFromRootDomain: string): string {
-  const { host } = request.headers;
+/**
+ * Resolves the host the browser used for the incoming request, including any port.
+ *
+ * By default, only the Host header is used. When trustProxyHeaders is enabled, the first value of the
+ * X-Forwarded-Host header is used instead, falling back to the Host header. It should only be enabled
+ * when the application runs behind a reverse proxy that sets or overwrites X-Forwarded-Host, since
+ * clients can send the header themselves.
+ *
+ * Returns an empty string if no host can be determined.
+ */
+function getRequestHost(request: NextApiRequest, trustProxyHeaders: boolean): string {
+  if (trustProxyHeaders) {
+    const forwardedHostHeader = request.headers['x-forwarded-host'];
+    const forwardedHostValue = Array.isArray(forwardedHostHeader) ? forwardedHostHeader[0] : forwardedHostHeader;
+
+    // Proxies may provide a comma-separated list of forwarded hosts.
+    const forwardedHost = forwardedHostValue?.split(',')[0].trim();
+
+    if (forwardedHost) {
+      return forwardedHost;
+    }
+  }
+
+  return request.headers.host || '';
+}
+
+export function parseTenantSubdomain(
+  request: NextApiRequest,
+  parseTenantFromRootDomain: string,
+  trustProxyHeaders: boolean
+): string {
+  const host = getRequestHost(request, trustProxyHeaders);
 
   // Should never happen (defensive measure)
   if (!host) {
@@ -23,9 +53,13 @@ export function parseTenantSubdomain(request: NextApiRequest, parseTenantFromRoo
     : '';
 }
 
-export function resolveTenantName(request: NextApiRequest, parseTenantFromRootDomain: string): string {
+export function resolveTenantName(
+  request: NextApiRequest,
+  parseTenantFromRootDomain: string,
+  trustProxyHeaders: boolean
+): string {
   if (parseTenantFromRootDomain) {
-    return parseTenantSubdomain(request, parseTenantFromRootDomain) || '';
+    return parseTenantSubdomain(request, parseTenantFromRootDomain, trustProxyHeaders) || '';
   }
 
   const { tenant_name: tenantNameParam } = request.query;
@@ -121,6 +155,7 @@ export function validateReturnUrl(
   returnUrl: string | undefined,
   tenantName: string,
   applicationAuthorizationRequestsEnabled: boolean,
+  trustProxyHeaders: boolean,
   parseTenantFromRootDomain?: string
 ): string | undefined {
   // Safety check: a tenant name is required for validation.
@@ -133,7 +168,7 @@ export function validateReturnUrl(
     return undefined;
   }
 
-  const { host } = request.headers;
+  const host = getRequestHost(request, trustProxyHeaders);
 
   // Without a host, the request origin cannot be established safely.
   if (!host) {

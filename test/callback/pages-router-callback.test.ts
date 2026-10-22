@@ -246,6 +246,56 @@ describe('Multi Tenant Callback - Page Router', () => {
         const parsedCookies = parseSetCookies(mockRes.getHeader('Set-Cookie') as string | string[]);
         expect(parsedCookies[0].domain).toBeUndefined();
       });
+
+      test('Tenant Subdomains Configuration behind a trusted proxy', async () => {
+        parseTenantFromRootDomain = 'business.invotastic.com';
+        loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+        redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+        wristbandAuth = createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl,
+          redirectUri,
+          wristbandApplicationVanityDomain,
+          autoConfigureEnabled: false,
+          applicationAuthorizationRequestsEnabled: false,
+          trustProxyHeaders: true,
+        });
+
+        // Mock login state
+        const returnUrl = `https://devs4you.${parseTenantFromRootDomain}/dashboard`;
+        const loginState: LoginState = { codeVerifier: 'codeVerifier', redirectUri, state: 'state', returnUrl };
+        const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+        // The proxy forwards to an internal host, so the tenant subdomain is only in X-Forwarded-Host.
+        // node-mocks-http uses a plain socket, so set x-forwarded-proto to match a real HTTPS request.
+        const { req, res } = createMocks({
+          method: 'GET',
+          headers: {
+            host: 'internal-app:3000',
+            'x-forwarded-host': `devs4you.${parseTenantFromRootDomain}`,
+            'x-forwarded-proto': 'https',
+          },
+          query: { state: 'state', code: 'code' },
+          cookies: { 'login#state#1234567890': encryptedLoginState },
+        });
+        // Cast req and res to NextApiRequest and NextApiResponse
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+        // Validate callback data contents
+        const callbackResult: PagesRouterCallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+        const { callbackData, type, reason } = callbackResult;
+        expect(type).toBe('completed');
+        expect(reason).toBeUndefined();
+        expect(callbackData).toBeTruthy();
+        if (callbackData) {
+          expect(callbackData.tenantName).toBe('devs4you');
+          // The returnUrl is validated against the forwarded host, so it is kept.
+          expect(callbackData.returnUrl).toBe(returnUrl);
+        }
+      });
     });
 
     describe('Custom Domains and Tenant Subdomains', () => {

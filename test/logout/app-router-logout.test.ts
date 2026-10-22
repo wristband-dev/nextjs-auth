@@ -271,6 +271,38 @@ describe('App Router Multi Tenant Logout', () => {
 
           validateRedirectResponse(response, `https://priority4a.${wristbandApplicationVanityDomain}`, null);
         });
+
+        test('tenant subdomain from X-Forwarded-Host behind a trusted proxy', async () => {
+          parseTenantFromRootDomain = 'business.invotastic.com';
+          loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+          wristbandAuth = createWristbandAuth({
+            clientId: CLIENT_ID,
+            clientSecret: CLIENT_SECRET,
+            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+            loginUrl,
+            redirectUri,
+            wristbandApplicationVanityDomain,
+            autoConfigureEnabled: false,
+            trustProxyHeaders: true,
+          });
+
+          // The proxy forwards to an internal host, so the tenant subdomain is only in X-Forwarded-Host.
+          const { req } = createMocks({
+            method: 'GET',
+            url: 'http://internal-app:3000/api/auth/logout',
+            headers: {
+              host: 'internal-app:3000',
+              'x-forwarded-host': `priority4a.${parseTenantFromRootDomain}`,
+            },
+          });
+          const mockNextRequest = createMockNextRequest(req);
+
+          const response = await wristbandAuth.appRouter.logout(mockNextRequest);
+
+          validateRedirectResponse(response, `https://priority4a-${wristbandApplicationVanityDomain}`, null);
+        });
       });
 
       describe('4b: Tenant subdomains disabled - query param', () => {
