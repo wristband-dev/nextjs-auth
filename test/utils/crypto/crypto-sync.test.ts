@@ -176,8 +176,9 @@ describe('CookieCrypto - Sync Methods', () => {
 
     it('should throw AUTH_FAILED for tampered data', () => {
       const encrypted = CookieCrypto.encryptSync(baseLoginState, validSecret);
-      // Tamper with the encrypted data
-      const tampered = `${encrypted.substring(0, 20)}X${encrypted.substring(21)}`;
+      // Tamper with the encrypted data (pick a character that always differs from the original)
+      const replacement = encrypted[20] === 'X' ? 'Y' : 'X';
+      const tampered = `${encrypted.substring(0, 20)}${replacement}${encrypted.substring(21)}`;
       expect(() => {
         return CookieCrypto.decryptSync(tampered, validSecret, 3600);
       }).toThrow(CryptoError);
