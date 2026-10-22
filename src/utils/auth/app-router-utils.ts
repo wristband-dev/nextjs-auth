@@ -269,7 +269,6 @@ export function createLoginStateCookie(
       ...(domain ? [`Domain=${domain}`] : []),
       'SameSite=Lax',
       'Max-Age=0',
-      'Expires=Thu, 01 Jan 1970 00:00:00 GMT',
       ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
     ].join('; ');
     response.headers.append('Set-Cookie', staleCookieHeaderValue);
@@ -359,7 +358,6 @@ export function clearLoginStateCookie(
     ...(domain ? [`Domain=${domain}`] : []),
     'SameSite=Lax',
     'Max-Age=0',
-    'Expires=Thu, 01 Jan 1970 00:00:00 GMT',
     ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
   ].join('; ');
   response.headers.append('Set-Cookie', cookieAttributes);

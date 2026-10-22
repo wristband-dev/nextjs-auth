@@ -1009,7 +1009,6 @@ describe('Multi Tenant Callback - App Router', () => {
       expect(parsedCookies).toHaveLength(1);
       expect(parsedCookies[0].name).toBe('login#state#1234567890');
       expect(parsedCookies[0]['max-age']).toBe('0');
-      expect(parsedCookies[0].expires).toBe('Thu, 01 Jan 1970 00:00:00 GMT');
     });
 
     test('Throws when the resolver returns an empty string', async () => {

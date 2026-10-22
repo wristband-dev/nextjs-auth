@@ -909,7 +909,7 @@ describe('createLoginStateCookie', () => {
     expect(mockResponse.headers.append).toHaveBeenCalledWith(
       'Set-Cookie',
       expect.stringContaining(
-        `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure`
+        `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure`
       )
     );
 
@@ -938,10 +938,10 @@ describe('createLoginStateCookie', () => {
 
     createLoginStateCookie(req, mockResponse, 'state4', 'encrypted-data', true);
 
-    // Stale cookie removal header should end right after Expires, with no Secure flag
+    // Stale cookie removal header should end right after Max-Age, with no Secure flag
     expect(mockResponse.headers.append).toHaveBeenCalledWith(
       'Set-Cookie',
-      `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
+      `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
     );
   });
 
@@ -967,7 +967,7 @@ describe('createLoginStateCookie', () => {
     expect(mockResponse.headers.append).toHaveBeenCalledWith(
       'Set-Cookie',
       expect.stringContaining(
-        `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure`
+        `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}${oldestTime}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Secure`
       )
     );
 
@@ -1179,7 +1179,7 @@ describe('clearLoginStateCookie', () => {
 
     expect(mockResponse.headers.append).toHaveBeenCalledWith(
       'Set-Cookie',
-      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure`
+      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure`
     );
   });
 
@@ -1193,7 +1193,7 @@ describe('clearLoginStateCookie', () => {
     // rather than joining in an empty string for the disabled case.
     expect(mockResponse.headers.append).toHaveBeenCalledWith(
       'Set-Cookie',
-      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
+      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
     );
   });
 
@@ -1212,7 +1212,7 @@ describe('clearLoginStateCookie', () => {
 
     expect(mockResponse.headers.append).toHaveBeenCalledWith(
       'Set-Cookie',
-      `${cookieName}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure`
+      `${cookieName}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Secure`
     );
   });
 
@@ -1242,7 +1242,7 @@ describe('createCallbackRedirectResponse', () => {
     const response = createCallbackRedirectResponse('https://acme.myapp.com/home', loginStateCookie, false);
 
     expect(response.headers.get('set-cookie')).toBe(
-      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure`
+      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure`
     );
   });
 
@@ -1263,16 +1263,14 @@ describe('createCallbackRedirectResponse', () => {
     );
 
     expect(response.headers.get('set-cookie')).toBe(
-      `${cookieName}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure`
+      `${cookieName}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Secure`
     );
   });
 
   test('should not include the Secure flag when dangerouslyDisableSecureCookies is true', () => {
     const response = createCallbackRedirectResponse('https://acme.myapp.com/home', loginStateCookie, true);
 
-    expect(response.headers.get('set-cookie')).toBe(
-      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
-    );
+    expect(response.headers.get('set-cookie')).toBe(`${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
   });
 });
 
