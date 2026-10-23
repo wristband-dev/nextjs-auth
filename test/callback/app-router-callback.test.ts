@@ -10,6 +10,8 @@ const CLIENT_SECRET = 'clientSecret';
 const LOGIN_STATE_COOKIE_SECRET = '7ffdbecc-ab7d-4134-9307-2dfcc52f7475';
 const APP_HOME_URL = 'https://myapp.com/home';
 
+type ResolveRedirectUrl = Parameters<WristbandAuth['appRouter']['callback']>[1];
+
 const mockTokens = {
   access_token: 'accessToken',
   expires_in: 1800,
@@ -1019,6 +1021,26 @@ describe('Multi Tenant Callback - App Router', () => {
           return '';
         })
       ).rejects.toThrow('resolveRedirectUrl must return a non-empty URL');
+    });
+
+    test('Throws before any Wristband API call when the resolver is missing', async () => {
+      const mockNextRequest = await setupCallback();
+
+      // Bypass the type check to simulate a JavaScript caller that omits the resolver.
+      await expect(
+        wristbandAuth.appRouter.callback(mockNextRequest, undefined as unknown as ResolveRedirectUrl)
+      ).rejects.toThrow('resolveRedirectUrl must be a function');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('Throws before any Wristband API call when the resolver is not a function', async () => {
+      const mockNextRequest = await setupCallback();
+
+      // Bypass the type check to simulate passing a URL string instead of a function.
+      await expect(
+        wristbandAuth.appRouter.callback(mockNextRequest, APP_HOME_URL as unknown as ResolveRedirectUrl)
+      ).rejects.toThrow('resolveRedirectUrl must be a function');
+      expect(global.fetch).not.toHaveBeenCalled();
     });
 
     test('Does not call the resolver when a redirect to login is required', async () => {

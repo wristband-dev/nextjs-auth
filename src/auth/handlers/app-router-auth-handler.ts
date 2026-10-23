@@ -159,6 +159,11 @@ export class AppRouterAuthHandler {
     request: NextRequest,
     resolveRedirectUrl: (request: NextRequest, callbackData: CallbackData) => string | Promise<string>
   ): Promise<AppRouterCallbackResult> {
+    // The redirect URL resolver is required to build the completed callback response.
+    if (typeof resolveRedirectUrl !== 'function') {
+      throw new TypeError('resolveRedirectUrl must be a function');
+    }
+
     // Fetch our SDK configs
     const applicationAuthorizationRequestsEnabled =
       await this.configResolver.getApplicationAuthorizationRequestsEnabled();
