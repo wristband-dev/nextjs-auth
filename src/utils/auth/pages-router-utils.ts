@@ -1,11 +1,44 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import type { TLSSocket } from 'node:tls';
 
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
-import { base64ToURLSafe, generateRandomString, sha256Base64 } from '../crypto';
-import { LoginState, LoginStateMapConfig } from '../../types';
+import { Base64 } from '../base64';
+import { LoginConfig } from '../../types';
+import { generateRandomString } from './common-utils';
+import { WristbandError } from '../../error';
 
-export function parseTenantSubdomain(request: NextApiRequest, parseTenantFromRootDomain: string): string {
-  const { host } = request.headers;
+/**
+ * Resolves the host the browser used for the incoming request, including any port.
+ *
+ * By default, only the Host header is used. When trustProxyHeaders is enabled, the first value of the
+ * X-Forwarded-Host header is used instead, falling back to the Host header. It should only be enabled
+ * when the application runs behind a reverse proxy that sets or overwrites X-Forwarded-Host, since
+ * clients can send the header themselves.
+ *
+ * Returns an empty string if no host can be determined.
+ */
+function getRequestHost(request: NextApiRequest, trustProxyHeaders: boolean): string {
+  if (trustProxyHeaders) {
+    const forwardedHostHeader = request.headers['x-forwarded-host'];
+    const forwardedHostValue = Array.isArray(forwardedHostHeader) ? forwardedHostHeader[0] : forwardedHostHeader;
+
+    // Proxies may provide a comma-separated list of forwarded hosts.
+    const forwardedHost = forwardedHostValue?.split(',')[0].trim();
+
+    if (forwardedHost) {
+      return forwardedHost;
+    }
+  }
+
+  return request.headers.host || '';
+}
+
+export function parseTenantSubdomain(
+  request: NextApiRequest,
+  parseTenantFromRootDomain: string,
+  trustProxyHeaders: boolean
+): string {
+  const host = getRequestHost(request, trustProxyHeaders);
 
   // Should never happen (defensive measure)
   if (!host) {
@@ -20,9 +53,13 @@ export function parseTenantSubdomain(request: NextApiRequest, parseTenantFromRoo
     : '';
 }
 
-export function resolveTenantName(request: NextApiRequest, parseTenantFromRootDomain: string): string {
+export function resolveTenantName(
+  request: NextApiRequest,
+  parseTenantFromRootDomain: string,
+  trustProxyHeaders: boolean
+): string {
   if (parseTenantFromRootDomain) {
-    return parseTenantSubdomain(request, parseTenantFromRootDomain) || '';
+    return parseTenantSubdomain(request, parseTenantFromRootDomain, trustProxyHeaders) || '';
   }
 
   const { tenant_name: tenantNameParam } = request.query;
@@ -44,26 +81,142 @@ export function resolveTenantCustomDomainParam(request: NextApiRequest): string 
   return tenantCustomDomainParam || '';
 }
 
-export function createLoginState(
-  request: NextApiRequest,
-  redirectUri: string,
-  config: LoginStateMapConfig = {}
-): LoginState {
+export function resolveReturnUrl(request: NextApiRequest, config: LoginConfig = {}): string | undefined {
+  // The return URL from the LoginConfig takes priority over the query param.
+  if (config.returnUrl) {
+    return config.returnUrl;
+  }
+
   const { return_url: returnUrlParam } = request.query;
 
-  if (!!returnUrlParam && typeof returnUrlParam !== 'string') {
+  // If no return URL in either location, return undefined.
+  if (!returnUrlParam) {
+    return undefined;
+  }
+
+  if (typeof returnUrlParam !== 'string') {
     throw new TypeError('More than one [return_url] query parameter was encountered');
   }
 
-  const returnUrl = config.returnUrl ?? returnUrlParam;
+  return returnUrlParam;
+}
 
-  return {
-    state: generateRandomString(32),
-    codeVerifier: generateRandomString(32),
-    redirectUri,
-    ...(!!returnUrl && typeof returnUrl === 'string' ? { returnUrl } : {}),
-    ...(!!config.customState && !!Object.keys(config.customState).length ? { customState: config.customState } : {}),
-  };
+/**
+ * Resolves the protocol the browser used for the incoming request.
+ *
+ * TLS often terminates at a reverse proxy or hosting platform, so the connection
+ * from the proxy to Next.js can be plain HTTP even when the browser used HTTPS.
+ * X-Forwarded-Proto carries the original protocol in that case. Only "http" and
+ * "https" are accepted; anything else falls back to whether the direct connection
+ * to Node.js is TLS-encrypted.
+ *
+ * This value is used only to validate the post-callback returnUrl, not to make
+ * access-control decisions.
+ */
+function getRequestProtocol(request: NextApiRequest): string {
+  const forwardedProto = request.headers['x-forwarded-proto'];
+
+  if (typeof forwardedProto === 'string') {
+    // Proxies may provide a comma-separated list of forwarded protocols.
+    const protocol = forwardedProto.split(',')[0].trim().toLowerCase();
+
+    if (protocol === 'http' || protocol === 'https') {
+      return protocol;
+    }
+  }
+
+  // This reflects the connection to Node.js, not necessarily the
+  // original client connection when TLS terminates at a reverse proxy.
+  // The cast is type-only; plain HTTP sockets leave "encrypted" undefined.
+  return (request.socket as TLSSocket).encrypted ? 'https' : 'http';
+}
+
+/**
+ * Validates the returnUrl that the auth callback could potentially redirect the browser
+ * to after a successful login, preventing open redirects.
+ *
+ * An attacker can supply an arbitrary returnUrl through a crafted login link. The
+ * returnUrl hostname must match either the hostname that served this request or the
+ * configured root domain, so an external host is rejected independently of the
+ * protocol check. The protocol check additionally requires the returnUrl to use the
+ * same scheme as the incoming request as resolved by getRequestProtocol, which blocks
+ * downgrades such as HTTPS to HTTP when that protocol is resolved correctly.
+ *
+ * This helper does not perform the redirect. The validated URL is returned to the
+ * application through the callback result, and the application decides whether and
+ * how to use it. Because applications commonly pass it straight to a redirect, this
+ * validation is the main safeguard against open redirects, not an optional extra.
+ *
+ * Returns the validated URL, or undefined if the returnUrl is missing, malformed, or
+ * points to a host that isn't allowed.
+ */
+export function validateReturnUrl(
+  request: NextApiRequest,
+  returnUrl: string | undefined,
+  tenantName: string,
+  applicationAuthorizationRequestsEnabled: boolean,
+  trustProxyHeaders: boolean,
+  parseTenantFromRootDomain?: string
+): string | undefined {
+  // Safety check: a tenant name is required for validation.
+  if (!tenantName) {
+    throw new WristbandError('missing_tenant_name', 'Tenant name is required to validate returnUrl');
+  }
+
+  // A return URL is optional during login.
+  if (!returnUrl) {
+    return undefined;
+  }
+
+  const host = getRequestHost(request, trustProxyHeaders);
+
+  // Without a host, the request origin cannot be established safely.
+  if (!host) {
+    return undefined;
+  }
+
+  try {
+    // Resolve the incoming request's protocol, accounting for reverse proxies.
+    const protocol = getRequestProtocol(request);
+
+    // Parse the request origin using URL rather than splitting the host
+    // on colons, which would mishandle IPv6 addresses and ports.
+    const requestUrl = new URL(`${protocol}://${host}`);
+    const { hostname: requestHostname } = requestUrl;
+
+    // Resolve relative return URLs against the incoming request origin.
+    // Absolute URLs ignore the base. URL parsing normalizes URL syntax
+    // before the redirect target's protocol and hostname are checked.
+    const url = new URL(returnUrl, requestUrl);
+
+    // Only allow redirects to the configured root domain or the exact
+    // hostname that served this request, using the same protocol.
+    // This rejects external hosts and HTTP/HTTPS protocol downgrades.
+    if (
+      url.protocol !== `${protocol}:` ||
+      (url.hostname !== parseTenantFromRootDomain && url.hostname !== requestHostname)
+    ) {
+      return undefined;
+    }
+
+    // When authorization requests are enabled, rewrite a return URL
+    // targeting the root domain to the resolved tenant's subdomain.
+    // The URL API preserves the remaining URL components.
+    if (
+      parseTenantFromRootDomain &&
+      applicationAuthorizationRequestsEnabled &&
+      url.hostname === parseTenantFromRootDomain
+    ) {
+      url.hostname = `${tenantName}.${url.hostname}`;
+      return url.toString();
+    }
+
+    // Preserve the original URL when no tenant rewrite is necessary.
+    return returnUrl;
+  } catch {
+    // Malformed origins or return URLs are treated as unsafe.
+    return undefined;
+  }
 }
 
 export function createLoginStateCookie(
@@ -71,7 +224,8 @@ export function createLoginStateCookie(
   response: NextApiResponse,
   state: string,
   encryptedLoginState: string,
-  dangerouslyDisableSecureCookies: boolean
+  dangerouslyDisableSecureCookies: boolean,
+  domain?: string
 ) {
   const { cookies } = request;
 
@@ -96,9 +250,15 @@ export function createLoginStateCookie(
       const timestamp = cookieName.split(LOGIN_STATE_COOKIE_SEPARATOR)[2];
       // If 3 cookies exist, then we delete the oldest one to make room for the new one.
       if (!mostRecentTimestamps.includes(timestamp)) {
-        const staleCookieHeaderValue = [
-          `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`,
-        ];
+        const staleCookieHeaderValue: string = [
+          `${cookieName}=`,
+          'Path=/',
+          'HttpOnly',
+          ...(domain ? [`Domain=${domain}`] : []),
+          'SameSite=Lax',
+          'Max-Age=0',
+          ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
+        ].join('; ');
         responseCookieArray.push(staleCookieHeaderValue);
       }
     });
@@ -108,34 +268,22 @@ export function createLoginStateCookie(
   // NOTE: If deploying your own app to production, do not disable secure cookies.
   const newCookieName: string = `${LOGIN_STATE_COOKIE_PREFIX}${state}${LOGIN_STATE_COOKIE_SEPARATOR}${Date.now().valueOf()}`;
   const newCookieHeaderValue: string = [
-    `${newCookieName}=${encryptedLoginState};`,
-    'HTTPOnly;',
-    'Max-Age=3600;',
-    'Path=/;',
-    'SameSite=lax',
-  ].join(' ');
-  const resolvedCookieValue: string = `${newCookieHeaderValue}${dangerouslyDisableSecureCookies ? '' : '; Secure'}`;
-
-  responseCookieArray.push(resolvedCookieValue);
+    `${newCookieName}=${encryptedLoginState}`,
+    'Path=/',
+    'HttpOnly',
+    ...(domain ? [`Domain=${domain}`] : []),
+    'SameSite=Lax',
+    'Max-Age=3600',
+    ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
+  ].join('; ');
+  responseCookieArray.push(newCookieHeaderValue);
   response.setHeader('Set-Cookie', responseCookieArray);
 }
 
-export async function getAuthorizeUrl(
+export async function getAuthorizationUrlParams(
   request: NextApiRequest,
-  config: {
-    clientId: string;
-    codeVerifier: string;
-    defaultTenantCustomDomain?: string;
-    defaultTenantName?: string;
-    redirectUri: string;
-    scopes: string[];
-    state: string;
-    tenantCustomDomain?: string;
-    tenantName?: string;
-    isApplicationCustomDomainActive?: boolean;
-    wristbandApplicationVanityDomain: string;
-  }
-): Promise<string> {
+  config: { clientId: string; codeVerifier: string; redirectUri: string; scopes: string[]; state: string }
+): Promise<URLSearchParams> {
   const { idp_hint: idpHint, login_hint: loginHint } = request.query;
 
   if (!!loginHint && typeof loginHint !== 'string') {
@@ -146,46 +294,23 @@ export async function getAuthorizeUrl(
     throw new TypeError('More than one [idp_hint] query parameter was encountered');
   }
 
-  const digest = await sha256Base64(config.codeVerifier);
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(config.codeVerifier));
 
-  const queryParams = new URLSearchParams({
+  return new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     response_type: 'code',
     state: config.state,
     scope: config.scopes.join(' '),
-    code_challenge: base64ToURLSafe(digest),
+    code_challenge: Base64.urlEncode(new Uint8Array(digest)),
     code_challenge_method: 'S256',
     nonce: generateRandomString(32),
     ...(!!loginHint && typeof loginHint === 'string' ? { login_hint: loginHint } : {}),
     ...(!!idpHint && typeof idpHint === 'string' ? { idp_hint: idpHint } : {}),
   });
-
-  const separator = config.isApplicationCustomDomainActive ? '.' : '-';
-
-  // Domain priority order resolution:
-  // 1)  tenant_custom_domain query param
-  // 2a) tenant subdomain
-  // 2b) tenant_name query param
-  // 3)  defaultTenantCustomDomain login config
-  // 4)  defaultTenantName login config
-  if (config.tenantCustomDomain) {
-    return `https://${config.tenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  if (config.tenantName) {
-    return `https://${config.tenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  if (config.defaultTenantCustomDomain) {
-    return `https://${config.defaultTenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  return `https://${config.defaultTenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
 }
 
-export function getAndClearLoginStateCookie(
-  request: NextApiRequest,
-  response: NextApiResponse,
-  dangerouslyDisableSecureCookies: boolean
-): string {
+export function getLoginStateCookie(request: NextApiRequest): { cookieName: string; loginStateCookie: string } {
   const { cookies, query } = request;
   const { state } = query;
   const paramState = state ? state.toString() : '';
@@ -196,16 +321,27 @@ export function getAndClearLoginStateCookie(
     return cookieName.startsWith(`${LOGIN_STATE_COOKIE_PREFIX}${paramState}${LOGIN_STATE_COOKIE_SEPARATOR}`);
   });
 
-  let loginStateCookie: string = '';
-
   if (matchingLoginCookieNames.length > 0) {
     const cookieName = matchingLoginCookieNames[0];
-    loginStateCookie = cookies[cookieName]!;
-    // Delete the login state cookie.
-    response.setHeader('Set-Cookie', [
-      `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`,
-    ]);
+    return { cookieName, loginStateCookie: cookies[cookieName]! };
   }
 
-  return loginStateCookie;
+  return { cookieName: '', loginStateCookie: '' };
+}
+
+export function clearLoginStateCookie(
+  response: NextApiResponse,
+  cookieName: string,
+  dangerouslyDisableSecureCookies: boolean,
+  domain?: string
+): void {
+  const cookieAttributes = [
+    'HttpOnly',
+    ...(domain ? [`Domain=${domain}`] : []),
+    'Path=/',
+    'Max-Age=0',
+    'SameSite=Lax',
+    ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
+  ].join('; ');
+  response.setHeader('Set-Cookie', [`${cookieName}=; ${cookieAttributes}`]);
 }

@@ -3,11 +3,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SessionData, SessionOptions } from '@wristband/typescript-session';
 
 import type {
+  AppRouterCallbackResult,
   AuthMiddlewareConfig,
-  CallbackResult,
+  CallbackData,
   LoginConfig,
   LogoutConfig,
   NextJsCookieStore,
+  PagesRouterCallbackResult,
   ServerActionAuthResult,
   TokenData,
 } from '../types';
@@ -24,7 +26,7 @@ import type {
 export interface WristbandAuth {
   /**
    * App Router authentication handlers for Next.js 13+ App Router.
-   * Provides login, callback, logout, and response creation methods that work with Next.js App Router APIs.
+   * Provides login, callback, and logout methods that work with Next.js App Router APIs.
    */
   appRouter: {
     /**
@@ -65,12 +67,71 @@ export interface WristbandAuth {
      * is required and neither tenant subdomains nor tenant custom domains are not being utilized, then this should be
      * appended as a query parameter when redirecting to the Login Endpoint.
      *
-     * @param {Request} request The request object.
-     * @returns {Promise<CallbackResult>} A Promise containing the result of what happened during callback execution
-     * as well as any accompanying data.
+     * The result always contains a ready-made redirect response with the login state cookie already cleared:
+     * - When the callback completes, the response redirects to the URL returned by `resolveRedirectUrl`.
+     * - When a redirect is required, `resolveRedirectUrl` is not called, and the response redirects to your
+     * Login Endpoint.
+     *
+     * @param {NextRequest} request The request object.
+     * @param {Function} resolveRedirectUrl A function that receives the request and the callback data, and returns
+     * the URL to send the user to after a successful login. The URL can be absolute or a relative path (e.g. `/home`),
+     * which is resolved against the host of the incoming request. It can return the URL directly or as a Promise.
+     * @returns {Promise<AppRouterCallbackResult>} A Promise with the callback result. It always contains a redirect
+     * `response` with the login state cookie already cleared. When `type` is `'completed'`, it also contains the
+     * `callbackData` needed to create a session. When `type` is `'redirect_required'`, it also contains the `reason`
+     * the redirect is required.
      * @throws {WristbandError} If an error occurs during the callback handling.
+     *
+     * @example
+     * ```typescript
+     * // src/app/api/auth/callback/route.ts
+     * export async function GET(req: NextRequest) {
+     *   // Return a static URL to send the user back to your application.
+     *   const callbackResult = await wristbandAuth.appRouter.callback(req, () => `<your_app_home_url>`);
+     *   const { callbackData, response, type } = callbackResult;
+     *
+     *   if (type === 'redirect_required') {
+     *     return response;
+     *   }
+     *
+     *   // Set authentication data into the session
+     *   const session = await getRequestSession(req);
+     *   session.fromCallback(callbackData);
+     *
+     *   // Save session headers to the response; then redirect to your app.
+     *   return await session.saveToResponse(response);
+     * }
+     * ```
+     *
+     * @example
+     * ```typescript
+     * // src/app/api/auth/callback/route.ts
+     * export async function GET(req: NextRequest) {
+     *   // Resolve the URL asynchronously (e.g. after looking up data in your own database).
+     *   const callbackResult = await wristbandAuth.appRouter.callback(req, async (request, data) => {
+     *     const hasOnboarded = await db.hasCompletedOnboarding(data.userinfo.userId);
+     *     // Relative paths are resolved against the host of the incoming request.
+     *     return hasOnboarded ? data.returnUrl || '/home' : '/onboarding';
+     *   });
+     *   const { callbackData, response, type } = callbackResult;
+     *
+     *   if (type === 'redirect_required') {
+     *     return response;
+     *   }
+     *
+     *   // Set authentication data into the session
+     *   const session = await getRequestSession(req);
+     *   session.fromCallback(callbackData);
+     *
+     *   // Save session headers to the response; then redirect to your app.
+     *   return await session.saveToResponse(response);
+     * }
+     * ```
      */
-    callback: (request: NextRequest) => Promise<CallbackResult>;
+    callback: (
+      request: NextRequest,
+      resolveRedirectUrl: (request: NextRequest, callbackData: CallbackData) => string | Promise<string>
+    ) => Promise<AppRouterCallbackResult>;
 
     /**
      * Revokes the user's refresh token and redirects them to the Wristband logout endpoint to destroy
@@ -82,15 +143,6 @@ export interface WristbandAuth {
      * @throws {Error} If an error occurs during the logout process.
      */
     logout: (request: NextRequest, logoutConfig?: LogoutConfig) => Promise<NextResponse>;
-
-    /**
-     * Constructs the redirect response to your application and cleans up the login state.
-     *
-     * @param {NextRequest} request The request object.
-     * @param {string} redirectUrl The location for your application that you want to send users to.
-     * @returns {NextResponse} The NextResponse that is peforming the URL redirect to your desired application URL.
-     */
-    createCallbackResponse: (request: NextRequest, redirectUrl: string) => Promise<NextResponse>;
 
     /**
      * Creates a configured Server Action authentication helper.
@@ -186,14 +238,45 @@ export interface WristbandAuth {
      * is required and neither tenant subdomains nor tenant custom domains are not being utilized, then this should be
      * appended as a query parameter when redirecting to the Login Endpoint.
      *
-     * @param {Request} request The request object.
-     * @param {Response} response The response object.
-     * @param {CallbackConfig} [config] Additional configuration for handling auth callbacks from Wristband.
-     * @returns {Promise<CallbackResult>} A Promise containing the result of what happened during callback execution
-     * as well as any accompanying data.
+     * The login state cookie is cleared on the response object, and your app performs the redirect itself:
+     * - When the callback completes, redirect to whatever location your app chooses.
+     * - When a redirect is required, redirect to the returned `redirectUrl`, which points to your Login Endpoint.
+     *
+     * @param {NextApiRequest} request The request object.
+     * @param {NextApiResponse} response The response object.
+     * @returns {Promise<PagesRouterCallbackResult>} A Promise with the callback result. When `type` is `'completed'`,
+     * it contains the `callbackData` needed to create a session. When `type` is `'redirect_required'`, it contains the
+     * `redirectUrl` to your Login Endpoint and the `reason` the redirect is required.
      * @throws {WristbandError} If an error occurs during the callback handling.
+     *
+     * @example
+     * ```typescript
+     * // src/pages/api/auth/callback.ts
+     * export default async function callbackEndpoint(req: NextApiRequest, res: NextApiResponse) {
+     *   if (req.method !== 'GET') {
+     *     res.status(405).end();
+     *     return;
+     *   }
+     *
+     *   const callbackResult = await wristbandAuth.pagesRouter.callback(req, res);
+     *   const { callbackData, redirectUrl, type } = callbackResult;
+     *
+     *   if (type === 'redirect_required') {
+     *     res.redirect(redirectUrl);
+     *     return;
+     *   }
+     *
+     *   // Save authentication data in the session
+     *   const session = await getSession(req, res);
+     *   session.fromCallback(callbackData);
+     *   await session.save();
+     *
+     *   // Send the user back to the application.
+     *   res.redirect(callbackData.returnUrl || `<your_app_home_url>`);
+     * }
+     * ```
      */
-    callback: (request: NextApiRequest, response: NextApiResponse) => Promise<CallbackResult>;
+    callback: (request: NextApiRequest, response: NextApiResponse) => Promise<PagesRouterCallbackResult>;
 
     /**
      * Revokes the user's refresh token and returns a redirect URL to the Wristband logout endpoint, where

@@ -1,21 +1,26 @@
+import type { NextResponse } from 'next/server';
+
 /**
  * Represents the configuration for Wristband authentication.
+ *
  * @typedef {Object} AuthConfig
+ * @property {boolean} [applicationAuthorizationRequestsEnabled] Flag indicating whether application-level authorization requests are enabled. Defaults to true. If true, for login and logout scenarios where neither a tenant name nor a tenant custom domain can be deduced, then the user will get redirected to the Wristband Authorize Endpoint using the application vanity domain to initiate an app-level authorization request.
  * @property {boolean} [autoConfigureEnabled] Flag that tells the SDK to automatically set some of the SDK configuration values by calling to Wristband's SDK Auto-Configuration Endpoint. Any manually provided configurations will take precedence over the configs returned from the endpoint. Auto-configure is enabled by default. When disabled, if manual configurations are not provided, then an error will be thrown.
  * @property {string} clientId The client ID for the application.
  * @property {string} clientSecret The client secret for the application.
  * @property {string} [customApplicationLoginPageUrl] Custom application login (tenant discovery) page URL if you are self-hosting the application login/tenant discovery UI.
- * @property {string} [dangerouslyDisableSecureCookies] If set to true, the "Secure" attribute will not be included in any cookie settings. This should only be done when testing in local development (if necessary).
- * @property {boolean} [isApplicationCustomDomainActive] Indicates whether custom domains are used for authentication.
+ * @property {boolean} [dangerouslyDisableSecureCookies] If set to true, the "Secure" attribute will not be included in any cookie settings. This should only be done when testing in local development (if necessary).
+ * @property {boolean} [isApplicationCustomDomainActive] Indicates whether an application-level custom domain is active in your Wristband application.
  * @property {string} [loginStateSecret] A secret (32 or more characters in length) used for encryption and decryption of login state cookies.
  * @property {string} [loginUrl] The URL for initiating the login request.
  * @property {string} [redirectUri] The redirect URI for callback after authentication.
- * @property {string} [parseTenantFromRootDomain] The root domain for your application.
  * @property {string[]} [scopes] The scopes required for authentication.
  * @property {number} [tokenExpirationBuffer] Buffer time (in seconds) to subtract from the access token’s expiration time. This causes the token to be treated as expired before its actual expiration, helping to avoid token expiration during API calls.
+ * @property {boolean} [trustProxyHeaders] Flag indicating whether to trust the X-Forwarded-Host header when determining the host of an incoming request. Defaults to false. When false, the host is read from the Host header only. When true, the first value of the X-Forwarded-Host header is used, falling back to the Host header. The host is used to resolve tenant subdomains, to validate return URLs, and to resolve relative redirect URLs in the App Router callback. Only enable this when your application runs behind a reverse proxy that sets or overwrites the X-Forwarded-Host header.
  * @property {string} wristbandApplicationVanityDomain The vanity domain of the Wristband application.
  */
 export type AuthConfig = {
+  applicationAuthorizationRequestsEnabled?: boolean;
   autoConfigureEnabled?: boolean;
   clientId: string;
   clientSecret: string;
@@ -25,29 +30,25 @@ export type AuthConfig = {
   loginStateSecret?: string;
   loginUrl?: string;
   redirectUri?: string;
-  parseTenantFromRootDomain?: string;
   scopes?: string[];
   tokenExpirationBuffer?: number;
+  trustProxyHeaders?: boolean;
   wristbandApplicationVanityDomain: string;
 };
 
 /**
  * Represents the configuration for login.
  * @typedef {Object} LoginConfig
- * @property {Object.<string, any>} [customState] Custom state data for the login request.
+ * @property {Record<string, unknown>} [customState] Custom state data for the login request.
  * @property {string} [defaultTenantCustomDomain] An optional default tenant custom domain to use for the login request in the
  * event the tenant custom domain cannot be found in the "tenant_custom_domain" request query parameter.
  * @property {string} [defaultTenantName] An optional default tenant name to use for the login request in the
  * event the tenant name cannot be found in either the subdomain or the "tenant_name" request query parameter (depending on
  * your subdomain configuration).
- * @property {string} [returnUrl] The URL to return to after authentication is completed. If a value is provided, then it takes precence over the `return_url` request query parameter.
+ * @property {string} [returnUrl] The URL to return to after authentication is completed. If a value is provided, then it takes precedence over the `return_url` request query parameter.
  */
 export type LoginConfig = {
-  // TODO: customState is typed `any` for consumer flexibility. Tightening to Record<string, unknown>
-  // would change consumer-side type-checking behavior (any allows unchecked property access, unknown
-  // does not), so this is deferred to the next major version alongside the iron-webcrypto v2 upgrade.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  customState?: { [key: string]: any };
+  customState?: Record<string, unknown>;
   defaultTenantCustomDomain?: string;
   defaultTenantName?: string;
   returnUrl?: string;
@@ -74,14 +75,14 @@ export type CallbackResultType = 'completed' | 'redirect_required';
 export type CallbackFailureReason = 'missing_login_state' | 'invalid_login_state' | 'login_required' | 'invalid_grant';
 
 /**
- * Represents the result of the callback execution after authentication. It can contain the set of callback
- * data necessary for creating an authenticated session.
+ * Represents the result of the Pages Router callback execution after authentication. It can contain the set of
+ * callback data necessary for creating an authenticated session.
  *
  * This is a discriminated union type based on the `type` field:
  * - When `type` is `'completed'`, `callbackData` is present and `redirectUrl` is never present
  * - When `type` is `'redirect_required'`, `redirectUrl` is present and `callbackData` is never present
  */
-export type CallbackResult =
+export type PagesRouterCallbackResult =
   | {
       /** The callback data received after authentication */
       callbackData: CallbackData;
@@ -104,11 +105,44 @@ export type CallbackResult =
     };
 
 /**
+ * Represents the result of the App Router callback execution after authentication. It can contain the set of
+ * callback data necessary for creating an authenticated session, and it always contains a redirect response
+ * with the login state cookie already cleared.
+ *
+ * This is a discriminated union type based on the `type` field:
+ * - When `type` is `'completed'`, `callbackData` is present and `response` redirects to the URL returned by the
+ *   application's redirect URL resolver
+ * - When `type` is `'redirect_required'`, `reason` is present, `callbackData` is never present, and `response`
+ *   redirects to the Login Endpoint
+ */
+export type AppRouterCallbackResult =
+  | {
+      /** The callback data received after authentication */
+      callbackData: CallbackData;
+      /** Never present when type is completed */
+      reason?: never;
+      /** The redirect response to the URL returned by the application's redirect URL resolver */
+      response: NextResponse;
+      /** Indicates successful completion with callback data */
+      type: 'completed';
+    }
+  | {
+      /** Never present when type is redirect_required */
+      callbackData?: never;
+      /** Why the redirect is required */
+      reason: CallbackFailureReason;
+      /** The redirect response to the Login Endpoint */
+      response: NextResponse;
+      /** Indicates a redirect is required */
+      type: 'redirect_required';
+    };
+
+/**
  * Represents the token data received after authentication.
  * @typedef {Object} TokenData
  * @property {string} accessToken The access token.
  * @property {number} expiresAt The absolute expiration time of the access token in milliseconds since the Unix epoch.
- * @property {number} expiresIn The durtaion from the current time until the access token is expired (in seconds).
+ * @property {number} expiresIn The duration from the current time until the access token is expired (in seconds).
  * @property {string} idToken The ID token.
  * @property {string} [refreshToken] The refresh token.
  */
@@ -230,25 +264,20 @@ export interface UserInfo {
 
   // Custom claims
   /** Object containing any configured custom claims */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  customClaims?: Record<string, any>;
+  customClaims?: Record<string, unknown>;
 }
 
 /**
  * Represents the callback data received after authentication.
  * @typedef {TokenData} CallbackData
- * @property {Object.<string, any>} [customState] Custom state data received in the callback.
+ * @property {Record<string, unknown>} [customState] Custom state data received in the callback.
  * @property {string} [returnUrl] The URL to return to after authentication.
  * @property {string} [tenantCustomDomain] The tenant custom domain for the tenant that the user belongs to.
- * @property {string} [tenantName] The domain name of the tenant the user belongs to.
+ * @property {string} [tenantName] The name of the tenant the user belongs to.
  * @property {UserInfo} userinfo User information received in the callback.
  */
 export type CallbackData = TokenData & {
-  // TODO: customState is typed `any` for consumer flexibility. Tightening to Record<string, unknown>
-  // would change consumer-side type-checking behavior, deferred to the next major version alongside
-  // the iron-webcrypto v2 upgrade.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  customState?: { [key: string]: any };
+  customState?: Record<string, unknown>;
   returnUrl?: string;
   tenantCustomDomain?: string;
   tenantName: string;
@@ -278,18 +307,61 @@ export type LogoutConfig = {
 // ====================================================== //
 
 /**
+ * Error codes for CookieCrypto operations.
+ *
+ * Provides structured identifiers for cryptographic failures without
+ * exposing sensitive internal implementation details.
+ */
+export type CryptoErrorCode =
+  // --- Input validation ---
+  /** The provided secret is missing, too short, or invalid. */
+  | 'INVALID_SECRET'
+  /** The provided list of secrets is not an array, empty, or contains too many items. */
+  | 'INVALID_SECRETS_LIST'
+  /** The maxAge value is not a positive number or is otherwise invalid. */
+  | 'INVALID_MAX_AGE'
+
+  // --- Cookie structural errors ---
+  /** The data or encrypted cookie exceeds the maximum allowed size (4KB). */
+  | 'DATA_TOO_LARGE'
+  /** The encrypted cookie is malformed or cannot be parsed correctly. */
+  | 'MALFORMED_DATA'
+  /** The encrypted cookie version is unsupported by this SDK version. */
+  | 'UNSUPPORTED_VERSION'
+
+  // --- TTL / authentication errors ---
+  /** The encrypted data has expired based on the embedded timestamp and maxAge. */
+  | 'EXPIRED'
+  /** Authentication failed (e.g., data tampering detected, wrong secret). */
+  | 'AUTH_FAILED'
+
+  // --- Crypto operation failures ---
+  /** Decryption failed due to an internal cryptographic error. */
+  | 'DECRYPTION_FAILED'
+  /** Encryption failed due to an internal cryptographic error. */
+  | 'ENCRYPTION_FAILED'
+
+  // --- Node.js specific ---
+  /** Node.js crypto module is required but unavailable (sync methods). */
+  | 'NODE_CRYPTO_UNAVAILABLE';
+
+/**
  * Configuration object containing URLs and settings discovered from the Wristband SDK Configuration Endpoint.
  * These values are typically auto-configured by calling the Wristband API, but can also be manually provided
  * to override auto-discovered settings.
  * @typedef {Object} SdkConfiguration
+ * @property {boolean} applicationAuthorizationRequestsEnabled Flag indicating whether application-level authorization requests are enabled. If true, for login and logout scenarios where neither a tenant name nor a tenant custom domain cannot be deduced, then the user will get redirected to the Wristband Authorize Endpoint using the application vanity domain to initiate an app-level authorization request.
  * @property {string|null} customApplicationLoginPageUrl Custom Application-Level Login Page URL (i.e. Tenant Discovery Page URL). This value is only needed if you are self-hosting the application login page. When null, the SDK will use your Wristband-hosted Application-Level Login page URL.
+ * @property {string|null} fallbackLoginUrl Fallback login URL to redirect to when the `{tenant_name}` token in your configured `loginUrl` cannot be resolved. Only applicable when `applicationAuthorizationRequestsEnabled` is true. When null, no fallback is applied.
  * @property {boolean} isApplicationCustomDomainActive Indicates whether your Wristband application is configured with an application-level custom domain that is active. This tells the SDK which URL format to use when constructing the Wristband Authorize Endpoint URL.
  * @property {string} loginUrl The URL of your application's login endpoint that redirects to Wristband to initialize the login flow. If using tenant subdomains, this value must contain the `{tenant_name}` placeholder.
  * @property {string|null} loginUrlTenantDomainSuffix The domain suffix used when constructing login URLs with tenant subdomains. This value is null when tenant subdomains are not being used.
  * @property {string} redirectUri The URI that Wristband will redirect to after authenticating a user. This should point to your application's callback endpoint. If using tenant subdomains, this value must contain the `{tenant_name}` placeholder.
  */
 export type SdkConfiguration = {
+  applicationAuthorizationRequestsEnabled: boolean;
   customApplicationLoginPageUrl: string | null;
+  fallbackLoginUrl: string | null;
   isApplicationCustomDomainActive: boolean;
   loginUrl: string;
   loginUrlTenantDomainSuffix: string | null;
@@ -309,7 +381,7 @@ export type ValidateTenantCustomDomainResponse = {
  * Represents all possible state for the current login request, which is stored in the login state cookie.
  * @typedef {Object} LoginState
  * @property {string} codeVerifier The code verifier for PKCE.
- * @property {Object.<string, unknown>} [customState] Custom state data for the login state.
+ * @property {Record<string, unknown>} [customState] Custom state data for the login state.
  * @property {string} redirectUri The redirect URI for callback after authentication.
  * @property {string} [returnUrl] The URL to return to after authentication.
  * @property {string} state The state of the login process.

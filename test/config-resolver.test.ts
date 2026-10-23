@@ -2,7 +2,7 @@ import { ConfigResolver } from '../src/config-resolver';
 import { WristbandService } from '../src/wristband-service';
 import { AuthConfig, SdkConfiguration } from '../src/types';
 import { WristbandError } from '../src/error';
-import { TENANT_DOMAIN_PLACEHOLDER, TENANT_NAME_PLACEHOLDER, TENANT_PLACEHOLDER_MSG } from '../src/utils/constants';
+import { TENANT_NAME_PLACEHOLDER, TENANT_PLACEHOLDER_MSG } from '../src/utils/constants';
 
 // Mock WristbandService
 jest.mock('../src/wristband-service');
@@ -16,6 +16,8 @@ const validAuthConfig: AuthConfig = {
 };
 
 const validSdkConfig: SdkConfiguration = {
+  applicationAuthorizationRequestsEnabled: false,
+  fallbackLoginUrl: null,
   loginUrl: 'https://test.example.com/auth/login',
   redirectUri: 'https://test.example.com/auth/callback',
   customApplicationLoginPageUrl: 'https://test.example.com/custom-login',
@@ -95,57 +97,9 @@ describe('ConfigResolver', () => {
         return new ConfigResolver({ ...validAuthConfig, tokenExpirationBuffer: -1 });
       }).toThrow('The [tokenExpirationBuffer] config must be greater than or equal to 0.');
     });
-
-    it('should throw error when parseTenantFromRootDomain contains a port', () => {
-      expect(() => {
-        return new ConfigResolver({
-          ...validAuthConfig,
-          parseTenantFromRootDomain: 'example.com:3000',
-        });
-      }).toThrow('The [parseTenantFromRootDomain] config should not include a port.');
-    });
-
-    it('should throw error when parseTenantFromRootDomain contains port 80', () => {
-      expect(() => {
-        return new ConfigResolver({
-          ...validAuthConfig,
-          parseTenantFromRootDomain: 'example.com:80',
-        });
-      }).toThrow('The [parseTenantFromRootDomain] config should not include a port.');
-    });
-
-    it('should throw error when parseTenantFromRootDomain contains port 443', () => {
-      expect(() => {
-        return new ConfigResolver({
-          ...validAuthConfig,
-          parseTenantFromRootDomain: 'example.com:443',
-        });
-      }).toThrow('The [parseTenantFromRootDomain] config should not include a port.');
-    });
-
-    it('should accept parseTenantFromRootDomain without port', () => {
-      expect(() => {
-        return new ConfigResolver({
-          ...validAuthConfig,
-          parseTenantFromRootDomain: 'example.com',
-        });
-      }).not.toThrow();
-    });
-
-    it('should accept nested subdomain in parseTenantFromRootDomain without port', () => {
-      expect(() => {
-        return new ConfigResolver({
-          ...validAuthConfig,
-          parseTenantFromRootDomain: 'business.invotastic.com',
-        });
-      }).not.toThrow();
-    });
   });
 
-  describe.each([
-    ['tenant_domain', TENANT_DOMAIN_PLACEHOLDER],
-    ['tenant_name', TENANT_NAME_PLACEHOLDER],
-  ])('Constructor - Auto-configure Disabled Validation with %s placeholder', (placeholderName, placeholder) => {
+  describe('Constructor - Auto-configure Disabled Validation', () => {
     const disabledConfig = { ...validAuthConfig, autoConfigureEnabled: false };
 
     it('should validate loginUrl is present when auto-configure disabled', () => {
@@ -161,66 +115,62 @@ describe('ConfigResolver', () => {
       }).toThrow('The [redirectUri] config must have a value when auto-configure is disabled.');
     });
 
-    it(`should validate ${placeholderName} placeholder when parseTenantFromRootDomain is provided`, () => {
+    it('should require the tenant_name placeholder in redirectUri when loginUrl has it', () => {
+      const config = {
+        ...disabledConfig,
+        loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.test.com/login`,
+        redirectUri: 'https://test.com/callback',
+      };
+      expect(() => {
+        return new ConfigResolver(config);
+      }).toThrow(`The [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when the [loginUrl] contains it.`);
+    });
+
+    it('should reject the tenant_name placeholder in redirectUri when loginUrl does not have it', () => {
       const config = {
         ...disabledConfig,
         loginUrl: 'https://test.com/login',
-        redirectUri: 'https://test.com/callback',
-        parseTenantFromRootDomain: 'test.com',
+        redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.test.com/callback`,
       };
       expect(() => {
         return new ConfigResolver(config);
       }).toThrow(
-        `The [loginUrl] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
+        `The [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [loginUrl] does not contain it.`
       );
     });
 
-    it(`should validate redirectUri has ${placeholderName} placeholder when parseTenantFromRootDomain is provided`, () => {
+    it('should reject a loginUrl where the tenant_name placeholder is not the leftmost part of the hostname', () => {
       const config = {
         ...disabledConfig,
-        loginUrl: `https://${placeholder}.test.com/login`,
-        redirectUri: 'https://test.com/callback',
-        parseTenantFromRootDomain: 'test.com',
+        loginUrl: `https://app.${TENANT_NAME_PLACEHOLDER}.test.com/login`,
+        redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.test.com/callback`,
       };
       expect(() => {
         return new ConfigResolver(config);
       }).toThrow(
-        `The [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
+        `The [loginUrl] can only contain the ${TENANT_PLACEHOLDER_MSG} once, as the leftmost part of its hostname.`
       );
     });
 
-    it(`should validate loginUrl does not have ${placeholderName} placeholder when parseTenantFromRootDomain absent`, () => {
+    it('should reject a redirectUri where the tenant_name placeholder is not the leftmost part of the hostname', () => {
       const config = {
         ...disabledConfig,
-        loginUrl: `https://${placeholder}.test.com/login`,
-        redirectUri: 'https://test.com/callback',
+        loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.test.com/login`,
+        redirectUri: `https://test.com/${TENANT_NAME_PLACEHOLDER}/callback`,
       };
       expect(() => {
         return new ConfigResolver(config);
       }).toThrow(
-        `The [loginUrl] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
+        `The [redirectUri] can only contain the ${TENANT_PLACEHOLDER_MSG} once, as the leftmost part of its hostname.`
       );
     });
 
-    it(`should validate redirectUri does not have ${placeholderName} placeholder when parseTenantFromRootDomain absent`, () => {
+    it('should pass validation with correct configuration using tenant_name', () => {
       const config = {
         ...disabledConfig,
-        loginUrl: 'https://test.com/login',
-        redirectUri: `https://${placeholder}.test.com/callback`,
-      };
-      expect(() => {
-        return new ConfigResolver(config);
-      }).toThrow(
-        `The [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
-      );
-    });
-
-    it(`should pass validation with correct configuration using ${placeholderName}`, () => {
-      const config = {
-        ...disabledConfig,
-        loginUrl: `https://${placeholder}.test.com/login`,
-        redirectUri: `https://${placeholder}.test.com/callback`,
-        parseTenantFromRootDomain: 'test.com',
+        loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.test.com/login`,
+        redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.test.com/callback`,
+        applicationAuthorizationRequestsEnabled: false,
       };
       expect(() => {
         return new ConfigResolver(config);
@@ -229,50 +179,17 @@ describe('ConfigResolver', () => {
   });
 
   describe('Mixed Placeholder Support', () => {
-    const disabledConfig = { ...validAuthConfig, autoConfigureEnabled: false };
-
-    it('should accept tenant_domain in loginUrl and tenant_name in redirectUri', () => {
-      const config = {
-        ...disabledConfig,
-        loginUrl: `https://${TENANT_DOMAIN_PLACEHOLDER}.test.com/login`,
-        redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.test.com/callback`,
-        parseTenantFromRootDomain: 'test.com',
-      };
-      expect(() => {
-        return new ConfigResolver(config);
-      }).not.toThrow();
-    });
-
-    it('should accept tenant_name in loginUrl and tenant_domain in redirectUri', () => {
-      const config = {
-        ...disabledConfig,
-        loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.test.com/login`,
-        redirectUri: `https://${TENANT_DOMAIN_PLACEHOLDER}.test.com/callback`,
-        parseTenantFromRootDomain: 'test.com',
-      };
-      expect(() => {
-        return new ConfigResolver(config);
-      }).not.toThrow();
-    });
+    const disabledConfig = {
+      ...validAuthConfig,
+      autoConfigureEnabled: false,
+      applicationAuthorizationRequestsEnabled: false,
+    };
 
     it('should accept both tenant_name placeholders', () => {
       const config = {
         ...disabledConfig,
         loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.test.com/login`,
         redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.test.com/callback`,
-        parseTenantFromRootDomain: 'test.com',
-      };
-      expect(() => {
-        return new ConfigResolver(config);
-      }).not.toThrow();
-    });
-
-    it('should accept both tenant_domain placeholders (backward compatibility)', () => {
-      const config = {
-        ...disabledConfig,
-        loginUrl: `https://${TENANT_DOMAIN_PLACEHOLDER}.test.com/login`,
-        redirectUri: `https://${TENANT_DOMAIN_PLACEHOLDER}.test.com/callback`,
-        parseTenantFromRootDomain: 'test.com',
       };
       expect(() => {
         return new ConfigResolver(config);
@@ -280,59 +197,68 @@ describe('ConfigResolver', () => {
     });
   });
 
-  describe.each([
-    ['tenant_domain', TENANT_DOMAIN_PLACEHOLDER],
-    ['tenant_name', TENANT_NAME_PLACEHOLDER],
-  ])('Constructor - Auto-configure Enabled Partial Validation with %s placeholder', (placeholderName, placeholder) => {
-    it(`should validate manually provided loginUrl with parseTenantFromRootDomain requires ${placeholderName}`, () => {
+  describe('Constructor - Auto-configure Enabled Partial Validation', () => {
+    it('should require the tenant_name placeholder in a manually provided redirectUri when the manual loginUrl has it', () => {
+      const config = {
+        ...validAuthConfig,
+        loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.test.com/login`,
+        redirectUri: 'https://test.com/callback',
+      };
+      expect(() => {
+        return new ConfigResolver(config);
+      }).toThrow(`The [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when the [loginUrl] contains it.`);
+    });
+
+    it('should reject the tenant_name placeholder in a manually provided redirectUri when the manual loginUrl does not have it', () => {
       const config = {
         ...validAuthConfig,
         loginUrl: 'https://test.com/login',
-        parseTenantFromRootDomain: 'test.com',
+        redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.test.com/callback`,
       };
       expect(() => {
         return new ConfigResolver(config);
       }).toThrow(
-        `The [loginUrl] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
+        `The [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [loginUrl] does not contain it.`
       );
     });
 
-    it(`should validate manually provided redirectUri with parseTenantFromRootDomain requires ${placeholderName}`, () => {
+    it('should defer the placeholder comparison when only loginUrl is provided manually', () => {
+      const config = { ...validAuthConfig, loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.test.com/login` };
+      expect(() => {
+        return new ConfigResolver(config);
+      }).not.toThrow();
+    });
+
+    it('should defer the placeholder comparison when only redirectUri is provided manually', () => {
+      const config = { ...validAuthConfig, redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.test.com/callback` };
+      expect(() => {
+        return new ConfigResolver(config);
+      }).not.toThrow();
+    });
+
+    it('should reject a manually provided loginUrl where the tenant_name placeholder is not the leftmost part of the hostname', () => {
+      const config = { ...validAuthConfig, loginUrl: `https://app.${TENANT_NAME_PLACEHOLDER}.test.com/login` };
+      expect(() => {
+        return new ConfigResolver(config);
+      }).toThrow(
+        `The [loginUrl] can only contain the ${TENANT_PLACEHOLDER_MSG} once, as the leftmost part of its hostname.`
+      );
+    });
+
+    it('should reject a manually provided redirectUri where the tenant_name placeholder is not the leftmost part of the hostname', () => {
+      const config = { ...validAuthConfig, redirectUri: `https://test.com/${TENANT_NAME_PLACEHOLDER}/callback` };
+      expect(() => {
+        return new ConfigResolver(config);
+      }).toThrow(
+        `The [redirectUri] can only contain the ${TENANT_PLACEHOLDER_MSG} once, as the leftmost part of its hostname.`
+      );
+    });
+
+    it('should pass validation with correct manual overrides using tenant_name', () => {
       const config = {
         ...validAuthConfig,
-        redirectUri: 'https://test.com/callback',
-        parseTenantFromRootDomain: 'test.com',
-      };
-      expect(() => {
-        return new ConfigResolver(config);
-      }).toThrow(
-        `The [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
-      );
-    });
-
-    it(`should validate manually provided loginUrl without parseTenantFromRootDomain rejects ${placeholderName}`, () => {
-      const config = { ...validAuthConfig, loginUrl: `https://${placeholder}.test.com/login` };
-      expect(() => {
-        return new ConfigResolver(config);
-      }).toThrow(
-        `The [loginUrl] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
-      );
-    });
-
-    it(`should validate manually provided redirectUri without parseTenantFromRootDomain rejects ${placeholderName}`, () => {
-      const config = { ...validAuthConfig, redirectUri: `https://${placeholder}.test.com/callback` };
-      expect(() => {
-        return new ConfigResolver(config);
-      }).toThrow(
-        `The [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
-      );
-    });
-
-    it(`should pass validation with correct manual overrides using ${placeholderName}`, () => {
-      const config = {
-        ...validAuthConfig,
-        loginUrl: `https://${placeholder}.test.com/login`,
-        parseTenantFromRootDomain: 'test.com',
+        loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.test.com/login`,
+        redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.test.com/callback`,
       };
       expect(() => {
         return new ConfigResolver(config);
@@ -421,6 +347,20 @@ describe('ConfigResolver', () => {
       resolver = new ConfigResolver({ ...validAuthConfig, tokenExpirationBuffer: 120 });
       expect(resolver.getTokenExpirationBuffer()).toBe(120);
     });
+
+    it('should return trustProxyHeaders default false', () => {
+      expect(resolver.getTrustProxyHeaders()).toBe(false);
+    });
+
+    it('should return trustProxyHeaders when set to true', () => {
+      resolver = new ConfigResolver({ ...validAuthConfig, trustProxyHeaders: true });
+      expect(resolver.getTrustProxyHeaders()).toBe(true);
+    });
+
+    it('should return trustProxyHeaders when set to false', () => {
+      resolver = new ConfigResolver({ ...validAuthConfig, trustProxyHeaders: false });
+      expect(resolver.getTrustProxyHeaders()).toBe(false);
+    });
   });
 
   describe('Dynamic Configuration Getters - Auto-configure Disabled', () => {
@@ -431,11 +371,11 @@ describe('ConfigResolver', () => {
         const config = {
           ...validAuthConfig,
           autoConfigureEnabled: false,
-          loginUrl: `https://${TENANT_DOMAIN_PLACEHOLDER}.manual.com/login`,
-          redirectUri: `https://${TENANT_DOMAIN_PLACEHOLDER}.manual.com/callback`,
+          loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.manual.com/login`,
+          redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.manual.com/callback`,
           customApplicationLoginPageUrl: 'https://manual.com/custom-login',
           isApplicationCustomDomainActive: true,
-          parseTenantFromRootDomain: 'manual.com',
+          applicationAuthorizationRequestsEnabled: false,
         };
         resolver = new ConfigResolver(config);
       });
@@ -449,15 +389,19 @@ describe('ConfigResolver', () => {
       });
 
       it('should return manual loginUrl', async () => {
-        expect(await resolver.getLoginUrl()).toBe(`https://${TENANT_DOMAIN_PLACEHOLDER}.manual.com/login`);
+        expect(await resolver.getLoginUrl()).toBe(`https://${TENANT_NAME_PLACEHOLDER}.manual.com/login`);
       });
 
-      it('should return manual parseTenantFromRootDomain', async () => {
+      it('should derive parseTenantFromRootDomain from the manual loginUrl', async () => {
         expect(await resolver.getParseTenantFromRootDomain()).toBe('manual.com');
       });
 
+      it('should derive fallbackLoginUrl from the manual loginUrl', async () => {
+        expect(await resolver.getFallbackLoginUrl()).toBe('https://manual.com/login');
+      });
+
       it('should return manual redirectUri', async () => {
-        expect(await resolver.getRedirectUri()).toBe(`https://${TENANT_DOMAIN_PLACEHOLDER}.manual.com/callback`);
+        expect(await resolver.getRedirectUri()).toBe(`https://${TENANT_NAME_PLACEHOLDER}.manual.com/callback`);
       });
     });
 
@@ -493,6 +437,26 @@ describe('ConfigResolver', () => {
       it('should return manual redirectUri', async () => {
         expect(await resolver.getRedirectUri()).toBe('https://manual.com/callback');
       });
+
+      it('should return true for missing applicationAuthorizationRequestsEnabled', async () => {
+        expect(await resolver.getApplicationAuthorizationRequestsEnabled()).toBe(true);
+      });
+
+      it('should return manually provided applicationAuthorizationRequestsEnabled', async () => {
+        const config = {
+          ...validAuthConfig,
+          autoConfigureEnabled: false,
+          loginUrl: 'https://manual.com/login',
+          redirectUri: 'https://manual.com/callback',
+          applicationAuthorizationRequestsEnabled: true,
+        };
+        const manualResolver = new ConfigResolver(config);
+        expect(await manualResolver.getApplicationAuthorizationRequestsEnabled()).toBe(true);
+      });
+
+      it('should return empty string for missing fallbackLoginUrl', async () => {
+        expect(await resolver.getFallbackLoginUrl()).toBe('');
+      });
     });
   });
 
@@ -507,14 +471,17 @@ describe('ConfigResolver', () => {
     it('should return auto-configured values', async () => {
       mockWristbandService.getSdkConfiguration.mockResolvedValue(validSdkConfig);
 
-      const [customUrl, isCustomDomain, loginUrl, parseTenant, redirectUri] = await Promise.all([
-        resolver.getCustomApplicationLoginPageUrl(),
-        resolver.getIsApplicationCustomDomainActive(),
-        resolver.getLoginUrl(),
-        resolver.getParseTenantFromRootDomain(),
-        resolver.getRedirectUri(),
-      ]);
+      const [applicationAuthorizationRequestsEnabled, customUrl, isCustomDomain, loginUrl, parseTenant, redirectUri] =
+        await Promise.all([
+          resolver.getApplicationAuthorizationRequestsEnabled(),
+          resolver.getCustomApplicationLoginPageUrl(),
+          resolver.getIsApplicationCustomDomainActive(),
+          resolver.getLoginUrl(),
+          resolver.getParseTenantFromRootDomain(),
+          resolver.getRedirectUri(),
+        ]);
 
+      expect(applicationAuthorizationRequestsEnabled).toBe(false);
       expect(customUrl).toBe('https://test.example.com/custom-login');
       expect(isCustomDomain).toBe(true);
       expect(loginUrl).toBe('https://test.example.com/auth/login');
@@ -546,6 +513,8 @@ describe('ConfigResolver', () => {
 
     it('should handle null values in auto-config response', async () => {
       const partialSdkConfig: SdkConfiguration = {
+        applicationAuthorizationRequestsEnabled: false,
+        fallbackLoginUrl: null,
         loginUrl: 'https://test.example.com/auth/login',
         redirectUri: 'https://test.example.com/auth/callback',
         customApplicationLoginPageUrl: null,
@@ -579,10 +548,51 @@ describe('ConfigResolver', () => {
       const invalidSdkConfig = { loginUrl: 'https://test.example.com/auth/login' } as SdkConfiguration;
       initWristbandServiceMock(invalidSdkConfig);
       resolver = new ConfigResolver(validAuthConfig);
-
       await expect(resolver.getRedirectUri()).rejects.toThrow(
         'The [redirectUri] could not be resolved. Provide it explicitly in your SDK config or ensure your Wristband OAuth2 Client has a single redirect URI configured.'
       );
+    });
+
+    it('should not throw when redirectUri missing from auto-config but manually provided', async () => {
+      const invalidSdkConfig = { loginUrl: 'https://test.example.com/auth/login' } as SdkConfiguration;
+      initWristbandServiceMock(invalidSdkConfig);
+      const config = { ...validAuthConfig, redirectUri: 'https://manual.com/callback' };
+      resolver = new ConfigResolver(config);
+
+      await expect(resolver.getRedirectUri()).resolves.toBe('https://manual.com/callback');
+    });
+
+    it('should return manual applicationAuthorizationRequestsEnabled over auto-configured value', async () => {
+      const config = { ...validAuthConfig, applicationAuthorizationRequestsEnabled: true };
+      resolver = new ConfigResolver(config);
+      mockWristbandService.getSdkConfiguration.mockResolvedValue({
+        ...validSdkConfig,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      expect(await resolver.getApplicationAuthorizationRequestsEnabled()).toBe(true);
+      expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(0);
+    });
+
+    it('should return auto-configured fallbackLoginUrl value', async () => {
+      mockWristbandService.getSdkConfiguration.mockResolvedValue({
+        ...validSdkConfig,
+        fallbackLoginUrl: 'https://sdk.com/fallback',
+      });
+
+      expect(await resolver.getFallbackLoginUrl()).toBe('https://sdk.com/fallback');
+    });
+
+    it('should derive fallbackLoginUrl from the manual loginUrl over the auto-configured value', async () => {
+      const config = { ...validAuthConfig, loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.manual.com/login` };
+      resolver = new ConfigResolver(config);
+      mockWristbandService.getSdkConfiguration.mockResolvedValue({
+        ...validSdkConfig,
+        fallbackLoginUrl: 'https://sdk.com/fallback',
+      });
+
+      expect(await resolver.getFallbackLoginUrl()).toBe('https://manual.com/login');
+      expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(0);
     });
   });
 
@@ -604,7 +614,8 @@ describe('ConfigResolver', () => {
     // WristbandService -- see withRetry() in utils/retry.ts. ConfigResolver itself only ever
     // calls getSdkConfiguration once and maps whatever error (if any) surfaces after that.
     it('should propagate the error immediately without retrying', async () => {
-      mockWristbandService.getSdkConfiguration.mockRejectedValue(new Error('Network error'));
+      const error = new Error('Network error');
+      mockWristbandService.getSdkConfiguration.mockRejectedValue(error);
 
       await expect(resolver.getLoginUrl()).rejects.toThrow('Failed to fetch SDK configuration: Network error');
       expect(mockWristbandService.getSdkConfiguration).toHaveBeenCalledTimes(1);
@@ -631,10 +642,7 @@ describe('ConfigResolver', () => {
     });
   });
 
-  describe.each([
-    ['tenant_domain', TENANT_DOMAIN_PLACEHOLDER],
-    ['tenant_name', TENANT_NAME_PLACEHOLDER],
-  ])('validateAllDynamicConfigs with %s placeholder', (placeholderName, placeholder) => {
+  describe('validateAllDynamicConfigs', () => {
     let resolver: ConfigResolver;
 
     beforeEach(() => {
@@ -657,83 +665,67 @@ describe('ConfigResolver', () => {
       );
     });
 
-    it(`should validate resolved config with parseTenantFromRootDomain requires ${placeholderName}`, () => {
-      const manualConfig = { ...validAuthConfig, parseTenantFromRootDomain: 'test.com' };
+    it('should not throw when redirectUri missing from SDK config but manually provided', () => {
+      const manualConfig = { ...validAuthConfig, redirectUri: 'https://manual.com/callback' };
       resolver = new ConfigResolver(manualConfig);
 
-      const invalidSdkConfig: SdkConfiguration = {
-        loginUrl: 'https://test.com/login',
-        redirectUri: 'https://test.com/callback',
-        customApplicationLoginPageUrl: null,
-        isApplicationCustomDomainActive: false,
-        loginUrlTenantDomainSuffix: null,
-      };
-
+      const invalidSdkConfig = { loginUrl: 'https://test.com/login' } as SdkConfiguration;
       expect(() => {
         return resolver['validateAllDynamicConfigs'](invalidSdkConfig);
-      }).toThrow(
-        `The resolved [loginUrl] must contain the ${TENANT_PLACEHOLDER_MSG} when using [parseTenantFromRootDomain].`
-      );
+      }).not.toThrow();
     });
 
-    it(`should validate resolved redirectUri with parseTenantFromRootDomain requires ${placeholderName}`, () => {
-      const manualConfig = { ...validAuthConfig, parseTenantFromRootDomain: 'test.com' };
-      resolver = new ConfigResolver(manualConfig);
-
-      const invalidSdkConfig: SdkConfiguration = {
-        loginUrl: `https://${placeholder}.test.com/login`,
-        redirectUri: 'https://test.com/callback',
-        customApplicationLoginPageUrl: null,
-        isApplicationCustomDomainActive: false,
-        loginUrlTenantDomainSuffix: null,
-      };
-
-      expect(() => {
-        return resolver['validateAllDynamicConfigs'](invalidSdkConfig);
-      }).toThrow(
-        `The resolved [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when using [parseTenantFromRootDomain].`
-      );
-    });
-
-    it(`should validate resolved loginUrl config without parseTenantFromRootDomain rejects ${placeholderName}`, () => {
-      const invalidSdkConfig: SdkConfiguration = {
-        loginUrl: `https://${placeholder}.test.com/login`,
-        redirectUri: 'https://test.com/callback',
-        customApplicationLoginPageUrl: null,
-        isApplicationCustomDomainActive: false,
-        loginUrlTenantDomainSuffix: null,
-      };
-
-      expect(() => {
-        return resolver['validateAllDynamicConfigs'](invalidSdkConfig);
-      }).toThrow(
-        `The resolved [loginUrl] cannot contain the ${TENANT_PLACEHOLDER_MSG} when [parseTenantFromRootDomain] is absent.`
-      );
-    });
-
-    it(`should validate resolved redirectUri without parseTenantFromRootDomain rejects ${placeholderName}`, () => {
-      const invalidSdkConfig: SdkConfiguration = {
-        loginUrl: 'https://test.com/login',
-        redirectUri: `https://${placeholder}.test.com/callback`,
-        customApplicationLoginPageUrl: null,
-        isApplicationCustomDomainActive: false,
-        loginUrlTenantDomainSuffix: null,
-      };
-
-      expect(() => {
-        return resolver['validateAllDynamicConfigs'](invalidSdkConfig);
-      }).toThrow(
-        `The resolved [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when [parseTenantFromRootDomain] is absent.`
-      );
-    });
-
-    it(`should pass validation with correct resolved config for manual parseTenantFromRootDomain using ${placeholderName}`, () => {
-      const manualConfig = { ...validAuthConfig, parseTenantFromRootDomain: 'test.com' };
+    it('should require the tenant_name placeholder in the resolved redirectUri when the manual loginUrl has it', () => {
+      const manualConfig = { ...validAuthConfig, loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.test.com/login` };
       resolver = new ConfigResolver(manualConfig);
 
       const sdkConfig: SdkConfiguration = {
-        loginUrl: `https://${placeholder}.test.com/login`,
-        redirectUri: `https://${placeholder}.test.com/callback`,
+        applicationAuthorizationRequestsEnabled: false,
+        fallbackLoginUrl: null,
+        loginUrl: 'https://test.com/login',
+        redirectUri: 'https://test.com/callback',
+        customApplicationLoginPageUrl: null,
+        isApplicationCustomDomainActive: false,
+        loginUrlTenantDomainSuffix: null,
+      };
+
+      expect(() => {
+        return resolver['validateAllDynamicConfigs'](sdkConfig);
+      }).toThrow(
+        `The resolved [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when the resolved [loginUrl] contains it.`
+      );
+    });
+
+    it('should reject the tenant_name placeholder in the manual redirectUri when the resolved loginUrl does not have it', () => {
+      const manualConfig = {
+        ...validAuthConfig,
+        redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.test.com/callback`,
+      };
+      resolver = new ConfigResolver(manualConfig);
+
+      const sdkConfig: SdkConfiguration = {
+        applicationAuthorizationRequestsEnabled: false,
+        fallbackLoginUrl: null,
+        loginUrl: 'https://test.com/login',
+        redirectUri: 'https://test.com/callback',
+        customApplicationLoginPageUrl: null,
+        isApplicationCustomDomainActive: false,
+        loginUrlTenantDomainSuffix: null,
+      };
+
+      expect(() => {
+        return resolver['validateAllDynamicConfigs'](sdkConfig);
+      }).toThrow(
+        `The resolved [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the resolved [loginUrl] does not contain it.`
+      );
+    });
+
+    it('should trust the SDK config placeholders when both URLs come from the SDK Auto-Configuration Endpoint', () => {
+      const sdkConfig: SdkConfiguration = {
+        applicationAuthorizationRequestsEnabled: false,
+        fallbackLoginUrl: null,
+        loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.test.com/login`,
+        redirectUri: 'https://test.com/callback',
         customApplicationLoginPageUrl: null,
         isApplicationCustomDomainActive: false,
         loginUrlTenantDomainSuffix: 'test.com',
@@ -744,17 +736,40 @@ describe('ConfigResolver', () => {
       }).not.toThrow();
     });
 
-    it(`should use manual config values over SDK config values for validation with ${placeholderName}`, () => {
+    it('should pass validation when the manual redirectUri and resolved loginUrl both have the tenant_name placeholder', () => {
       const manualConfig = {
         ...validAuthConfig,
-        loginUrl: `https://${placeholder}.manual.com/login`,
-        parseTenantFromRootDomain: 'manual.com',
+        redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.test.com/callback`,
       };
       resolver = new ConfigResolver(manualConfig);
 
       const sdkConfig: SdkConfiguration = {
+        applicationAuthorizationRequestsEnabled: false,
+        fallbackLoginUrl: null,
+        loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.test.com/login`,
+        redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.test.com/callback`,
+        customApplicationLoginPageUrl: null,
+        isApplicationCustomDomainActive: false,
+        loginUrlTenantDomainSuffix: 'test.com',
+      };
+
+      expect(() => {
+        return resolver['validateAllDynamicConfigs'](sdkConfig);
+      }).not.toThrow();
+    });
+
+    it('should use manual config values over SDK config values for validation with tenant_name', () => {
+      const manualConfig = {
+        ...validAuthConfig,
+        loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.manual.com/login`,
+      };
+      resolver = new ConfigResolver(manualConfig);
+
+      const sdkConfig: SdkConfiguration = {
+        applicationAuthorizationRequestsEnabled: false,
+        fallbackLoginUrl: null,
         loginUrl: 'https://sdk.com/login', // This would fail validation, but manual takes precedence
-        redirectUri: `https://${placeholder}.sdk.com/callback`,
+        redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.sdk.com/callback`,
         customApplicationLoginPageUrl: null,
         isApplicationCustomDomainActive: false,
         loginUrlTenantDomainSuffix: 'sdk.com',
@@ -868,11 +883,39 @@ describe('ConfigResolver', () => {
       expect(await testResolver.getIsApplicationCustomDomainActive()).toBe(true);
     });
 
+    it('should handle boolean values correctly for applicationAuthorizationRequestsEnabled', async () => {
+      // Test explicit false value
+      let config = { ...validAuthConfig, applicationAuthorizationRequestsEnabled: false };
+      let testResolver = new ConfigResolver(config);
+      expect(await testResolver.getApplicationAuthorizationRequestsEnabled()).toBe(false);
+
+      // Test explicit true value
+      config = { ...validAuthConfig, applicationAuthorizationRequestsEnabled: true };
+      testResolver = new ConfigResolver(config);
+      expect(await testResolver.getApplicationAuthorizationRequestsEnabled()).toBe(true);
+
+      // Test undefined value with auto-config false value
+      mockWristbandService.getSdkConfiguration.mockResolvedValue({
+        ...validSdkConfig,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+      expect(await resolver.getApplicationAuthorizationRequestsEnabled()).toBe(false);
+
+      // Test undefined value with auto-config true value
+      mockWristbandService.getSdkConfiguration.mockResolvedValue({
+        ...validSdkConfig,
+        applicationAuthorizationRequestsEnabled: true,
+      });
+      // Create new resolver to reset cache
+      testResolver = new ConfigResolver(validAuthConfig);
+      expect(await testResolver.getApplicationAuthorizationRequestsEnabled()).toBe(true);
+    });
+
     it('should handle empty string values correctly', async () => {
       const emptySdkConfig = { ...validSdkConfig, customApplicationLoginPageUrl: null };
       mockWristbandService.getSdkConfiguration.mockResolvedValue(emptySdkConfig);
 
-      const config = { ...validAuthConfig, customApplicationLoginPageUrl: '', parseTenantFromRootDomain: '' };
+      const config = { ...validAuthConfig, customApplicationLoginPageUrl: '' };
       const testResolver = new ConfigResolver(config);
 
       expect(await testResolver.getCustomApplicationLoginPageUrl()).toBe('');
@@ -884,6 +927,8 @@ describe('ConfigResolver', () => {
       const testResolver = new ConfigResolver(config);
 
       const sdkConfig: SdkConfiguration = {
+        applicationAuthorizationRequestsEnabled: false,
+        fallbackLoginUrl: null,
         loginUrl: 'https://sdk.com/login',
         redirectUri: 'https://sdk.com/callback',
         customApplicationLoginPageUrl: null,
@@ -895,13 +940,15 @@ describe('ConfigResolver', () => {
       expect(await testResolver.getLoginUrl()).toBe('https://manual.com/login'); // Manual
       expect(await testResolver.getRedirectUri()).toBe('https://sdk.com/callback'); // Auto-config
       expect(await testResolver.getCustomApplicationLoginPageUrl()).toBe(''); // Auto-config empty
-      expect(await testResolver.getParseTenantFromRootDomain()).toBe(''); // Auto-config empty
+      expect(await testResolver.getParseTenantFromRootDomain()).toBe(''); // Derived from manual loginUrl
     });
 
     it('should handle SDK config with loginUrlTenantDomainSuffix', async () => {
       const sdkConfigWithTenantSuffix: SdkConfiguration = {
-        loginUrl: `https://${TENANT_DOMAIN_PLACEHOLDER}.example.com/login`,
-        redirectUri: `https://${TENANT_DOMAIN_PLACEHOLDER}.example.com/callback`,
+        applicationAuthorizationRequestsEnabled: false,
+        fallbackLoginUrl: null,
+        loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.example.com/login`,
+        redirectUri: `https://${TENANT_NAME_PLACEHOLDER}.example.com/callback`,
         customApplicationLoginPageUrl: 'https://example.com/custom-login',
         isApplicationCustomDomainActive: true,
         loginUrlTenantDomainSuffix: 'example.com',
@@ -911,8 +958,8 @@ describe('ConfigResolver', () => {
       expect(await resolver.getParseTenantFromRootDomain()).toBe('example.com');
     });
 
-    it('should prioritize manual parseTenantFromRootDomain over SDK loginUrlTenantDomainSuffix', async () => {
-      const config = { ...validAuthConfig, parseTenantFromRootDomain: 'manual.com' };
+    it('should derive parseTenantFromRootDomain from the manual loginUrl over SDK loginUrlTenantDomainSuffix', async () => {
+      const config = { ...validAuthConfig, loginUrl: `https://${TENANT_NAME_PLACEHOLDER}.manual.com/login` };
       const testResolver = new ConfigResolver(config);
 
       const sdkConfigWithTenantSuffix: SdkConfiguration = {
@@ -933,7 +980,7 @@ describe('ConfigResolver', () => {
       resolver = new ConfigResolver(validAuthConfig);
     });
 
-    it('should throw TypeError when getLoginUrl called with auto-config disabled and no manual value', async () => {
+    it('should throw TypeError when getLoginUrl called with auto-configure disabled and no manual value', () => {
       const config = {
         ...validAuthConfig,
         autoConfigureEnabled: false,
@@ -945,7 +992,7 @@ describe('ConfigResolver', () => {
       }).toThrow('The [loginUrl] config must have a value when auto-configure is disabled.');
     });
 
-    it('should throw TypeError when getRedirectUri called with auto-config disabled and no manual value', async () => {
+    it('should throw TypeError when getRedirectUri called with auto-configure disabled and no manual value', () => {
       const config = {
         ...validAuthConfig,
         autoConfigureEnabled: false,
@@ -955,6 +1002,36 @@ describe('ConfigResolver', () => {
       expect(() => {
         return new ConfigResolver(config);
       }).toThrow('The [redirectUri] config must have a value when auto-configure is disabled.');
+    });
+
+    // With auto-configure disabled, the constructor requires loginUrl, so the final fallbacks in these getters
+    // can only be reached by clearing loginUrl after construction.
+    it('should return empty string for parseTenantFromRootDomain when auto-configure is disabled and loginUrl is absent', async () => {
+      const config = {
+        ...validAuthConfig,
+        autoConfigureEnabled: false,
+        loginUrl: 'https://test.com/login',
+        redirectUri: 'https://test.com/callback',
+      };
+      const testResolver = new ConfigResolver(config);
+      testResolver['authConfig'].loginUrl = undefined;
+
+      expect(await testResolver.getParseTenantFromRootDomain()).toBe('');
+      expect(mockWristbandService.getSdkConfiguration).not.toHaveBeenCalled();
+    });
+
+    it('should return empty string for fallbackLoginUrl when auto-configure is disabled and loginUrl is absent', async () => {
+      const config = {
+        ...validAuthConfig,
+        autoConfigureEnabled: false,
+        loginUrl: 'https://test.com/login',
+        redirectUri: 'https://test.com/callback',
+      };
+      const testResolver = new ConfigResolver(config);
+      testResolver['authConfig'].loginUrl = undefined;
+
+      expect(await testResolver.getFallbackLoginUrl()).toBe('');
+      expect(mockWristbandService.getSdkConfiguration).not.toHaveBeenCalled();
     });
 
     it('should throw WristbandError when SDK response validation fails during dynamic config access', async () => {

@@ -2,16 +2,15 @@ import { FetchError, InvalidGrantError } from '../src/error';
 import { WristbandService } from '../src/wristband-service';
 import { WristbandApiClient } from '../src/wristband-api-client';
 import { FORM_URLENCODED_MEDIA_TYPE, JSON_MEDIA_TYPE } from '../src/utils/constants';
-import { encodeBase64 } from '../src/utils/crypto';
+import { Base64 } from '../src/utils/base64';
 
 // Mock the WristbandApiClient
 jest.mock('../src/wristband-api-client');
-jest.mock('../src/utils/crypto');
 
 describe('WristbandService', () => {
   let service: WristbandService;
   let mockApiClient: jest.Mocked<WristbandApiClient>;
-  let mockEncodeBase64: jest.MockedFunction<typeof encodeBase64>;
+  let encodeStrSpy: jest.SpyInstance;
 
   const testDomain = 'test.wristband.com';
   const testClientId = 'test-client-id';
@@ -22,9 +21,9 @@ describe('WristbandService', () => {
     // Clear all mocks
     jest.clearAllMocks();
 
-    // Setup mock for encodeBase64
-    mockEncodeBase64 = encodeBase64 as jest.MockedFunction<typeof encodeBase64>;
-    mockEncodeBase64.mockReturnValue(encodedCredentials);
+    // Spy on Base64.encodeStr without replacing it, so the real encoding runs.
+    // encodedCredentials is the actual base64 of "test-client-id:test-client-secret".
+    encodeStrSpy = jest.spyOn(Base64, 'encodeStr');
 
     // Create service instance
     service = new WristbandService(testDomain, testClientId, testClientSecret);
@@ -39,7 +38,7 @@ describe('WristbandService', () => {
     });
 
     it('should encode credentials for basic auth', () => {
-      expect(mockEncodeBase64).toHaveBeenCalledWith(`${testClientId}:${testClientSecret}`);
+      expect(encodeStrSpy).toHaveBeenCalledWith(`${testClientId}:${testClientSecret}`);
     });
 
     it('should set basic auth headers correctly', () => {

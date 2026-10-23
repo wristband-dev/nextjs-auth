@@ -3,12 +3,18 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import type { MockResponse } from 'node-mocks-http';
 
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
-import { CallbackResult, LoginState } from '../../src/types';
-import { encryptLoginState } from '../../src/utils/crypto';
+import { FetchError } from '../../src/error';
+import { AppRouterCallbackResult, PagesRouterCallbackResult, LoginState } from '../../src/types';
+import { encryptLoginState } from '../../src/utils/auth/common-utils';
 import { CLIENT_ID, CLIENT_SECRET, createMockNextRequest, LOGIN_STATE_COOKIE_SECRET } from '../test-utils';
 import { expectValidateCalled, expectValidateNotCalled, mockWristbandFetch } from '../helpers/mock-fetch';
 
-const TENANT_CUSTOM_DOMAIN = 'login.tenant.com';
+const TENANT_CUSTOM_DOMAIN = 'callback.tenant.com';
+const APP_HOME_URL = 'https://localhost:6001/home';
+
+const resolveRedirectUrl = () => {
+  return APP_HOME_URL;
+};
 
 const MOCK_TOKENS = {
   access_token: 'accessToken',
@@ -24,6 +30,7 @@ const MOCK_USERINFO = {
   app_id: 'dy42gabu5jebreq6jajskk2n34',
   idp_name: 'wristband',
   email: 'test@wristband.dev',
+  email_verified: true,
 };
 
 describe('Callback - Tenant Custom Domain Validation', () => {
@@ -70,26 +77,32 @@ describe('Callback - Tenant Custom Domain Validation', () => {
       return createMockNextRequest(req);
     }
 
-    test('Validates the tenant_custom_domain query param and completes the callback when valid', async () => {
+    test('Validates the tenant_custom_domain query param and completes the callback when it is valid', async () => {
       mockWristbandFetch({ tenantCustomDomainValid: true, tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
 
       const request = await createRequest(
         `state=state&code=code&tenant_name=devs4you&tenant_custom_domain=${TENANT_CUSTOM_DOMAIN}`
       );
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(request);
+      const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(
+        request,
+        resolveRedirectUrl
+      );
 
       expectValidateCalled(wristbandApplicationVanityDomain, TENANT_CUSTOM_DOMAIN);
       expect(callbackResult.type).toBe('completed');
       expect(callbackResult.callbackData?.tenantCustomDomain).toBe(TENANT_CUSTOM_DOMAIN);
     });
 
-    test('Skips an invalid tenant custom domain and omits it from the callback data', async () => {
+    test('Skips an invalid tenant_custom_domain query param and still completes the callback', async () => {
       mockWristbandFetch({ tenantCustomDomainValid: false, tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
 
       const request = await createRequest(
         `state=state&code=code&tenant_name=devs4you&tenant_custom_domain=${TENANT_CUSTOM_DOMAIN}`
       );
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(request);
+      const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(
+        request,
+        resolveRedirectUrl
+      );
 
       expectValidateCalled(wristbandApplicationVanityDomain, TENANT_CUSTOM_DOMAIN);
       expect(callbackResult.type).toBe('completed');
@@ -106,7 +119,7 @@ describe('Callback - Tenant Custom Domain Validation', () => {
       const request = await createRequest(
         `state=state&code=code&tenant_name=devs4you&tenant_custom_domain=${TENANT_CUSTOM_DOMAIN}`
       );
-      await wristbandAuth.appRouter.callback(request);
+      await wristbandAuth.appRouter.callback(request, resolveRedirectUrl);
 
       expect(fetchMock.mock.calls[0][0]).toContain('/custom-domains/validate');
       expect(fetchMock.mock.calls[1][0]).toContain('/oauth2/token');
@@ -120,20 +133,36 @@ describe('Callback - Tenant Custom Domain Validation', () => {
         `state=state&code=code&tenant_name=devs4you&tenant_custom_domain=${TENANT_CUSTOM_DOMAIN}`,
         false
       );
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(request);
+      const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(
+        request,
+        resolveRedirectUrl
+      );
 
       expect(callbackResult.type).toBe('redirect_required');
-      expect(callbackResult.redirectUrl).not.toContain('tenant_custom_domain');
+      expect(callbackResult.response.headers.get('location')).not.toContain('tenant_custom_domain');
     });
 
     test('Skips validation when no tenant_custom_domain query param is present', async () => {
       mockWristbandFetch({ tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
 
       const request = await createRequest('state=state&code=code&tenant_name=devs4you');
-      const callbackResult: CallbackResult = await wristbandAuth.appRouter.callback(request);
+      const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(
+        request,
+        resolveRedirectUrl
+      );
 
       expectValidateNotCalled();
       expect(callbackResult.type).toBe('completed');
+    });
+
+    test('Propagates a FetchError when the validation endpoint fails', async () => {
+      mockWristbandFetch({ validateStatus: 500, tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
+
+      const request = await createRequest(
+        `state=state&code=code&tenant_name=devs4you&tenant_custom_domain=${TENANT_CUSTOM_DOMAIN}`
+      );
+
+      await expect(wristbandAuth.appRouter.callback(request, resolveRedirectUrl)).rejects.toThrow(FetchError);
     });
   });
 
@@ -142,7 +171,7 @@ describe('Callback - Tenant Custom Domain Validation', () => {
       // The pages router reads the login state from req.cookies rather than a raw cookie header.
       const loginState: LoginState = { codeVerifier: 'codeVerifier', redirectUri, state: 'state' };
       const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
-      const cookies = withCookie ? { 'login#state#1234567890': encryptedLoginState } : {};
+      const cookies: Record<string, string> = withCookie ? { 'login#state#1234567890': encryptedLoginState } : {};
       const { req, res } = createMocks({
         method: 'GET',
         url: redirectUri,
@@ -156,7 +185,7 @@ describe('Callback - Tenant Custom Domain Validation', () => {
       };
     }
 
-    test('Validates the tenant_custom_domain query param and completes the callback when valid', async () => {
+    test('Validates the tenant_custom_domain query param and completes the callback when it is valid', async () => {
       mockWristbandFetch({ tenantCustomDomainValid: true, tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
 
       const { mockReq, mockRes } = await createReqRes({
@@ -165,14 +194,14 @@ describe('Callback - Tenant Custom Domain Validation', () => {
         tenant_name: 'devs4you',
         tenant_custom_domain: TENANT_CUSTOM_DOMAIN,
       });
-      const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+      const callbackResult: PagesRouterCallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
 
       expectValidateCalled(wristbandApplicationVanityDomain, TENANT_CUSTOM_DOMAIN);
       expect(callbackResult.type).toBe('completed');
       expect(callbackResult.callbackData?.tenantCustomDomain).toBe(TENANT_CUSTOM_DOMAIN);
     });
 
-    test('Skips an invalid tenant custom domain and omits it from the callback data', async () => {
+    test('Skips an invalid tenant_custom_domain query param and still completes the callback', async () => {
       mockWristbandFetch({ tenantCustomDomainValid: false, tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
 
       const { mockReq, mockRes } = await createReqRes({
@@ -181,11 +210,30 @@ describe('Callback - Tenant Custom Domain Validation', () => {
         tenant_name: 'devs4you',
         tenant_custom_domain: TENANT_CUSTOM_DOMAIN,
       });
-      const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+      const callbackResult: PagesRouterCallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
 
       expectValidateCalled(wristbandApplicationVanityDomain, TENANT_CUSTOM_DOMAIN);
       expect(callbackResult.type).toBe('completed');
       expect(callbackResult.callbackData?.tenantCustomDomain).toBeUndefined();
+    });
+
+    test('Validates before exchanging the authorization code for tokens', async () => {
+      const fetchMock = mockWristbandFetch({
+        tenantCustomDomainValid: true,
+        tokens: MOCK_TOKENS,
+        userinfo: MOCK_USERINFO,
+      });
+
+      const { mockReq, mockRes } = await createReqRes({
+        state: 'state',
+        code: 'code',
+        tenant_name: 'devs4you',
+        tenant_custom_domain: TENANT_CUSTOM_DOMAIN,
+      });
+      await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+
+      expect(fetchMock.mock.calls[0][0]).toContain('/custom-domains/validate');
+      expect(fetchMock.mock.calls[1][0]).toContain('/oauth2/token');
     });
 
     test('Omits an invalid tenant custom domain from the login redirect URL', async () => {
@@ -195,10 +243,33 @@ describe('Callback - Tenant Custom Domain Validation', () => {
         { state: 'state', code: 'code', tenant_name: 'devs4you', tenant_custom_domain: TENANT_CUSTOM_DOMAIN },
         false
       );
-      const callbackResult: CallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+      const callbackResult: PagesRouterCallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
 
       expect(callbackResult.type).toBe('redirect_required');
       expect(callbackResult.redirectUrl).not.toContain('tenant_custom_domain');
+    });
+
+    test('Skips validation when no tenant_custom_domain query param is present', async () => {
+      mockWristbandFetch({ tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
+
+      const { mockReq, mockRes } = await createReqRes({ state: 'state', code: 'code', tenant_name: 'devs4you' });
+      const callbackResult: PagesRouterCallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+
+      expectValidateNotCalled();
+      expect(callbackResult.type).toBe('completed');
+    });
+
+    test('Propagates a FetchError when the validation endpoint fails', async () => {
+      mockWristbandFetch({ validateStatus: 500, tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
+
+      const { mockReq, mockRes } = await createReqRes({
+        state: 'state',
+        code: 'code',
+        tenant_name: 'devs4you',
+        tenant_custom_domain: TENANT_CUSTOM_DOMAIN,
+      });
+
+      await expect(wristbandAuth.pagesRouter.callback(mockReq, mockRes)).rejects.toThrow(FetchError);
     });
   });
 });

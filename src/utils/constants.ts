@@ -3,6 +3,8 @@ export const JSON_MEDIA_TYPE: string = 'application/json;charset=UTF-8';
 export const LOGIN_REQUIRED_ERROR: string = 'login_required';
 export const LOGIN_STATE_COOKIE_SEPARATOR = '#';
 export const LOGIN_STATE_COOKIE_PREFIX: string = `login${LOGIN_STATE_COOKIE_SEPARATOR}`;
+export const LOGIN_STATE_COOKIE_MAX_AGE_SEC: number = 3600;
+export const STATE_PARAM_MAX_CHAR_LENGTH: number = 512;
 // Common retry settings applied to all Wristband API calls made from WristbandService.
 export const MAX_API_RETRY_ATTEMPTS: number = 3;
 export const API_RETRY_DELAY_MS: number = 100;
@@ -10,9 +12,8 @@ export const API_RETRY_DELAY_MS: number = 100;
 export const API_RETRY_DELAY_MULTIPLIER: number = 2;
 export const NO_CACHE_HEADERS = { 'Cache-Control': 'no-store', Pragma: 'no-cache' };
 export const REDIRECT_RESPONSE_INIT = { status: 302, headers: NO_CACHE_HEADERS };
-
-export const TENANT_DOMAIN_PLACEHOLDER: string = '{tenant_domain}';
 export const TENANT_NAME_PLACEHOLDER: string = '{tenant_name}';
-// Regex to match either placeholder
-export const TENANT_PLACEHOLDER_REGEX = /\{tenant_(?:domain|name)\}/;
-export const TENANT_PLACEHOLDER_MSG = '"{tenant_name}" or "{tenant_domain}" placeholder';
+// Regexes to match the {tenant_name} placeholder
+export const LEADING_TENANT_PLACEHOLDER_REGEX = /^https?:\/\/\{tenant_name\}\./;
+export const TENANT_PLACEHOLDER_REGEX = /\{tenant_name\}/;
+export const TENANT_PLACEHOLDER_MSG = '"{tenant_name}" placeholder';
