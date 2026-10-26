@@ -89,9 +89,8 @@ export class WristbandAuthImpl implements WristbandAuth {
       resolveRedirectUrl: (request: NextRequest, callbackData: CallbackData) => string | Promise<string>
     ): Promise<AppRouterCallbackResult> => {
       const result = await this.core.callback(request, resolveRedirectUrl);
-      return result.type === 'completed'
-        ? { type: 'completed', callbackData: result.callbackData, response: toNextResponse(result.response) }
-        : { type: 'redirect_required', reason: result.reason, response: toNextResponse(result.response) };
+      // Keep everything the core returns; only the Response becomes a NextResponse.
+      return { ...result, response: toNextResponse(result.response) };
     },
     /**
      * @see {@link WristbandAuth.appRouter} for full documentation
@@ -261,18 +260,8 @@ export class WristbandAuthImpl implements WristbandAuth {
           }
         }
 
-        // Try to refresh token if expired
-        if (session.refreshToken && session.expiresAt !== undefined) {
-          try {
-            const newTokenData = await this.refreshTokenIfExpired(session.refreshToken, session.expiresAt);
-            if (newTokenData) {
-              session.accessToken = newTokenData.accessToken;
-              session.refreshToken = newTokenData.refreshToken;
-              session.expiresAt = newTokenData.expiresAt;
-            }
-          } catch {
-            return { authenticated: false, reason: 'token_refresh_failed' };
-          }
+        if (!(await this.refreshSessionTokens(session))) {
+          return { authenticated: false, reason: 'token_refresh_failed' };
         }
 
         return { authenticated: true, session, usedStrategy: 'SESSION' };
@@ -374,27 +363,13 @@ export class WristbandAuthImpl implements WristbandAuth {
     try {
       // Get mutable session from cookies
       const session = await getMutableSessionFromCookies<T>(cookieStore, sessionOptions);
-      const { expiresAt, isAuthenticated, refreshToken } = session;
-
       // Check if user is authenticated
-      if (!isAuthenticated) {
+      if (!session.isAuthenticated) {
         return { authenticated: false, reason: 'not_authenticated' };
       }
 
-      // Refresh token if expired
-      if (refreshToken && expiresAt !== undefined) {
-        try {
-          const newTokenData = await this.refreshTokenIfExpired(refreshToken, expiresAt);
-
-          if (newTokenData) {
-            // Update session with new tokens
-            session.accessToken = newTokenData.accessToken;
-            session.refreshToken = newTokenData.refreshToken;
-            session.expiresAt = newTokenData.expiresAt;
-          }
-        } catch {
-          return { authenticated: false, reason: 'token_refresh_failed' };
-        }
+      if (!(await this.refreshSessionTokens(session))) {
+        return { authenticated: false, reason: 'token_refresh_failed' };
       }
 
       // Always save session with or without token refresh ("touch" for rolling session expiration)
@@ -404,6 +379,34 @@ export class WristbandAuthImpl implements WristbandAuth {
       return { authenticated: true, session };
     } catch {
       return { authenticated: false, reason: 'unexpected_error' };
+    }
+  }
+
+  /**
+   * Refreshes the session's access token if it has expired, writing the new tokens onto the session. Shared by the
+   * middleware SESSION strategy and Server Action auth.
+   *
+   * @returns `false` if the refresh failed and the user has to log in again, otherwise `true`.
+   */
+  private async refreshSessionTokens(session: {
+    accessToken?: string;
+    expiresAt?: number;
+    refreshToken?: string;
+  }): Promise<boolean> {
+    if (!session.refreshToken || session.expiresAt === undefined) {
+      return true;
+    }
+    try {
+      const newTokenData = await this.refreshTokenIfExpired(session.refreshToken, session.expiresAt);
+      if (newTokenData) {
+        session.accessToken = newTokenData.accessToken;
+        // The core returns the current refresh token when Wristband doesn't issue a new one.
+        session.refreshToken = newTokenData.refreshToken;
+        session.expiresAt = newTokenData.expiresAt;
+      }
+      return true;
+    } catch {
+      return false;
     }
   }
 }
