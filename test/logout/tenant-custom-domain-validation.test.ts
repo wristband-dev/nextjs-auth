@@ -3,7 +3,6 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import type { MockResponse } from 'node-mocks-http';
 
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
-import { FetchError } from '../../src/error';
 import { CLIENT_ID, CLIENT_SECRET, createMockNextRequest, LOGIN_STATE_COOKIE_SECRET } from '../test-utils';
 import { expectValidateCalled, expectValidateNotCalled, mockWristbandFetch } from '../helpers/mock-fetch';
 
@@ -62,14 +61,15 @@ describe('Logout - Tenant Custom Domain Validation', () => {
         expect(new URL(location).origin).toEqual(`https://${CONFIG_CUSTOM_DOMAIN}`);
       });
 
-      test('Still validates the query param even though the config value outranks it', async () => {
+      test('Skips validating the query param when the config value outranks it', async () => {
         mockWristbandFetch({ tenantCustomDomainValid: true });
 
         const request = createRequest(`tenant_custom_domain=${PARAM_CUSTOM_DOMAIN}`);
         const response = await wristbandAuth.appRouter.logout(request, { tenantCustomDomain: CONFIG_CUSTOM_DOMAIN });
         const location = response.headers.get('location') as string;
 
-        expectValidateCalled(wristbandApplicationVanityDomain, PARAM_CUSTOM_DOMAIN);
+        // Validated only when it's needed: a LogoutConfig custom domain outranks it (v5 always validated it)
+        expect(global.fetch).not.toHaveBeenCalled();
         expect(new URL(location).origin).toEqual(`https://${CONFIG_CUSTOM_DOMAIN}`);
       });
 
@@ -139,12 +139,16 @@ describe('Logout - Tenant Custom Domain Validation', () => {
         expect(location).toEqual(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
       });
 
-      test('Propagates a FetchError when the validation endpoint fails', async () => {
+      test('Skips the query param when the validation endpoint fails', async () => {
+        // @wristband/typescript-auth treats a domain it can't validate as unverified and falls through (v5 threw FetchError)
         mockWristbandFetch({ validateStatus: 500 });
 
         const request = createRequest(`tenant_custom_domain=${PARAM_CUSTOM_DOMAIN}`);
+        const response = await wristbandAuth.appRouter.logout(request);
 
-        await expect(wristbandAuth.appRouter.logout(request)).rejects.toThrow(FetchError);
+        expect(response.headers.get('location')).toEqual(
+          `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`
+        );
       });
 
       test('Revokes the refresh token before validating the query param', async () => {
@@ -200,7 +204,7 @@ describe('Logout - Tenant Custom Domain Validation', () => {
         expect(new URL(location).origin).toEqual(`https://${CONFIG_CUSTOM_DOMAIN}`);
       });
 
-      test('Still validates the query param even though the config value outranks it', async () => {
+      test('Skips validating the query param when the config value outranks it', async () => {
         mockWristbandFetch({ tenantCustomDomainValid: true });
 
         const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: PARAM_CUSTOM_DOMAIN });
@@ -208,7 +212,8 @@ describe('Logout - Tenant Custom Domain Validation', () => {
           tenantCustomDomain: CONFIG_CUSTOM_DOMAIN,
         });
 
-        expectValidateCalled(wristbandApplicationVanityDomain, PARAM_CUSTOM_DOMAIN);
+        // Validated only when it's needed: a LogoutConfig custom domain outranks it (v5 always validated it)
+        expect(global.fetch).not.toHaveBeenCalled();
         expect(new URL(location).origin).toEqual(`https://${CONFIG_CUSTOM_DOMAIN}`);
       });
 
@@ -277,12 +282,14 @@ describe('Logout - Tenant Custom Domain Validation', () => {
         expect(location).toEqual(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
       });
 
-      test('Propagates a FetchError when the validation endpoint fails', async () => {
+      test('Skips the query param when the validation endpoint fails', async () => {
+        // @wristband/typescript-auth treats a domain it can't validate as unverified and falls through (v5 threw FetchError)
         mockWristbandFetch({ validateStatus: 500 });
 
         const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: PARAM_CUSTOM_DOMAIN });
+        const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
 
-        await expect(wristbandAuth.pagesRouter.logout(mockReq, mockRes)).rejects.toThrow(FetchError);
+        expect(location).toEqual(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
       });
 
       test('Revokes the refresh token before validating the query param', async () => {

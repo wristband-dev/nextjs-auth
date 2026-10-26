@@ -104,9 +104,8 @@ describe('appRouter.logout() - Application-Level Authorization Requests', () => 
         redirectUrl: 'https://redirect.example.com',
       });
 
-      // NextResponse.redirect() re-serializes a bare-origin URL through the URL constructor,
-      // which appends a trailing slash -- https://redirect.example.com becomes .../  here.
-      expect(response.headers.get('location')).toBe('https://redirect.example.com/');
+      // The configured redirect URL is passed through as-is (browsers treat it the same as .../).
+      expect(response.headers.get('location')).toBe('https://redirect.example.com');
     });
 
     test('Resolves the normal tenant-level logout URL when a tenant is resolvable, even with the flag enabled', async () => {

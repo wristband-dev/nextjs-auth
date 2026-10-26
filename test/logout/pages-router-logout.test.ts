@@ -410,7 +410,8 @@ describe('Multi Tenant Logout', () => {
 
         const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
 
-        expect(logoutUrl).toBe(`${customLoginUrl}?client_id=${CLIENT_ID}`);
+        // Built with URL, which adds a trailing slash to a bare origin
+        expect(logoutUrl).toBe(`${customLoginUrl}/?client_id=${CLIENT_ID}`);
       });
 
       test('fallback with redirect URL takes precedence over login URLs', async () => {
@@ -836,7 +837,8 @@ describe('Multi Tenant Logout', () => {
         state: stateWithSpecialChars,
       });
 
-      expect(logoutUrl).toContain(`state=${stateWithSpecialChars}`);
+      // The state is URL-encoded now (v5 appended it raw, which split values containing & or #)
+      expect(new URL(logoutUrl).searchParams.get('state')).toBe(stateWithSpecialChars);
       validateRedirectResponse(mockRes, logoutUrl, `https://test-tenant-${wristbandApplicationVanityDomain}`, null);
     });
 

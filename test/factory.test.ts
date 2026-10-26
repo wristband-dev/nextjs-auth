@@ -1,5 +1,5 @@
 import { createWristbandAuth } from '../src/index';
-import { TENANT_NAME_PLACEHOLDER, TENANT_PLACEHOLDER_MSG } from '../src/utils/constants';
+import { TENANT_NAME_PLACEHOLDER, TENANT_PLACEHOLDER_MSG } from './helpers/login-state';
 
 const CLIENT_ID = 'clientId';
 const CLIENT_SECRET = 'clientSecret';
