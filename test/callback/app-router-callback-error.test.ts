@@ -1,7 +1,7 @@
 import httpMocks, { createMocks } from 'node-mocks-http';
 
 import { LoginState } from '../../src/types';
-import { encryptLoginState } from '../../src/utils/auth/common-utils';
+import { encryptLoginState } from '../helpers/login-state';
 import { createWristbandAuth, WristbandAuth, WristbandError } from '../../src/index';
 import { createMockNextRequest, parseSetCookies } from '../test-utils';
 
@@ -65,19 +65,18 @@ describe('Callback Errors', () => {
     }
   });
 
-  test('Empty state query param falls back to the empty string default', async () => {
+  test('Empty state query param is rejected like a missing one', async () => {
     // Create mock request with a state param that is present but has an empty value
     const req = httpMocks.createRequest({
       url: `${REDIRECT_URI}?state=&code=code&tenant_name=devs4you`,
     });
     const mockNextRequest = createMockNextRequest(req);
 
-    // No login state cookie present, so this should redirect_required with missing_login_state,
-    // but only after falling through the [paramStateArray[0] || ''] fallback on an empty value.
-    const result = await wristbandAuth.appRouter.callback(mockNextRequest, resolveRedirectUrl);
-
-    expect(result.type).toBe('redirect_required');
-    expect(result.reason).toBe('missing_login_state');
+    // An empty state is rejected like a missing one, as the Pages Router already did in v5 (the v5 App Router
+    // redirected with missing_login_state instead). Wristband never sends an empty state.
+    await expect(wristbandAuth.appRouter.callback(mockNextRequest, resolveRedirectUrl)).rejects.toThrow(
+      new TypeError('Invalid query parameter [state] passed from Wristband during callback')
+    );
   });
 
   test('Invalid code query param', async () => {

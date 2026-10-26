@@ -595,6 +595,23 @@ describe('middleware-utils', () => {
       expect(result).toBe(customHandler);
     });
 
+    it('redirects to a path-style loginUrl, dropping its query string', async () => {
+      const config = normalizeMiddlewareConfig({
+        authStrategies: ['SESSION'],
+        sessionConfig: {
+          sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
+        },
+      });
+
+      // loginUrl may be a path on the app itself, which @wristband/typescript-auth accepts like v5 did.
+      const onPageUnauthenticated = resolveOnPageUnauthenticated(config, '/auth/login?src=sdk');
+      const response = await onPageUnauthenticated(mockRequest, 'not_authenticated');
+
+      const location = new URL(response.headers.get('location') as string);
+      expect(location.pathname).toBe('/auth/login');
+      expect(location.searchParams.get('return_url')).toBe('https://example.com/dashboard/profile');
+    });
+
     it('should create default handler that redirects to login with return_url', async () => {
       const config = normalizeMiddlewareConfig({
         authStrategies: ['SESSION'],

@@ -4,16 +4,10 @@ export const CLIENT_ID = 'clientId';
 export const CLIENT_SECRET = 'clientSecret';
 export const LOGIN_STATE_COOKIE_SECRET = '7ffdbecc-ab7d-4134-9307-2dfcc52f7475';
 
-// Use the MockNextRequest class to simulate `nextUrl` and `searchParams`
+// Builds a real NextRequest from a node-mocks-http request. A plain object spread from the mock would carry the mock's
+// Node `socket`, so the SDK would rightly treat it as a Node request rather than a Web request.
 export function createMockNextRequest(req: any): NextRequest {
-  return {
-    ...req,
-    nextUrl: new URL(req.url), // Pass req.url directly to MockNextRequest
-    geo: undefined, // Stub for unused properties
-    page: undefined,
-    ua: undefined,
-    headers: new Headers(req.headers),
-  } as unknown as NextRequest; // Use type assertion to satisfy the type
+  return new NextRequest(req.url, { method: req.method, headers: new Headers(req.headers) });
 }
 
 export function parseSetCookies(setCookieHeaders: string | string[]): {

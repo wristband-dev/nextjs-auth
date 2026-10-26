@@ -1,13 +1,17 @@
 /* eslint-disable no-underscore-dangle */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createMocks, MockResponse } from 'node-mocks-http';
+import { createMocks, MockResponse } from '../helpers/node-mocks';
 
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
 import { CLIENT_ID, CLIENT_SECRET, LOGIN_STATE_COOKIE_SECRET, parseSetCookies } from '../test-utils';
-import { LOGIN_STATE_COOKIE_SEPARATOR, STATE_PARAM_MAX_CHAR_LENGTH } from '../../src/utils/constants';
+import {
+  LOGIN_STATE_COOKIE_SEPARATOR,
+  STATE_PARAM_MAX_CHAR_LENGTH,
+  decryptLoginState,
+  encryptLoginState,
+} from '../helpers/login-state';
 import { LoginState } from '../../src/types';
-import { decryptLoginState, encryptLoginState } from '../../src/utils/auth/common-utils';
 import { mockWristbandFetch } from '../helpers/mock-fetch';
 
 function validateRedirectResponse(
@@ -835,7 +839,8 @@ describe('pagesRouter.login()', () => {
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
       const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
-      expect(authorizeUrl).toBe(`https://google.com?client_id=${CLIENT_ID}`);
+      // Built with URL, which adds a trailing slash to a bare origin
+      expect(authorizeUrl).toBe(`https://google.com/?client_id=${CLIENT_ID}`);
     });
 
     test('Unresolved tenant subdomain with return_url query param passes state', async () => {
@@ -902,7 +907,8 @@ describe('pagesRouter.login()', () => {
       const mockRes = res as unknown as MockResponse<NextApiResponse>;
 
       const location: string = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl });
-      expect(location).toBe(`https://google.com?client_id=${CLIENT_ID}&state=${encodeURIComponent(returnUrl)}`);
+      // Built with URL, which adds a trailing slash to a bare origin
+      expect(location).toBe(`https://google.com/?client_id=${CLIENT_ID}&state=${encodeURIComponent(returnUrl)}`);
     });
   });
 });

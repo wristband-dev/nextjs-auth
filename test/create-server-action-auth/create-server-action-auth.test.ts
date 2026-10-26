@@ -3,13 +3,31 @@ import { SessionData } from '@wristband/typescript-session';
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
 import { CLIENT_ID, CLIENT_SECRET, LOGIN_STATE_COOKIE_SECRET } from '../test-utils';
 import { MutableSession, ServerActionAuthResult } from '../../src/types';
-import { WristbandService } from '../../src/wristband-service';
 
 // Import mocked functions
 import { getMutableSessionFromCookies, saveSessionWithCookies } from '../../src/session';
 
+type TokenEndpointMock = { refreshToken: jest.Mock<Promise<unknown>, [string]> };
+
+/**
+ * Stubs the Wristband Token Endpoint via `fetch`. Token refresh is handled by @wristband/typescript-auth, so the
+ * stub forwards each refresh request to `refreshToken` (resolve = token response, reject = invalid_grant).
+ */
+function stubTokenEndpoint(): TokenEndpointMock {
+  const mock: TokenEndpointMock = { refreshToken: jest.fn() };
+  global.fetch = jest.fn(async (_input: unknown, init?: RequestInit) => {
+    const refreshToken = new URLSearchParams(String(init?.body)).get('refresh_token') ?? '';
+    try {
+      const body = await mock.refreshToken(refreshToken);
+      return new Response(JSON.stringify(body), { status: 200 });
+    } catch {
+      return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 });
+    }
+  }) as unknown as typeof fetch;
+  return mock;
+}
+
 // Mock dependencies
-jest.mock('../../src/wristband-service');
 jest.mock('../../src/session', () => {
   return {
     getMutableSessionFromCookies: jest.fn(),
@@ -46,7 +64,7 @@ function createMockSession<T extends SessionData>(data: T): MutableSession<T> {
 describe('appRouter.createServerActionAuth()', () => {
   let wristbandAuth: WristbandAuth;
   let mockCookieStore: any;
-  let mockWristbandService: jest.Mocked<WristbandService>;
+  let mockWristbandService: TokenEndpointMock;
   let requireServerActionAuth: (cookieStore: any) => Promise<ServerActionAuthResult>;
 
   const sessionOptions = {
@@ -74,8 +92,8 @@ describe('appRouter.createServerActionAuth()', () => {
       autoConfigureEnabled: false,
     });
 
-    // Get mocked WristbandService instance
-    mockWristbandService = (wristbandAuth as any).appRouterAuthHandler.wristbandService;
+    // Stub the Wristband Token Endpoint used for token refresh
+    mockWristbandService = stubTokenEndpoint();
 
     // Create the auth helper function using the factory
     requireServerActionAuth = wristbandAuth.appRouter.createServerActionAuth({ sessionOptions });
@@ -160,6 +178,30 @@ describe('appRouter.createServerActionAuth()', () => {
   });
 
   describe('Authenticated User - Token Refresh Required', () => {
+    test('keeps the current refresh token when Wristband does not issue a new one', async () => {
+      const mockSession = createMockSession({
+        accessToken: 'expired-access-token',
+        expiresAt: Date.now() - 1000,
+        isAuthenticated: true,
+        refreshToken: 'valid-refresh-token',
+      });
+      mockedGetMutableSessionFromCookies.mockResolvedValue(mockSession);
+      mockedSaveSessionWithCookies.mockResolvedValue(undefined);
+      // No refresh_token in the response
+      mockWristbandService.refreshToken.mockResolvedValue({
+        access_token: 'new-access-token',
+        expires_in: 3600,
+        id_token: 'new-id-token',
+        token_type: 'Bearer',
+      });
+
+      const result: ServerActionAuthResult = await requireServerActionAuth(mockCookieStore);
+
+      expect(result.authenticated).toBe(true);
+      expect(result.session!.accessToken).toBe('new-access-token');
+      expect(result.session!.refreshToken).toBe('valid-refresh-token');
+    });
+
     test('should refresh expired access token and update session', async () => {
       const expiredTime = Date.now() - 1000; // Expired 1 second ago
       const mockSessionData: SessionData = {
@@ -238,7 +280,7 @@ describe('appRouter.createServerActionAuth()', () => {
       };
 
       mockedGetMutableSessionFromCookies.mockResolvedValue(mockSession);
-      const mockServiceWithBuffer = (wristbandAuthWithBuffer as any).appRouterAuthHandler.wristbandService;
+      const mockServiceWithBuffer = stubTokenEndpoint();
       mockServiceWithBuffer.refreshToken.mockResolvedValue(newTokenResponse);
       mockedSaveSessionWithCookies.mockResolvedValue(undefined);
 
