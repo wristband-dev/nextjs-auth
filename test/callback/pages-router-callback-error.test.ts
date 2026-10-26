@@ -1,8 +1,9 @@
-import httpMocks, { createMocks, MockResponse } from 'node-mocks-http';
+import httpMocks from 'node-mocks-http';
+import { createMocks, MockResponse } from '../helpers/node-mocks';
 
 import { NextApiRequest, NextApiResponse } from 'next';
 import { LoginState } from '../../src/types';
-import { encryptLoginState } from '../../src/utils/auth/common-utils';
+import { encryptLoginState } from '../helpers/login-state';
 import { createWristbandAuth, WristbandAuth, WristbandError } from '../../src/index';
 
 const CLIENT_ID = 'clientId';

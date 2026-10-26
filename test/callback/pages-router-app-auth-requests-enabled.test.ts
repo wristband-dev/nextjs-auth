@@ -1,7 +1,7 @@
 /* eslint-disable no-underscore-dangle */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createMocks, MockResponse } from 'node-mocks-http';
+import { createMocks, MockResponse } from '../helpers/node-mocks';
 
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
 import { CLIENT_ID, CLIENT_SECRET, LOGIN_STATE_COOKIE_SECRET, parseSetCookies } from '../test-utils';

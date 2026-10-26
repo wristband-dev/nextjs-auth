@@ -1,11 +1,10 @@
-import { createMocks } from 'node-mocks-http';
+import { createMocks } from '../helpers/node-mocks';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import type { MockResponse } from 'node-mocks-http';
 
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
-import { FetchError } from '../../src/error';
 import { AppRouterCallbackResult, PagesRouterCallbackResult, LoginState } from '../../src/types';
-import { encryptLoginState } from '../../src/utils/auth/common-utils';
+import { encryptLoginState } from '../helpers/login-state';
 import { CLIENT_ID, CLIENT_SECRET, createMockNextRequest, LOGIN_STATE_COOKIE_SECRET } from '../test-utils';
 import { expectValidateCalled, expectValidateNotCalled, mockWristbandFetch } from '../helpers/mock-fetch';
 
@@ -155,14 +154,17 @@ describe('Callback - Tenant Custom Domain Validation', () => {
       expect(callbackResult.type).toBe('completed');
     });
 
-    test('Propagates a FetchError when the validation endpoint fails', async () => {
+    test('Skips the tenant custom domain when the validation endpoint fails', async () => {
+      // @wristband/typescript-auth treats a domain it can't validate as unverified and falls through (v5 threw FetchError)
       mockWristbandFetch({ validateStatus: 500, tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
 
       const request = await createRequest(
         `state=state&code=code&tenant_name=devs4you&tenant_custom_domain=${TENANT_CUSTOM_DOMAIN}`
       );
 
-      await expect(wristbandAuth.appRouter.callback(request, resolveRedirectUrl)).rejects.toThrow(FetchError);
+      const result = await wristbandAuth.appRouter.callback(request, resolveRedirectUrl);
+      expect(result.type).toBe('completed');
+      expect(result.callbackData?.tenantCustomDomain).toBeUndefined();
     });
   });
 
@@ -259,7 +261,7 @@ describe('Callback - Tenant Custom Domain Validation', () => {
       expect(callbackResult.type).toBe('completed');
     });
 
-    test('Propagates a FetchError when the validation endpoint fails', async () => {
+    test('Skips the tenant custom domain when the validation endpoint fails', async () => {
       mockWristbandFetch({ validateStatus: 500, tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
 
       const { mockReq, mockRes } = await createReqRes({
@@ -269,7 +271,10 @@ describe('Callback - Tenant Custom Domain Validation', () => {
         tenant_custom_domain: TENANT_CUSTOM_DOMAIN,
       });
 
-      await expect(wristbandAuth.pagesRouter.callback(mockReq, mockRes)).rejects.toThrow(FetchError);
+      // @wristband/typescript-auth treats a domain it can't validate as unverified (v5 threw FetchError)
+      const result = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+      expect(result.type).toBe('completed');
+      expect(result.callbackData?.tenantCustomDomain).toBeUndefined();
     });
   });
 });

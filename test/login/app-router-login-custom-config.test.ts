@@ -2,9 +2,8 @@ import { createMocks } from 'node-mocks-http';
 import { NextResponse } from 'next/server';
 
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
-import { decryptLoginState } from '../../src/utils/auth/common-utils';
+import { decryptLoginState, LOGIN_STATE_COOKIE_SEPARATOR } from '../helpers/login-state';
 import { LoginState } from '../../src/types';
-import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
 import { createMockNextRequest, parseSetCookies } from '../test-utils';
 import { mockWristbandFetch } from '../helpers/mock-fetch';
 

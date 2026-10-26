@@ -1,10 +1,9 @@
 /* eslint-disable no-underscore-dangle */
 
-import { createMocks, MockResponse } from 'node-mocks-http';
+import { createMocks, MockResponse } from '../helpers/node-mocks';
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
-import { encryptLoginState } from '../../src/utils/auth/common-utils';
-import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
+import { encryptLoginState, LOGIN_STATE_COOKIE_SEPARATOR } from '../helpers/login-state';
 import { LoginState, PagesRouterCallbackResult, CallbackData } from '../../src/types';
 import { parseSetCookies } from '../test-utils';
 

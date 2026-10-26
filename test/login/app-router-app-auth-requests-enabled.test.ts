@@ -8,9 +8,8 @@ import {
   LOGIN_STATE_COOKIE_SECRET,
   parseSetCookies,
 } from '../test-utils';
-import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
+import { LOGIN_STATE_COOKIE_SEPARATOR, decryptLoginState, encryptLoginState } from '../helpers/login-state';
 import { LoginState } from '../../src/types';
-import { decryptLoginState, encryptLoginState } from '../../src/utils/auth/common-utils';
 import { mockWristbandFetch } from '../helpers/mock-fetch';
 
 function validateAppLevelAuthorizeRedirect(authorizeUrl: string, expectedOrigin: string, expectedRedirectUri: string) {

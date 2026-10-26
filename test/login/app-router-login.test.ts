@@ -8,9 +8,8 @@ import {
   LOGIN_STATE_COOKIE_SECRET,
   parseSetCookies,
 } from '../test-utils';
-import { LOGIN_STATE_COOKIE_SEPARATOR, STATE_PARAM_MAX_CHAR_LENGTH } from '../../src/utils/constants';
+import { LOGIN_STATE_COOKIE_SEPARATOR, STATE_PARAM_MAX_CHAR_LENGTH, decryptLoginState } from '../helpers/login-state';
 import { LoginState } from '../../src/types';
-import { decryptLoginState } from '../../src/utils/auth/common-utils';
 
 describe('appRouter.login()', () => {
   let wristbandAuth: WristbandAuth;
