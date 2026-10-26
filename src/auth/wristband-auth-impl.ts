@@ -6,11 +6,12 @@ import {
   WristbandJwtValidatorConfig,
   WristbandJwtValidator,
 } from '@wristband/typescript-jwt';
+import {
+  createWristbandAuth as createCoreAuth,
+  type WristbandAuth as CoreWristbandAuth,
+} from '@wristband/typescript-auth';
 
-import { ConfigResolver } from '../config-resolver';
-import { AppRouterAuthHandler } from './handlers/app-router-auth-handler';
-import { PagesRouterAuthHandler } from './handlers/pages-router-auth-handler';
-import { getSessionFromRequest } from '../session';
+import { getMutableSessionFromCookies, getSessionFromRequest, saveSessionWithCookies } from '../session';
 import {
   AuthFailureReason,
   AuthStrategy,
@@ -27,7 +28,6 @@ import {
   type PagesRouterCallbackResult,
   type TokenData,
 } from '../types';
-import { refreshExpiredToken } from '../utils/auth/common-utils';
 import {
   copyResponseHeaders,
   isProtectedApi,
@@ -37,17 +37,28 @@ import {
   resolveOnPageUnauthenticated,
 } from '../utils/middleware';
 import { WristbandAuth } from './wristband-auth';
-import { WristbandService } from '../wristband-service';
+
+/**
+ * Converts a Web Standard Response from @wristband/typescript-auth into a NextResponse, keeping the status and every
+ * header (including each Set-Cookie).
+ */
+function toNextResponse(response: Response): NextResponse {
+  return new NextResponse(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
 
 /**
  * WristbandAuth is a utility class providing methods for seamless interaction with the Wristband authentication service.
+ * Login, callback, logout, token refresh, and SDK configuration are handled by @wristband/typescript-auth; this class
+ * adapts them to the App Router and Pages Router and adds the Next.js-specific middleware and Server Action helpers.
  * @implements {WristbandAuth}
  */
 export class WristbandAuthImpl implements WristbandAuth {
-  private configResolver: ConfigResolver;
-  private appRouterAuthHandler: AppRouterAuthHandler;
-  private pagesRouterAuthHandler: PagesRouterAuthHandler;
-  private wristbandService: WristbandService;
+  private core: CoreWristbandAuth;
+  private wristbandApplicationVanityDomain: string;
   private jwtValidator?: WristbandJwtValidator;
 
   /**
@@ -56,14 +67,8 @@ export class WristbandAuthImpl implements WristbandAuth {
    * @param {AuthConfig} authConfig The configuration for Wristband authentication.
    */
   constructor(authConfig: AuthConfig) {
-    this.configResolver = new ConfigResolver(authConfig);
-    this.wristbandService = new WristbandService(
-      this.configResolver.getWristbandApplicationVanityDomain(),
-      this.configResolver.getClientId(),
-      this.configResolver.getClientSecret()
-    );
-    this.appRouterAuthHandler = new AppRouterAuthHandler(this.configResolver, this.wristbandService);
-    this.pagesRouterAuthHandler = new PagesRouterAuthHandler(this.configResolver, this.wristbandService);
+    this.core = createCoreAuth(authConfig);
+    this.wristbandApplicationVanityDomain = authConfig.wristbandApplicationVanityDomain;
   }
 
   /**
@@ -73,23 +78,26 @@ export class WristbandAuthImpl implements WristbandAuth {
     /**
      * @see {@link WristbandAuth.appRouter} for full documentation
      */
-    login: (request: NextRequest, loginConfig?: LoginConfig): Promise<NextResponse> => {
-      return this.appRouterAuthHandler.login(request, loginConfig);
+    login: async (request: NextRequest, loginConfig?: LoginConfig): Promise<NextResponse> => {
+      return toNextResponse(await this.core.login(request, loginConfig));
     },
     /**
      * @see {@link WristbandAuth.appRouter} for full documentation
      */
-    callback: (
+    callback: async (
       request: NextRequest,
       resolveRedirectUrl: (request: NextRequest, callbackData: CallbackData) => string | Promise<string>
     ): Promise<AppRouterCallbackResult> => {
-      return this.appRouterAuthHandler.callback(request, resolveRedirectUrl);
+      const result = await this.core.callback(request, resolveRedirectUrl);
+      return result.type === 'completed'
+        ? { type: 'completed', callbackData: result.callbackData, response: toNextResponse(result.response) }
+        : { type: 'redirect_required', reason: result.reason, response: toNextResponse(result.response) };
     },
     /**
      * @see {@link WristbandAuth.appRouter} for full documentation
      */
-    logout: (request: NextRequest, logoutConfig?: LogoutConfig): Promise<NextResponse> => {
-      return this.appRouterAuthHandler.logout(request, logoutConfig);
+    logout: async (request: NextRequest, logoutConfig?: LogoutConfig): Promise<NextResponse> => {
+      return toNextResponse(await this.core.logout(request, logoutConfig));
     },
     /**
      * @see {@link WristbandAuth.appRouter} for full documentation
@@ -102,7 +110,7 @@ export class WristbandAuthImpl implements WristbandAuth {
       }
 
       return async (cookieStore: NextJsCookieStore): Promise<ServerActionAuthResult<T>> => {
-        return this.appRouterAuthHandler.createServerActionAuth<T>(cookieStore, config.sessionOptions);
+        return this.authenticateServerAction<T>(cookieStore, config.sessionOptions);
       };
     },
   };
@@ -115,19 +123,19 @@ export class WristbandAuthImpl implements WristbandAuth {
      * @see {@link WristbandAuth.pagesRouter} for full documentation
      */
     login: (request: NextApiRequest, response: NextApiResponse, loginConfig?: LoginConfig): Promise<string> => {
-      return this.pagesRouterAuthHandler.login(request, response, loginConfig);
+      return this.core.login(request, response, loginConfig);
     },
     /**
      * @see {@link WristbandAuth.pagesRouter} for full documentation
      */
     callback: (request: NextApiRequest, response: NextApiResponse): Promise<PagesRouterCallbackResult> => {
-      return this.pagesRouterAuthHandler.callback(request, response);
+      return this.core.callback(request, response);
     },
     /**
      * @see {@link WristbandAuth.pagesRouter} for full documentation
      */
     logout: (request: NextApiRequest, response: NextApiResponse, logoutConfig?: LogoutConfig): Promise<string> => {
-      return this.pagesRouterAuthHandler.logout(request, response, logoutConfig);
+      return this.core.logout(request, response, logoutConfig);
     },
   };
 
@@ -135,9 +143,7 @@ export class WristbandAuthImpl implements WristbandAuth {
    * @see {@link WristbandAuth.refreshTokenIfExpired}
    */
   async refreshTokenIfExpired(refreshToken: string, expiresAt: number): Promise<TokenData | null> {
-    // Fetch SDK Configs
-    const tokenExpirationBuffer = this.configResolver.getTokenExpirationBuffer();
-    return refreshExpiredToken(refreshToken, expiresAt, this.wristbandService, tokenExpirationBuffer);
+    return this.core.refreshTokenIfExpired(refreshToken, expiresAt);
   }
 
   /**
@@ -207,9 +213,8 @@ export class WristbandAuthImpl implements WristbandAuth {
     jwtConfig: Pick<WristbandJwtValidatorConfig, 'jwksCacheMaxSize' | 'jwksCacheTtl'>
   ): WristbandJwtValidator {
     if (!this.jwtValidator) {
-      const wristbandApplicationVanityDomain = this.configResolver.getWristbandApplicationVanityDomain();
       this.jwtValidator = createWristbandJwtValidator({
-        wristbandApplicationVanityDomain,
+        wristbandApplicationVanityDomain: this.wristbandApplicationVanityDomain,
         jwksCacheMaxSize: jwtConfig?.jwksCacheMaxSize,
         jwksCacheTtl: jwtConfig?.jwksCacheTtl,
       });
@@ -346,8 +351,59 @@ export class WristbandAuthImpl implements WristbandAuth {
     }
 
     // Protected page route - invoke the unauthenticated handler
-    const loginUrl = await this.configResolver.getLoginUrl();
+    const loginUrl = await this.core.getLoginUrl();
     const onPageUnauthenticatedHandler = resolveOnPageUnauthenticated(normalizedConfig, loginUrl);
     return onPageUnauthenticatedHandler(request, reason);
+  }
+
+  /**
+   * Validates authentication for Server Actions by checking session validity and refreshing tokens if needed.
+   *
+   * Note: CSRF validation is not performed as Next.js Server Actions have built-in
+   * CSRF protection via Origin/Host header comparison.
+   *
+   * @template T - Session data type extending SessionData
+   * @param cookieStore - Next.js cookie store from await cookies()
+   * @param sessionOptions - Session configuration options
+   * @returns Promise resolving to authentication result with session data or failure reason
+   */
+  private async authenticateServerAction<T extends SessionData = SessionData>(
+    cookieStore: NextJsCookieStore,
+    sessionOptions: SessionOptions
+  ): Promise<ServerActionAuthResult<T>> {
+    try {
+      // Get mutable session from cookies
+      const session = await getMutableSessionFromCookies<T>(cookieStore, sessionOptions);
+      const { expiresAt, isAuthenticated, refreshToken } = session;
+
+      // Check if user is authenticated
+      if (!isAuthenticated) {
+        return { authenticated: false, reason: 'not_authenticated' };
+      }
+
+      // Refresh token if expired
+      if (refreshToken && expiresAt !== undefined) {
+        try {
+          const newTokenData = await this.refreshTokenIfExpired(refreshToken, expiresAt);
+
+          if (newTokenData) {
+            // Update session with new tokens
+            session.accessToken = newTokenData.accessToken;
+            session.refreshToken = newTokenData.refreshToken;
+            session.expiresAt = newTokenData.expiresAt;
+          }
+        } catch {
+          return { authenticated: false, reason: 'token_refresh_failed' };
+        }
+      }
+
+      // Always save session with or without token refresh ("touch" for rolling session expiration)
+      await saveSessionWithCookies(cookieStore, session);
+
+      // Authentication successful
+      return { authenticated: true, session };
+    } catch {
+      return { authenticated: false, reason: 'unexpected_error' };
+    }
   }
 }
