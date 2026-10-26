@@ -141,6 +141,11 @@ function extractLoginPath(loginUrl: string): string {
     throw new TypeError('Must provide a valid login URL');
   }
 
+  // loginUrl may be a path on the app itself (e.g. /auth/login). Drop any query string, like the URL case below.
+  if (loginUrl.startsWith('/') && !loginUrl.startsWith('//')) {
+    return loginUrl.split(/[?#]/)[0] ?? loginUrl;
+  }
+
   try {
     // Remove tenant placeholders and the dot separator that follows them
     const normalizedUrl = loginUrl.replace(/\{tenant_name\}\./g, '');

@@ -178,6 +178,30 @@ describe('appRouter.createServerActionAuth()', () => {
   });
 
   describe('Authenticated User - Token Refresh Required', () => {
+    test('keeps the current refresh token when Wristband does not issue a new one', async () => {
+      const mockSession = createMockSession({
+        accessToken: 'expired-access-token',
+        expiresAt: Date.now() - 1000,
+        isAuthenticated: true,
+        refreshToken: 'valid-refresh-token',
+      });
+      mockedGetMutableSessionFromCookies.mockResolvedValue(mockSession);
+      mockedSaveSessionWithCookies.mockResolvedValue(undefined);
+      // No refresh_token in the response
+      mockWristbandService.refreshToken.mockResolvedValue({
+        access_token: 'new-access-token',
+        expires_in: 3600,
+        id_token: 'new-id-token',
+        token_type: 'Bearer',
+      });
+
+      const result: ServerActionAuthResult = await requireServerActionAuth(mockCookieStore);
+
+      expect(result.authenticated).toBe(true);
+      expect(result.session!.accessToken).toBe('new-access-token');
+      expect(result.session!.refreshToken).toBe('valid-refresh-token');
+    });
+
     test('should refresh expired access token and update session', async () => {
       const expiredTime = Date.now() - 1000; // Expired 1 second ago
       const mockSessionData: SessionData = {
