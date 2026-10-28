@@ -9,8 +9,9 @@
   </p>
   <p align="center">
     <b>
-      <a href="https://wristband.dev">Website</a> •
-      <a href="https://docs.wristband.dev/">Documentation</a>
+      <a href="https://wristband.dev">Website</a> • 
+      <a href="https://docs.wristband.dev/">Documentation</a> • 
+      <a href="https://docs.wristband.dev/llms.txt">LLMs.txt</a>
     </b>
   </p>
 </div>
@@ -442,7 +443,9 @@ export default async function logoutEndpoint(req: NextApiRequest, res: NextApiRe
 > [!NOTE]
 > This endpoint is required for Wristband frontend SDKs to function. For more details, see the [Wristband Session Management documentation](https://docs.wristband.dev/docs/session-management-backend-server).
 
-Wristband frontend SDKs require a Session Endpoint in your backend to verify authentication status and retrieve session metadata. Create a protected session endpoint that uses `session.getSessionResponse()` to return the session response format expected by Wristband's frontend SDKs. The response type will always have a `userId` and a `tenantId` in it. You can include any additional data for your frontend by customizing the `metadata` parameter (optional), which requires JSON-serializable values. **The response must not be cached**.
+Wristband frontend SDKs require a Session Endpoint in your backend to verify authentication status and retrieve session metadata. Create a protected session endpoint that uses `session.getSessionResponse()` to return the session response format expected by Wristband's frontend SDKs. The response type will always have a `userId` and a `tenantId` in it. You can include any additional data for your frontend by customizing the `metadata` parameter (optional), which requires JSON-serializable values.
+
+**The response must not be cached**. When this endpoint is protected with your auth middleware (e.g. `requireMiddlewareAuth`), the middleware automatically sets `Cache-Control: no-store` and `Pragma: no-cache` headers on the response.
 
 > **⚠️ Important:**
 > This endpoint must be protected with authentication middleware, which is shown in [Section 4](#4-protect-your-pages-actions-and-apis).
@@ -458,9 +461,7 @@ import { getRequestSession } from '../../../../wristband';
 export async function GET(req: NextRequest) {
   const session = await getRequestSession(req);
   const sessionResponse = session.getSessionResponse({ foo: 'bar' });
-  return NextResponse.json(sessionResponse, {
-    headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' },
-  });
+  return NextResponse.json(sessionResponse);
 }
 ```
 
@@ -480,8 +481,6 @@ export default async function sessionEndpoint(req: NextApiRequest, res: NextApiR
 
   const session = await getSession(req, res);
   const sessionResponse = session.getSessionResponse({ foo: 'bar' });
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Pragma', 'no-cache');
   res.status(200).json(sessionResponse);
 }
 ```
@@ -510,9 +509,9 @@ The Session Endpoint returns the `SessionResponse` type to your frontend:
 >
 > If your application doesn't need frontend access to tokens (e.g., all API calls go through your backend), you can skip this endpoint.
 
-Some applications require the frontend to make direct API calls to Wristband or other protected services using the user's access token. The Token Endpoint provides a secure way for your frontend to retrieve the current access token and its expiration time without exposing it in the session cookie or in browser storage.
+Some applications require the frontend to make direct API calls to Wristband or other protected services using the user's access token. The Token Endpoint provides a secure way for your frontend to retrieve the current access token and its expiration time without exposing it in the session cookie or in browser storage. Create a protected token endpoint that uses `session.getTokenResponse()` to return the token data expected by Wristband's frontend SDKs.
 
-Create a protected token endpoint that uses `session.getTokenResponse()` to return the token data expected by Wristband's frontend SDKs. **The response must not be cached**.
+**The response must not be cached**. When this endpoint is protected with your auth middleware (e.g. `requireMiddlewareAuth`), the middleware automatically sets `Cache-Control: no-store` and `Pragma: no-cache` headers on the response.
 
 > **⚠️ Important:**
 > This endpoint must be protected with authentication middleware, which is shown in [Section 4](#4-protect-your-pages-actions-and-apis).
@@ -528,9 +527,7 @@ import { getRequestSession } from '../../../../wristband';
 export async function GET(req: NextRequest) {
   const session = await getRequestSession(req);
   const tokenResponse = session.getTokenResponse();
-  return NextResponse.json(tokenResponse, {
-    headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' },
-  });
+  return NextResponse.json(tokenResponse);
 }
 ```
 
@@ -550,8 +547,6 @@ export default async function tokenEndpoint(req: NextApiRequest, res: NextApiRes
 
   const session = await getSession(req, res);
   const tokenResponse = session.getTokenResponse();
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Pragma', 'no-cache');
   res.status(200).json(tokenResponse);
 }
 ```
@@ -1065,7 +1060,7 @@ The `login()` function can also take optional configuration if your application 
 
 | LoginConfig Field | Type | Required | Description |
 | ----------------- | ---- | -------- | ----------- |
-| customState | JSON | No | Additional state to save in the Login State Cookie during login. When the callback completes successfully, `callback()` returns this custom state unmodified as `customState` in the callback data. This is useful for carrying application-specific context through the login redirect, such as which flow or action started the login. Empty objects are ignored. |
+| customState | `Record<string, unknown>` | No | Additional state to save in the Login State Cookie during login. When the callback completes successfully, `callback()` returns this custom state unmodified as `customState` in the callback data. This is useful for carrying application-specific context through the login redirect, such as which flow or action started the login. Empty objects are ignored. |
 | defaultTenantName | string | No | An optional default tenant name to use for the login request in the event the tenant name cannot be found in either the subdomain or query parameters (depending on your subdomain configuration). Useful when most or all users of your application belong to the same tenant, so they skip tenant discovery. Because it always resolves a tenant, Application-Level authorization requests and the Tenant Discovery Page are never used when it is set. |
 | defaultTenantCustomDomain | string | No | An optional default tenant custom domain to use for the login request in the event the tenant custom domain cannot be found in the query parameters. Useful when most or all users of your application log in through the same tenant custom domain, so they skip tenant discovery. Because it always resolves a tenant, Application-Level authorization requests and the Tenant Discovery Page are never used when it is set. |
 | returnUrl | string | No | A URL to send the user to after authentication is completed. This is useful for returning users to the page they were trying to reach before being asked to log in, so they land back where they started instead of on a default page. It is stored in the Login State Cookie and returned as `returnUrl` in the callback data, where your Callback Endpoint can redirect to it. If provided, it takes precedence over the `return_url` query parameter. The value is validated during the callback: relative URLs are resolved against the callback request, and URLs that do not match your application's domain are dropped. See [Return URLs](#return-urls) for more details. |
@@ -1400,7 +1395,7 @@ When the callback returns a `'completed'` result, all of the token and userinfo 
 | CallbackData Field | Type | Description |
 | ------------------ | ---- | ----------- |
 | accessToken | string | The access token that can be used for accessing Wristband APIs as well as protecting your application's backend APIs. |
-| customState | JSON or `undefined` | If you injected custom state into the Login State Cookie during the Login Endpoint for the current auth request, then that same custom state will be returned in this field. |
+| customState | `Record<string, unknown>` or `undefined` | If you injected custom state into the Login State Cookie during the Login Endpoint for the current auth request, then that same custom state will be returned in this field. |
 | expiresAt | number | The absolute expiration time of the access token in milliseconds since the Unix epoch. The `tokenExpirationBuffer` SDK configuration is accounted for in this value. |
 | expiresIn | number | The duration from the current time until the access token is expired (in seconds). The `tokenExpirationBuffer` SDK configuration is accounted for in this value. |
 | idToken | string | The ID token uniquely identifies the user that is authenticating and contains claim data about the user. |
@@ -2627,9 +2622,7 @@ export async function GET(req: NextRequest) {
     name: session.fullName
   });
   
-  return NextResponse.json(sessionResponse, {
-    headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' },
-  });
+  return NextResponse.json(sessionResponse);
 }
 ```
 ```typescript
@@ -2639,13 +2632,11 @@ import { getSession } from '../../../wristband';
 
 export default async function sessionEndpoint(req: NextApiRequest, res: NextApiResponse) {
   const session = await getSession(req, res);
-  
+
   const sessionResponse = session.getSessionResponse({
     theme: session.theme
   });
-  
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Pragma', 'no-cache');
+
   res.status(200).json(sessionResponse);
 }
 ```
@@ -2690,10 +2681,7 @@ import { getRequestSession } from '../../../../wristband';
 export async function GET(req: NextRequest) {
   const session = await getRequestSession(req);
   const tokenResponse = session.getTokenResponse();
-  
-  return NextResponse.json(tokenResponse, {
-    headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' },
-  });
+  return NextResponse.json(tokenResponse);
 }
 ```
 ```typescript
@@ -2704,9 +2692,6 @@ import { getSession } from '../../../wristband';
 export default async function tokenEndpoint(req: NextApiRequest, res: NextApiResponse) {
   const session = await getSession(req, res);
   const tokenResponse = session.getTokenResponse();
-  
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Pragma', 'no-cache');
   res.status(200).json(tokenResponse);
 }
 ```

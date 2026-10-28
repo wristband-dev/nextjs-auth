@@ -10,7 +10,8 @@
   <p align="center">
     <b>
       <a href="https://wristband.dev">Website</a> • 
-      <a href="https://docs.wristband.dev/">Documentation</a>
+      <a href="https://docs.wristband.dev/">Documentation</a> • 
+      <a href="https://docs.wristband.dev/llms.txt">LLMs.txt</a>
     </b>
   </p>
 </div>
@@ -40,6 +41,8 @@
 - [customState and customClaims Type Changes](#customstate-and-customclaims-type-changes)
 - [Return URL Validation in callback()](#return-url-validation-in-callback)
 - [Login State Cookie Encryption Changes](#login-state-cookie-encryption-changes)
+- [Automatic No-Cache Headers](#automatic-no-cache-headers)
+- [Session Cookie Encoding Changes](#session-cookie-encoding-changes)
 
 <br>
 
@@ -375,6 +378,84 @@ The Login State Cookie is now encrypted with Wristband's own in-house crypto imp
 > **⚠️ Important:**
 >
 > If your Callback Endpoint already handles the `redirect_required` result type, no change is needed. Otherwise, make sure it handles `type` being `'redirect_required'`: on the Pages Router, redirect to `callbackResult.redirectUrl`; on the App Router, return `callbackResult.response`.
+
+<br>
+
+## Automatic No-Cache Headers
+
+Any response that writes or deletes a session cookie now automatically includes `Cache-Control: no-store` and `Pragma: no-cache`. This prevents browsers and shared caches (such as CDNs and proxies) from storing a response that carries a user's session cookie and serving it to someone else. In v4.x, apps were solely responsible for setting these headers. For security, the SDK now sets them itself, so a forgotten header can no longer leave a session cookie cacheable.
+
+**App Router**
+
+**Before (v4.x):**
+```typescript
+// src/app/api/auth/session/route.ts (protected by requireMiddlewareAuth)
+export async function GET(req: NextRequest) {
+  const session = await getRequestSession(req);
+  const sessionResponse = session.getSessionResponse({ foo: 'bar' });
+- return NextResponse.json(sessionResponse, {
+-   headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' },
+- });
+}
+```
+
+**After (v5.x):**
+```typescript
+// src/app/api/auth/session/route.ts (protected by requireMiddlewareAuth)
+export async function GET(req: NextRequest) {
+  const session = await getRequestSession(req);
+  const sessionResponse = session.getSessionResponse({ foo: 'bar' });
++ return NextResponse.json(sessionResponse);
+}
+```
+
+**Pages Router**
+
+**Before (v4.x):**
+```typescript
+// src/pages/api/auth/session.ts (protected by requireMiddlewareAuth)
+export default async function sessionEndpoint(req: NextApiRequest, res: NextApiResponse) {
+  const session = await getSession(req, res);
+  const sessionResponse = session.getSessionResponse({ foo: 'bar' });
+- res.setHeader('Cache-Control', 'no-store');
+- res.setHeader('Pragma', 'no-cache');
+  res.status(200).json(sessionResponse);
+}
+```
+
+**After (v5.x):**
+```typescript
+// src/pages/api/auth/session.ts (protected by requireMiddlewareAuth)
+export default async function sessionEndpoint(req: NextApiRequest, res: NextApiResponse) {
+  const session = await getSession(req, res);
+  const sessionResponse = session.getSessionResponse({ foo: 'bar' });
+  res.status(200).json(sessionResponse);
+}
+```
+
+**Key Changes:**
+1. `requireMiddlewareAuth` saves the session on every request it authenticates with the `SESSION` strategy (rolling sessions), so those responses always include the headers
+2. App Router: `session.saveToResponse()` and `session.destroyToResponse()` set the headers on the returned response. Pages Router: `session.save()` and `session.destroy()` set the headers on the response object.
+3. Requests authenticated with the `JWT` strategy do not write cookies, so those responses do not get the headers automatically
+4. Server Actions: the SDK does not set the headers, since there is no response object. Next.js already sends `Cache-Control: no-store` on every Server Action response.
+5. Manually set `Cache-Control` and `Pragma` headers can be removed only from routes that save or destroy the session on every request, such as routes protected by the `SESSION` strategy. Keep them on any route that only sometimes saves or destroys the session, or that never does, since those responses do not get the headers automatically.
+
+> **⚠️ Important:**
+>
+> Existing `Cache-Control` and `Pragma` values on the response are replaced, not merged. If your app sets a custom `Cache-Control` value on a response that also saves or destroys the session, that value is now replaced with `no-store`. For routes protected by `requireMiddlewareAuth`, a custom `Cache-Control` value set in a Node.js runtime route handler is replaced by the middleware's `no-store` value. In an Edge runtime route handler, or on Next.js 14, both values are sent. The response is still not cached, since `no-store` applies whenever it is present.
+
+<br>
+
+## Session Cookie Encoding Changes
+
+Encrypted session cookie values are now base64url-encoded, matching the Login State Cookie. No code or config changes are needed.
+
+**Key Changes:**
+1. Session cookies created by v4.x are still decrypted by v5.x, so existing users stay logged in after the upgrade
+
+> **⚠️ Important:**
+>
+> v4.x cannot read session cookies created by v5.x. Rolling back to v4.x after the upgrade logs out users with a new cookie once.
 
 <br>
 
