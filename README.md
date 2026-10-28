@@ -1121,7 +1121,7 @@ const wristbandAuth = createWristbandAuth({
 });
 ```
 
-When a tenant can be resolved, such as when a user navigates directly to a Tenant-Level Login URL (e.g. a bookmarked link), `login()` always proceeds with the standard Tenant-Level flow. This is especially relevant for [Global and Standalone tenants](https://docs.wristband.dev/docs/tenants-1), which are either excluded from tenant discovery results entirely (Global Tenants) or intended to bypass Application-Level branding altogether (Standalone Tenants). Users of these tenant types should always reach your Login Endpoint with their tenant already resolvable, so this setting has no bearing on their experience.
+When a tenant can be resolved, such as when a user navigates directly to a Tenant-Level Login URL (e.g. a bookmarked link), `login()` always proceeds with the standard Tenant-Level flow. This is especially relevant for [Global and Standalone tenants](https://docs.wristband.dev/docs/tenants), which are either excluded from tenant discovery results entirely (Global Tenants) or intended to bypass Application-Level branding altogether (Standalone Tenants). Users of these tenant types should always reach your Login Endpoint with their tenant already resolvable, so this setting has no bearing on their experience.
 
 #### Tenant Name Query Param
 
