@@ -1,12 +1,11 @@
 import { createWristbandAuth } from '../src/index';
-import { TENANT_DOMAIN_PLACEHOLDER, TENANT_NAME_PLACEHOLDER, TENANT_PLACEHOLDER_MSG } from '../src/utils/constants';
+import { TENANT_NAME_PLACEHOLDER, TENANT_PLACEHOLDER_MSG } from '../src/utils/constants';
 
 const CLIENT_ID = 'clientId';
 const CLIENT_SECRET = 'clientSecret';
 const LOGIN_STATE_COOKIE_SECRET = '7ffdbecc-ab7d-4134-9307-2dfcc52f7475';
 const LOGIN_URL = 'http://localhost:6001/api/auth/login';
 const REDIRECT_URI = 'http://localhost:6001/api/auth/callback';
-const ROOT_DOMAIN = 'business.invotastic.com';
 const WRISTBAND_APPLICATION_DOMAIN = 'invotasticb2b-invotastic.dev.wristband.dev';
 
 // Helper function to create URLs with placeholders
@@ -235,226 +234,40 @@ describe('WristbandAuth Instantiation Errors', () => {
     });
   });
 
-  describe.each([
-    ['tenant_domain', TENANT_DOMAIN_PLACEHOLDER],
-    ['tenant_name', TENANT_NAME_PLACEHOLDER],
-  ])('Tenant Domain Token Validation with Auto-Configure Disabled - %s placeholder', (placeholderName, placeholder) => {
-    test(`Missing ${placeholderName} placeholder in loginUrl with tenant subdomains`, async () => {
-      expect(() => {
-        return createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl: LOGIN_URL,
-          redirectUri: getRedirectUriWithPlaceholder(placeholder),
-          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          parseTenantFromRootDomain: ROOT_DOMAIN,
-          autoConfigureEnabled: false,
-        });
-      }).toThrow(
-        `The [loginUrl] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
-      );
-    });
-
-    test(`Missing ${placeholderName} placeholder in redirectUri with tenant subdomains`, async () => {
-      expect(() => {
-        return createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl: getLoginUrlWithPlaceholder(placeholder),
-          redirectUri: REDIRECT_URI,
-          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          parseTenantFromRootDomain: ROOT_DOMAIN,
-          autoConfigureEnabled: false,
-        });
-      }).toThrow(
-        `The [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
-      );
-    });
-
-    test(`Invalid ${placeholderName} placeholder in loginUrl with no tenant subdomains`, async () => {
-      expect(() => {
-        return createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl: getLoginUrlWithPlaceholder(placeholder),
-          redirectUri: REDIRECT_URI,
-          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          autoConfigureEnabled: false,
-        });
-      }).toThrow(
-        `The [loginUrl] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
-      );
-    });
-
-    test(`Invalid ${placeholderName} placeholder in redirectUri with no tenant subdomains`, async () => {
-      expect(() => {
-        return createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl: LOGIN_URL,
-          redirectUri: getRedirectUriWithPlaceholder(placeholder),
-          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          autoConfigureEnabled: false,
-        });
-      }).toThrow(
-        `The [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
-      );
-    });
-  });
-
-  describe('Mixed Placeholder Support with Auto-Configure Disabled', () => {
-    test('tenant_domain in loginUrl and tenant_name in redirectUri', async () => {
-      expect(() => {
-        return createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl: getLoginUrlWithPlaceholder(TENANT_DOMAIN_PLACEHOLDER),
-          redirectUri: getRedirectUriWithPlaceholder(TENANT_NAME_PLACEHOLDER),
-          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          parseTenantFromRootDomain: ROOT_DOMAIN,
-          autoConfigureEnabled: false,
-        });
-      }).not.toThrow();
-    });
-
-    test('tenant_name in loginUrl and tenant_domain in redirectUri', async () => {
+  describe('Tenant Placeholder Validation with Auto-Configure Disabled', () => {
+    test('Missing tenant_name placeholder in redirectUri when loginUrl has it', async () => {
       expect(() => {
         return createWristbandAuth({
           clientId: CLIENT_ID,
           clientSecret: CLIENT_SECRET,
           loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
           loginUrl: getLoginUrlWithPlaceholder(TENANT_NAME_PLACEHOLDER),
-          redirectUri: getRedirectUriWithPlaceholder(TENANT_DOMAIN_PLACEHOLDER),
+          redirectUri: REDIRECT_URI,
           wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          parseTenantFromRootDomain: ROOT_DOMAIN,
           autoConfigureEnabled: false,
         });
-      }).not.toThrow();
+      }).toThrow(`The [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when the [loginUrl] contains it.`);
     });
 
-    test('Both tenant_name placeholders', async () => {
+    test('Unexpected tenant_name placeholder in redirectUri when loginUrl does not have it', async () => {
       expect(() => {
         return createWristbandAuth({
           clientId: CLIENT_ID,
           clientSecret: CLIENT_SECRET,
           loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl: getLoginUrlWithPlaceholder(TENANT_NAME_PLACEHOLDER),
+          loginUrl: LOGIN_URL,
           redirectUri: getRedirectUriWithPlaceholder(TENANT_NAME_PLACEHOLDER),
           wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          parseTenantFromRootDomain: ROOT_DOMAIN,
           autoConfigureEnabled: false,
         });
-      }).not.toThrow();
-    });
-
-    test('Both tenant_domain placeholders (backward compatibility)', async () => {
-      expect(() => {
-        return createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl: getLoginUrlWithPlaceholder(TENANT_DOMAIN_PLACEHOLDER),
-          redirectUri: getRedirectUriWithPlaceholder(TENANT_DOMAIN_PLACEHOLDER),
-          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          parseTenantFromRootDomain: ROOT_DOMAIN,
-          autoConfigureEnabled: false,
-        });
-      }).not.toThrow();
+      }).toThrow(
+        `The [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [loginUrl] does not contain it.`
+      );
     });
   });
-
-  describe.each([
-    ['tenant_domain', TENANT_DOMAIN_PLACEHOLDER],
-    ['tenant_name', TENANT_NAME_PLACEHOLDER],
-  ])(
-    'Partial Configuration Validation with Auto-Configure Enabled - %s placeholder',
-    (placeholderName, placeholder) => {
-      test(`Manual loginUrl with parseTenantFromRootDomain but missing ${placeholderName} placeholder`, async () => {
-        expect(() => {
-          return createWristbandAuth({
-            clientId: CLIENT_ID,
-            clientSecret: CLIENT_SECRET,
-            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-            loginUrl: LOGIN_URL, // Missing placeholder
-            wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-            parseTenantFromRootDomain: ROOT_DOMAIN,
-            autoConfigureEnabled: true,
-          });
-        }).toThrow(
-          `The [loginUrl] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
-        );
-      });
-
-      test(`Manual redirectUri with parseTenantFromRootDomain but missing ${placeholderName} placeholder`, async () => {
-        expect(() => {
-          return createWristbandAuth({
-            clientId: CLIENT_ID,
-            clientSecret: CLIENT_SECRET,
-            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-            redirectUri: REDIRECT_URI, // Missing placeholder
-            wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-            parseTenantFromRootDomain: ROOT_DOMAIN,
-            autoConfigureEnabled: true,
-          });
-        }).toThrow(
-          `The [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
-        );
-      });
-
-      test(`Manual loginUrl with ${placeholderName} placeholder but no parseTenantFromRootDomain`, async () => {
-        expect(() => {
-          return createWristbandAuth({
-            clientId: CLIENT_ID,
-            clientSecret: CLIENT_SECRET,
-            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-            loginUrl: getLoginUrlWithPlaceholder(placeholder), // Has placeholder
-            wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-            autoConfigureEnabled: true,
-          });
-        }).toThrow(
-          `The [loginUrl] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
-        );
-      });
-
-      test(`Manual redirectUri with ${placeholderName} placeholder but no parseTenantFromRootDomain`, async () => {
-        expect(() => {
-          return createWristbandAuth({
-            clientId: CLIENT_ID,
-            clientSecret: CLIENT_SECRET,
-            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-            redirectUri: getRedirectUriWithPlaceholder(placeholder), // Has placeholder
-            wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-            autoConfigureEnabled: true,
-          });
-        }).toThrow(
-          `The [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
-        );
-      });
-    }
-  );
 
   describe('Mixed Placeholder Support with Auto-Configure Enabled', () => {
-    test('Manual tenant_domain loginUrl and tenant_name redirectUri with parseTenantFromRootDomain', async () => {
-      expect(() => {
-        return createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl: getLoginUrlWithPlaceholder(TENANT_DOMAIN_PLACEHOLDER),
-          redirectUri: getRedirectUriWithPlaceholder(TENANT_NAME_PLACEHOLDER),
-          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          parseTenantFromRootDomain: ROOT_DOMAIN,
-          autoConfigureEnabled: true,
-        });
-      }).not.toThrow();
-    });
-
-    test('Manual tenant_name loginUrl only with parseTenantFromRootDomain', async () => {
+    test('Manual tenant_name loginUrl only', async () => {
       expect(() => {
         return createWristbandAuth({
           clientId: CLIENT_ID,
@@ -462,7 +275,6 @@ describe('WristbandAuth Instantiation Errors', () => {
           loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
           loginUrl: getLoginUrlWithPlaceholder(TENANT_NAME_PLACEHOLDER),
           wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          parseTenantFromRootDomain: ROOT_DOMAIN,
           autoConfigureEnabled: true,
         });
       }).not.toThrow();
@@ -497,21 +309,6 @@ describe('WristbandAuth Instantiation Errors', () => {
       }).not.toThrow();
     });
 
-    test('Valid tenant subdomain configuration with tenant_domain placeholder', async () => {
-      expect(() => {
-        return createWristbandAuth({
-          clientId: CLIENT_ID,
-          clientSecret: CLIENT_SECRET,
-          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-          loginUrl: getLoginUrlWithPlaceholder(TENANT_DOMAIN_PLACEHOLDER),
-          redirectUri: getRedirectUriWithPlaceholder(TENANT_DOMAIN_PLACEHOLDER),
-          wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          parseTenantFromRootDomain: ROOT_DOMAIN,
-          autoConfigureEnabled: false,
-        });
-      }).not.toThrow();
-    });
-
     test('Valid tenant subdomain configuration with tenant_name placeholder', async () => {
       expect(() => {
         return createWristbandAuth({
@@ -521,7 +318,6 @@ describe('WristbandAuth Instantiation Errors', () => {
           loginUrl: getLoginUrlWithPlaceholder(TENANT_NAME_PLACEHOLDER),
           redirectUri: getRedirectUriWithPlaceholder(TENANT_NAME_PLACEHOLDER),
           wristbandApplicationVanityDomain: WRISTBAND_APPLICATION_DOMAIN,
-          parseTenantFromRootDomain: ROOT_DOMAIN,
           autoConfigureEnabled: false,
         });
       }).not.toThrow();

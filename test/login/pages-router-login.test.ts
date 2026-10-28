@@ -5,15 +5,15 @@ import { createMocks, MockResponse } from 'node-mocks-http';
 
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
 import { CLIENT_ID, CLIENT_SECRET, LOGIN_STATE_COOKIE_SECRET, parseSetCookies } from '../test-utils';
-import { LOGIN_STATE_COOKIE_SEPARATOR } from '../../src/utils/constants';
+import { LOGIN_STATE_COOKIE_SEPARATOR, STATE_PARAM_MAX_CHAR_LENGTH } from '../../src/utils/constants';
 import { LoginState } from '../../src/types';
-import { decryptLoginState, encryptLoginState } from '../../src/utils/crypto';
+import { decryptLoginState, encryptLoginState } from '../../src/utils/auth/common-utils';
 import { mockWristbandFetch } from '../helpers/mock-fetch';
 
 function validateRedirectResponse(
   mockRes: MockResponse<NextApiResponse>,
   authorizeUrl: string,
-  exprectedOrigin: string,
+  expectedOrigin: string,
   expectedRedirectUri: string
 ) {
   expect(mockRes.getHeader('Cache-Control')).toBe('no-store');
@@ -21,7 +21,7 @@ function validateRedirectResponse(
 
   const url: URL = new URL(authorizeUrl);
   const { pathname, origin, searchParams } = url;
-  expect(origin).toEqual(exprectedOrigin);
+  expect(origin).toEqual(expectedOrigin);
   expect(pathname).toEqual('/api/v1/oauth2/authorize');
 
   // Validate query parameters of the Authorize URL
@@ -61,12 +61,12 @@ async function validateLoginStateCookie(
   expect(loginStateCookie.httponly).toBe(true);
   expect(loginStateCookie['max-age']).toBe('3600');
   expect(loginStateCookie.path).toBe('/');
-  expect(loginStateCookie.samesite).toBe('lax');
+  expect(loginStateCookie.samesite).toBe('Lax');
   expect(loginStateCookie.secure).toBe(true);
 
   const cookieValue: string = loginStateCookie.value;
   expect(cookieValue).toBeTruthy();
-  const loginState: LoginState = await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET);
+  const loginState = (await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
   expect(loginState.state).toEqual(keyParts[1]);
   expect(searchParams.get('state')).toEqual(keyParts[1]);
   expect(loginState.codeVerifier).toBeTruthy();
@@ -122,7 +122,7 @@ describe('pagesRouter.login()', () => {
         `https://devs4you-${wristbandApplicationVanityDomain}`,
         redirectUri
       );
-      validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
     });
 
     test('Dangerously Disable Secure Cookies Configuration', async () => {
@@ -179,12 +179,12 @@ describe('pagesRouter.login()', () => {
       expect(loginStateCookie.httponly).toBe(true);
       expect(loginStateCookie['max-age']).toBe('3600');
       expect(loginStateCookie.path).toBe('/');
-      expect(loginStateCookie.samesite).toBe('lax');
+      expect(loginStateCookie.samesite).toBe('Lax');
       expect(loginStateCookie.secure).toBeUndefined();
 
       const cookieValue: string = loginStateCookie.value;
       expect(cookieValue).toBeTruthy();
-      const loginState: LoginState = await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET);
+      const loginState = (await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
       expect(loginState.state).toEqual(keyParts[1]);
       expect(searchParams.get('state')).toEqual(keyParts[1]);
       expect(loginState.codeVerifier).toBeTruthy();
@@ -195,8 +195,8 @@ describe('pagesRouter.login()', () => {
 
     test('Tenant Subdomains Configuration', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -204,9 +204,9 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Create mock request and response
@@ -228,14 +228,18 @@ describe('pagesRouter.login()', () => {
         `https://devs4you-${wristbandApplicationVanityDomain}`,
         redirectUri
       );
-      validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+
+      // App-level authorization requests are not enabled, so the cookie stays host-only
+      // even though the loginUrl contains the tenant placeholder.
+      const parsedCookies = parseSetCookies(mockRes.getHeader('Set-Cookie') as string | string[]);
+      expect(parsedCookies[0].domain).toBeUndefined();
     });
 
-    test('Custom Domains and Tenant Subdomains Configuration', async () => {
+    test('Tenant Subdomains Behind a Trusted Proxy Configuration', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
-      wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -243,10 +247,54 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+        trustProxyHeaders: true,
+      });
+
+      // The proxy forwards to an internal host, so the tenant subdomain is only in X-Forwarded-Host.
+      // Create mock request and response
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: {
+          host: 'internal-app:3000',
+          'x-forwarded-host': `devs4you.${parseTenantFromRootDomain}`,
+        },
+      });
+      // Cast req and res to NextApiRequest and NextApiResponse
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+
+      // Validate Redirect response
+      validateRedirectResponse(
+        mockRes,
+        authorizeUrl,
+        `https://devs4you-${wristbandApplicationVanityDomain}`,
+        redirectUri
+      );
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+    });
+
+    test('Custom Domains and Tenant Subdomains Configuration', async () => {
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      wristbandApplicationVanityDomain = 'auth.invotastic.com';
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Create mock request and response
@@ -268,14 +316,14 @@ describe('pagesRouter.login()', () => {
         `https://devs4you.${wristbandApplicationVanityDomain}`,
         redirectUri
       );
-      validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
     });
 
     test('Custom Domains with Tenant Custom Domain', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -283,10 +331,10 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Create mock request and response
@@ -304,7 +352,7 @@ describe('pagesRouter.login()', () => {
 
       // Validate Redirect response
       validateRedirectResponse(mockRes, authorizeUrl, `https://tenant.custom.com`, redirectUri);
-      validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
     });
 
     test('Custom Domains with All Domain Params', async () => {
@@ -339,14 +387,14 @@ describe('pagesRouter.login()', () => {
 
       // Validate Redirect response
       validateRedirectResponse(mockRes, authorizeUrl, `https://tenant.custom.com`, redirectUri);
-      validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
+      await validateLoginStateCookie(mockRes, authorizeUrl, redirectUri);
     });
 
     test('With login_hint, idp_hint, and return_url query params', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -354,10 +402,10 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Create mock request and response
@@ -404,7 +452,7 @@ describe('pagesRouter.login()', () => {
 
       const cookieValue: string = loginStateCookie.value;
       expect(cookieValue).toBeTruthy();
-      const loginState: LoginState = await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET);
+      const loginState = (await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
       expect(loginState.state).toEqual(keyParts[1]);
       expect(loginState.returnUrl).toBe(`https://devs4you.${parseTenantFromRootDomain}/settings`);
     });
@@ -412,8 +460,8 @@ describe('pagesRouter.login()', () => {
     test('Clear old login state cookie', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -421,10 +469,10 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Mock login states
@@ -476,9 +524,11 @@ describe('pagesRouter.login()', () => {
       expect(oldLoginStateCookie.path).toBe('/');
       expect(oldLoginStateCookie.samesite).toBe('Lax');
       expect(oldLoginStateCookie.secure).toBe(true);
+      expect(oldLoginStateCookie.domain).toBeUndefined();
 
       // Validate new login state cookie
       const loginStateCookie = parsedCookies[1];
+      expect(loginStateCookie.domain).toBeUndefined();
       const cookieKey: string = loginStateCookie.name;
       expect(cookieKey).toBeTruthy();
       const keyParts: string[] = cookieKey.split(LOGIN_STATE_COOKIE_SEPARATOR);
@@ -489,7 +539,7 @@ describe('pagesRouter.login()', () => {
 
       const cookieValue: string = loginStateCookie.value;
       expect(cookieValue).toBeTruthy();
-      const loginState: LoginState = await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET);
+      const loginState = (await decryptLoginState(cookieValue, LOGIN_STATE_COOKIE_SECRET)) as LoginState;
       expect(loginState.state).toEqual(keyParts[1]);
       expect(searchParams.get('state')).toEqual(keyParts[1]);
     });
@@ -505,6 +555,7 @@ describe('pagesRouter.login()', () => {
         redirectUri,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // tenant_name and tenant_custom_domain query param is missing, which should redirect to app-level login.
@@ -522,11 +573,206 @@ describe('pagesRouter.login()', () => {
       expect(authorizeUrl).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
     });
 
+    test('return_url query param is passed as state', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      const returnUrl = 'https://localhost:6001/settings';
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: parseTenantFromRootDomain },
+        query: { return_url: returnUrl },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const location: string = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+      expect(location).toBe(
+        `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}&state=${encodeURIComponent(returnUrl)}`
+      );
+      expect(mockRes.getHeader('Set-Cookie')).toBeUndefined();
+    });
+
+    test('LoginConfig returnUrl is passed as state', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      const returnUrl = 'https://localhost:6001/dashboard';
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: parseTenantFromRootDomain },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const location: string = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl });
+      expect(location).toBe(
+        `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}&state=${encodeURIComponent(returnUrl)}`
+      );
+    });
+
+    test('LoginConfig returnUrl takes precedence over return_url query param for state', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: parseTenantFromRootDomain },
+        query: { return_url: 'https://localhost:6001/from-query' },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const configReturnUrl = 'https://localhost:6001/from-config';
+      const location: string = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl: configReturnUrl });
+      expect(location).toBe(
+        `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}&state=${encodeURIComponent(configReturnUrl)}`
+      );
+    });
+
+    test('Return URL with its own query string stays encoded inside state', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      const returnUrl = 'https://localhost:6001/settings?tab=billing&x=1';
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: parseTenantFromRootDomain },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const location: string = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl });
+      const params = new URL(location).searchParams;
+      expect(params.get('client_id')).toBe(CLIENT_ID);
+      expect(params.get('state')).toBe(returnUrl);
+      expect(params.has('tab')).toBe(false);
+      expect(params.has('x')).toBe(false);
+    });
+
+    test('Return URL at the max state length is passed as state', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      const prefix = 'https://localhost:6001/';
+      const returnUrl = `${prefix}${'a'.repeat(STATE_PARAM_MAX_CHAR_LENGTH - prefix.length)}`;
+      expect(returnUrl.length).toBe(STATE_PARAM_MAX_CHAR_LENGTH);
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: parseTenantFromRootDomain },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const location: string = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl });
+      expect(location).toBe(
+        `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}&state=${encodeURIComponent(returnUrl)}`
+      );
+    });
+
+    test('Return URL over the max state length is dropped', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      const prefix = 'https://localhost:6001/';
+      const returnUrl = `${prefix}${'a'.repeat(STATE_PARAM_MAX_CHAR_LENGTH - prefix.length + 1)}`;
+      expect(returnUrl.length).toBe(STATE_PARAM_MAX_CHAR_LENGTH + 1);
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: parseTenantFromRootDomain },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const location: string = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl });
+      expect(location).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
+    });
+
+    test('Empty LoginConfig returnUrl and no return_url query param (no state)', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: parseTenantFromRootDomain },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const location: string = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl: '' });
+      expect(location).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
+    });
+
     test('Unresolved tenant subdomain', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -534,10 +780,10 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Subdomain is missing from host, which should redirect to app-level login.
@@ -553,13 +799,16 @@ describe('pagesRouter.login()', () => {
 
       const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
       expect(authorizeUrl).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
+
+      // App-level authorization requests are not enabled, so the login state cookie is never touched.
+      expect(mockRes.getHeader('Set-Cookie')).toBeUndefined();
     });
 
     test('Custom application login URL redirect', async () => {
       parseTenantFromRootDomain = 'business.invotastic.com';
       wristbandApplicationVanityDomain = 'auth.invotastic.com';
-      loginUrl = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/login`;
-      redirectUri = `https://{tenant_domain}.${parseTenantFromRootDomain}/api/auth/callback`;
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -567,11 +816,11 @@ describe('pagesRouter.login()', () => {
         loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
         loginUrl,
         redirectUri,
-        parseTenantFromRootDomain,
         isApplicationCustomDomainActive: true,
         wristbandApplicationVanityDomain,
         customApplicationLoginPageUrl: 'https://google.com',
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       // Subdomain is missing from host, which should redirect to app-level login.
@@ -587,6 +836,73 @@ describe('pagesRouter.login()', () => {
 
       const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
       expect(authorizeUrl).toBe(`https://google.com?client_id=${CLIENT_ID}`);
+    });
+
+    test('Unresolved tenant subdomain with return_url query param passes state', async () => {
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      wristbandApplicationVanityDomain = 'auth.invotastic.com';
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      const returnUrl = `https://${parseTenantFromRootDomain}/settings`;
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: parseTenantFromRootDomain },
+        query: { return_url: returnUrl },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const location: string = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
+      expect(location).toBe(
+        `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}&state=${encodeURIComponent(returnUrl)}`
+      );
+      expect(mockRes.getHeader('Set-Cookie')).toBeUndefined();
+    });
+
+    test('Custom application login URL with return URL passes state', async () => {
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      wristbandApplicationVanityDomain = 'auth.invotastic.com';
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        customApplicationLoginPageUrl: 'https://google.com',
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      const returnUrl = `https://${parseTenantFromRootDomain}/settings`;
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `${loginUrl}`,
+        headers: { host: parseTenantFromRootDomain },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const location: string = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { returnUrl });
+      expect(location).toBe(`https://google.com?client_id=${CLIENT_ID}&state=${encodeURIComponent(returnUrl)}`);
     });
   });
 });

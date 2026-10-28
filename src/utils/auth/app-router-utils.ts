@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
-import { AppRouterLoginStateCookie, LoginState, LoginStateMapConfig } from '../../types';
-import { base64ToURLSafe, generateRandomString, sha256Base64 } from '../crypto';
+import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR, REDIRECT_RESPONSE_INIT } from '../constants';
+import { AppRouterLoginStateCookie, LoginConfig } from '../../types';
+import { Base64 } from '../base64';
+import { generateRandomString } from './common-utils';
+import { WristbandError } from '../../error';
 
 function parseCookies(cookieHeader: string | null): Record<string, string> {
   if (!cookieHeader) return {};
@@ -14,8 +16,38 @@ function parseCookies(cookieHeader: string | null): Record<string, string> {
   );
 }
 
-export function parseTenantSubdomain(request: NextRequest, parseTenantFromRootDomain: string): string {
-  const host = request.headers.get('host');
+/**
+ * Resolves the host the browser used for the incoming request, including any port.
+ *
+ * By default, only the Host header is used. When trustProxyHeaders is enabled, the first value of the
+ * X-Forwarded-Host header is used instead, falling back to the Host header. It should only be enabled
+ * when the application runs behind a reverse proxy that sets or overwrites X-Forwarded-Host, since
+ * clients can send the header themselves.
+ *
+ * This helper does not read the request URL, whose host is the server's own address (e.g. localhost)
+ * when running behind a reverse proxy.
+ *
+ * Returns an empty string if no host can be determined.
+ */
+function getRequestHost(request: NextRequest, trustProxyHeaders: boolean): string {
+  if (trustProxyHeaders) {
+    // Proxies may provide a comma-separated list of forwarded hosts.
+    const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0].trim();
+
+    if (forwardedHost) {
+      return forwardedHost;
+    }
+  }
+
+  return request.headers.get('host') || '';
+}
+
+export function parseTenantSubdomain(
+  request: NextRequest,
+  parseTenantFromRootDomain: string,
+  trustProxyHeaders: boolean
+): string {
+  const host = getRequestHost(request, trustProxyHeaders);
 
   // Should never happen (defensive measure)
   if (!host) {
@@ -30,9 +62,13 @@ export function parseTenantSubdomain(request: NextRequest, parseTenantFromRootDo
     : '';
 }
 
-export function resolveTenantName(request: NextRequest, parseTenantFromRootDomain: string): string {
+export function resolveTenantName(
+  request: NextRequest,
+  parseTenantFromRootDomain: string,
+  trustProxyHeaders: boolean
+): string {
   if (parseTenantFromRootDomain) {
-    return parseTenantSubdomain(request, parseTenantFromRootDomain) || '';
+    return parseTenantSubdomain(request, parseTenantFromRootDomain, trustProxyHeaders) || '';
   }
 
   const tenantNameParam = request.nextUrl.searchParams.getAll('tenant_name');
@@ -54,27 +90,148 @@ export function resolveTenantCustomDomainParam(request: NextRequest): string {
   return tenantCustomDomainParam[0] || '';
 }
 
-export function createLoginState(
-  request: NextRequest,
-  redirectUri: string,
-  config: LoginStateMapConfig = {}
-): LoginState {
+export function resolveReturnUrl(request: NextRequest, config: LoginConfig = {}): string | undefined {
+  // The return URL from the LoginConfig takes priority over the query param.
+  if (config.returnUrl) {
+    return config.returnUrl;
+  }
+
   const returnUrlParam = request.nextUrl.searchParams.getAll('return_url');
 
   if (returnUrlParam.length > 1) {
     throw new TypeError('More than one [return_url] query parameter was encountered');
   }
 
-  const resolvedReturnUrlParam = returnUrlParam.length > 0 ? returnUrlParam[0] : '';
-  const returnUrl = config.returnUrl ?? resolvedReturnUrlParam;
+  // If no return URL in either location, return undefined.
+  return returnUrlParam[0] || undefined;
+}
 
-  return {
-    state: generateRandomString(32),
-    codeVerifier: generateRandomString(32),
-    redirectUri,
-    ...(!!returnUrl && typeof returnUrl === 'string' ? { returnUrl } : {}),
-    ...(!!config.customState && !!Object.keys(config.customState).length ? { customState: config.customState } : {}),
-  };
+/**
+ * Resolves the protocol the browser used for the incoming request.
+ *
+ * TLS often terminates at a reverse proxy or hosting platform, so the connection
+ * from the proxy to Next.js can be plain HTTP even when the browser used HTTPS.
+ * X-Forwarded-Proto carries the original protocol in that case. Only "http" and
+ * "https" are accepted; anything else falls back to the protocol of the request URL.
+ *
+ * This value is used only to validate the post-callback returnUrl and to build
+ * absolute redirect URLs, not to make access-control decisions.
+ */
+function getRequestProtocol(request: NextRequest): string {
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+
+  if (forwardedProto) {
+    // Proxies may provide a comma-separated list of forwarded protocols.
+    const protocol = forwardedProto.split(',')[0].trim().toLowerCase();
+
+    if (protocol === 'http' || protocol === 'https') {
+      return protocol;
+    }
+  }
+
+  // Web requests have no socket to inspect, so fall back to the protocol of the request URL.
+  return new URL(request.url).protocol === 'https:' ? 'https' : 'http';
+}
+
+/**
+ * Validates the returnUrl that the auth callback could potentially redirect the browser
+ * to after a successful login, preventing open redirects.
+ *
+ * An attacker can supply an arbitrary returnUrl through a crafted login link. The
+ * returnUrl hostname must match either the hostname that served this request or the
+ * configured root domain, so an external host is rejected independently of the
+ * protocol check. The protocol check additionally requires the returnUrl to use the
+ * same scheme as the incoming request as resolved by getRequestProtocol, which blocks
+ * downgrades such as HTTPS to HTTP when that protocol is resolved correctly.
+ *
+ * This helper does not perform the redirect. The validated URL is returned to the
+ * application through the callback result, and the application decides whether and
+ * how to use it. Because applications commonly pass it straight to a redirect, this
+ * validation is the main safeguard against open redirects, not an optional extra.
+ *
+ * Returns the validated URL, or undefined if the returnUrl is missing, malformed, or
+ * points to a host that isn't allowed.
+ */
+export function validateReturnUrl(
+  request: NextRequest,
+  returnUrl: string | undefined,
+  tenantName: string,
+  applicationAuthorizationRequestsEnabled: boolean,
+  trustProxyHeaders: boolean,
+  parseTenantFromRootDomain?: string
+): string | undefined {
+  // Safety check: a tenant name is required for validation.
+  if (!tenantName) {
+    throw new WristbandError('missing_tenant_name', 'Tenant name is required to validate returnUrl');
+  }
+
+  // A return URL is optional during login.
+  if (!returnUrl) {
+    return undefined;
+  }
+
+  const host = getRequestHost(request, trustProxyHeaders);
+
+  // Without a host, the request origin cannot be established safely.
+  if (!host) {
+    return undefined;
+  }
+
+  try {
+    // Resolve the incoming request's protocol, accounting for reverse proxies.
+    const protocol = getRequestProtocol(request);
+
+    // Parse the request origin using URL rather than splitting the host
+    // on colons, which would mishandle IPv6 addresses and ports.
+    const requestUrl = new URL(`${protocol}://${host}`);
+    const { hostname: requestHostname } = requestUrl;
+
+    // Resolve relative return URLs against the incoming request origin.
+    // Absolute URLs ignore the base. URL parsing normalizes URL syntax
+    // before the redirect target's protocol and hostname are checked.
+    const url = new URL(returnUrl, requestUrl);
+
+    // Only allow redirects to the configured root domain or the exact
+    // hostname that served this request, using the same protocol.
+    // This rejects external hosts and HTTP/HTTPS protocol downgrades.
+    if (
+      url.protocol !== `${protocol}:` ||
+      (url.hostname !== parseTenantFromRootDomain && url.hostname !== requestHostname)
+    ) {
+      return undefined;
+    }
+
+    // When authorization requests are enabled, rewrite a return URL
+    // targeting the root domain to the resolved tenant's subdomain.
+    // The URL API preserves the remaining URL components.
+    if (
+      parseTenantFromRootDomain &&
+      applicationAuthorizationRequestsEnabled &&
+      url.hostname === parseTenantFromRootDomain
+    ) {
+      url.hostname = `${tenantName}.${url.hostname}`;
+      return url.toString();
+    }
+
+    // Preserve the original URL when no tenant rewrite is necessary.
+    return returnUrl;
+  } catch {
+    // Malformed origins or return URLs are treated as unsafe.
+    return undefined;
+  }
+}
+
+/**
+ * Converts a relative URL to an absolute URL using the origin the browser used for
+ * the incoming request. Absolute URLs are returned unchanged.
+ *
+ * NextResponse.redirect() only accepts absolute URLs, so a relative URL must be
+ * converted before it is used as a redirect target.
+ */
+export function toAbsoluteUrl(request: NextRequest, url: string, trustProxyHeaders: boolean): string {
+  const host = getRequestHost(request, trustProxyHeaders);
+  const origin = host ? `${getRequestProtocol(request)}://${host}` : request.url;
+  return new URL(url, origin).toString();
 }
 
 export function createLoginStateCookie(
@@ -82,7 +239,8 @@ export function createLoginStateCookie(
   response: NextResponse,
   state: string,
   encryptedLoginState: string,
-  dangerouslyDisableSecureCookies: boolean
+  dangerouslyDisableSecureCookies: boolean,
+  domain?: string
 ): void {
   // Parse existing cookies from the request
   const cookies = parseCookies(request.headers.get('cookie'));
@@ -104,36 +262,42 @@ export function createLoginStateCookie(
     })[0];
 
     // Delete the cookie
-    response.headers.append(
-      'Set-Cookie',
-      `${oldestCookie.name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`
-    );
+    const staleCookieHeaderValue: string = [
+      `${oldestCookie.name}=`,
+      'Path=/',
+      'HttpOnly',
+      ...(domain ? [`Domain=${domain}`] : []),
+      'SameSite=Lax',
+      'Max-Age=0',
+      ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
+    ].join('; ');
+    response.headers.append('Set-Cookie', staleCookieHeaderValue);
   }
 
   // 1 hour expiration for new cookie
   const newCookieName: string = `${LOGIN_STATE_COOKIE_PREFIX}${state}${LOGIN_STATE_COOKIE_SEPARATOR}${Date.now().valueOf()}`;
-  response.headers.append(
-    'Set-Cookie',
-    `${newCookieName}=${encryptedLoginState}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600${!dangerouslyDisableSecureCookies ? '; Secure' : ''}`
-  );
+  const newCookieHeaderValue: string = [
+    `${newCookieName}=${encryptedLoginState}`,
+    'Path=/',
+    'HttpOnly',
+    ...(domain ? [`Domain=${domain}`] : []),
+    'SameSite=Lax',
+    'Max-Age=3600',
+    ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
+  ].join('; ');
+  response.headers.append('Set-Cookie', newCookieHeaderValue);
 }
 
-export async function getAuthorizeUrl(
+/**
+ * Builds the OAuth2 authorization request params shared by both the app-level and tenant-level
+ * Authorize Endpoint URLs. Mirrors pages-router-utils's getAuthorizationUrlParams so that
+ * getAppLevelAuthorizationUrl()/getTenantLevelAuthorizationUrl() (common-utils.ts) can be reused
+ * identically across both routers.
+ */
+export async function getAuthorizationUrlParams(
   request: NextRequest,
-  config: {
-    clientId: string;
-    codeVerifier: string;
-    defaultTenantCustomDomain?: string;
-    defaultTenantName?: string;
-    redirectUri: string;
-    scopes: string[];
-    state: string;
-    tenantCustomDomain?: string;
-    tenantName?: string;
-    isApplicationCustomDomainActive?: boolean;
-    wristbandApplicationVanityDomain: string;
-  }
-): Promise<string> {
+  config: { clientId: string; codeVerifier: string; redirectUri: string; scopes: string[]; state: string }
+): Promise<URLSearchParams> {
   const loginHint = request.nextUrl.searchParams.getAll('login_hint');
   const idpHint = request.nextUrl.searchParams.getAll('idp_hint');
 
@@ -145,39 +309,20 @@ export async function getAuthorizeUrl(
     throw new TypeError('More than one [idp_hint] query parameter was encountered');
   }
 
-  const digest = await sha256Base64(config.codeVerifier);
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(config.codeVerifier));
 
-  const queryParams = new URLSearchParams({
+  return new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     response_type: 'code',
     state: config.state,
     scope: config.scopes.join(' '),
-    code_challenge: base64ToURLSafe(digest),
+    code_challenge: Base64.urlEncode(new Uint8Array(digest)),
     code_challenge_method: 'S256',
     nonce: generateRandomString(32),
     ...(loginHint.length > 0 ? { login_hint: loginHint[0] } : {}),
     ...(idpHint.length > 0 ? { idp_hint: idpHint[0] } : {}),
   });
-
-  const separator = config.isApplicationCustomDomainActive ? '.' : '-';
-
-  // Domain priority order resolution:
-  // 1)  tenant_custom_domain query param
-  // 2a) tenant subdomain
-  // 2b) tenant_name query param
-  // 3)  defaultTenantCustomDomain login config
-  // 4)  defaultTenantName login config
-  if (config.tenantCustomDomain) {
-    return `https://${config.tenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  if (config.tenantName) {
-    return `https://${config.tenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  if (config.defaultTenantCustomDomain) {
-    return `https://${config.defaultTenantCustomDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
-  }
-  return `https://${config.defaultTenantName}${separator}${config.wristbandApplicationVanityDomain}/api/v1/oauth2/authorize?${queryParams.toString()}`;
 }
 
 export function getLoginStateCookie(request: NextRequest): AppRouterLoginStateCookie | null {
@@ -203,12 +348,34 @@ export function getLoginStateCookie(request: NextRequest): AppRouterLoginStateCo
 export function clearLoginStateCookie(
   response: NextResponse,
   cookieName: string,
-  dangerouslyDisableSecureCookies: boolean
+  dangerouslyDisableSecureCookies: boolean,
+  domain?: string
 ): void {
-  // NOTE: Due to a bug in iron-session, we set both maxAge and Expires
-  const cookieAttributes = [
-    `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`,
-    !dangerouslyDisableSecureCookies ? 'Secure' : '',
+  const cookieAttributes: string = [
+    `${cookieName}=`,
+    'Path=/',
+    'HttpOnly',
+    ...(domain ? [`Domain=${domain}`] : []),
+    'SameSite=Lax',
+    'Max-Age=0',
+    ...(dangerouslyDisableSecureCookies ? [] : ['Secure']),
   ].join('; ');
   response.headers.append('Set-Cookie', cookieAttributes);
+}
+
+/**
+ * Creates the auth callback's redirect response and clears the login state cookie on it, if the
+ * cookie exists.
+ */
+export function createCallbackRedirectResponse(
+  redirectUrl: string,
+  loginStateCookie: AppRouterLoginStateCookie | null,
+  dangerouslyDisableSecureCookies: boolean,
+  domain?: string
+): NextResponse {
+  const redirectResponse = NextResponse.redirect(redirectUrl, REDIRECT_RESPONSE_INIT);
+  if (loginStateCookie) {
+    clearLoginStateCookie(redirectResponse, loginStateCookie.name, dangerouslyDisableSecureCookies, domain);
+  }
+  return redirectResponse;
 }

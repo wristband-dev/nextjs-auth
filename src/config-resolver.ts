@@ -1,5 +1,10 @@
 import { WristbandError } from './error';
 import { AuthConfig, SdkConfiguration } from './types';
+import {
+  deriveFallbackLoginUrl,
+  deriveTenantRootDomain,
+  isTenantPlaceholderPositionValid,
+} from './utils/auth/common-utils';
 import { TENANT_PLACEHOLDER_MSG, TENANT_PLACEHOLDER_REGEX } from './utils/constants';
 import { WristbandService } from './wristband-service';
 
@@ -26,7 +31,6 @@ export class ConfigResolver {
       // Validate the following if auto-configure is disabled:
       // - loginUrl
       // - redirectUri
-      // - parseTenantFromRootDomain
       this.validateStrictUrlAuthConfigs();
     } else {
       // Only validate manually provided values when auto-configure is enabled
@@ -80,6 +84,25 @@ export class ConfigResolver {
     }
   }
 
+  private validateTenantPlaceholderPosition(configName: 'loginUrl' | 'redirectUri', url: string): void {
+    if (!isTenantPlaceholderPositionValid(url)) {
+      throw new TypeError(
+        `The [${configName}] can only contain the ${TENANT_PLACEHOLDER_MSG} once, as the leftmost part of its hostname.`
+      );
+    }
+  }
+
+  /**
+   * Validates the configs that are always required, regardless of whether auto-configure is enabled.
+   *
+   * These values cannot come from the SDK Auto-Configuration Endpoint, so they are checked up front. This method
+   * checks that:
+   * - [clientId], [clientSecret], and [wristbandApplicationVanityDomain] each have a non-blank value.
+   * - [loginStateSecret], when provided, is at least 32 characters long.
+   * - [tokenExpirationBuffer], when provided, is greater than or equal to 0.
+   *
+   * @throws {TypeError} If any config fails the checks above.
+   */
   private validateRequiredAuthConfigs(): void {
     if (!this.authConfig.clientId || !this.authConfig.clientId.trim()) {
       throw new TypeError('The [clientId] config must have a value.');
@@ -96,11 +119,19 @@ export class ConfigResolver {
     if (this.authConfig.tokenExpirationBuffer && this.authConfig.tokenExpirationBuffer < 0) {
       throw new TypeError('The [tokenExpirationBuffer] config must be greater than or equal to 0.');
     }
-    if (this.authConfig.parseTenantFromRootDomain && this.authConfig.parseTenantFromRootDomain.includes(':')) {
-      throw new TypeError(`The [parseTenantFromRootDomain] config should not include a port.`);
-    }
   }
 
+  /**
+   * Validates the URL configs when auto-configure is disabled.
+   *
+   * With auto-configure disabled, the SDK has no other source for [loginUrl] and [redirectUri], so both are
+   * required. This method checks that:
+   * - Both [loginUrl] and [redirectUri] have a value.
+   * - Each URL can only contain the {tenant_name} placeholder once, as the leftmost part of its hostname.
+   * - Either both URLs contain the {tenant_name} placeholder or neither does.
+   *
+   * @throws {TypeError} If either URL is missing or fails any of the checks above.
+   */
   private validateStrictUrlAuthConfigs(): void {
     if (!this.authConfig.loginUrl || !this.authConfig.loginUrl.trim()) {
       throw new TypeError('The [loginUrl] config must have a value when auto-configure is disabled.');
@@ -109,66 +140,79 @@ export class ConfigResolver {
       throw new TypeError('The [redirectUri] config must have a value when auto-configure is disabled.');
     }
 
-    if (this.authConfig.parseTenantFromRootDomain) {
-      if (!TENANT_PLACEHOLDER_REGEX.test(this.authConfig.loginUrl)) {
-        throw new TypeError(
-          `The [loginUrl] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
-        );
-      }
-      if (!TENANT_PLACEHOLDER_REGEX.test(this.authConfig.redirectUri)) {
-        throw new TypeError(
-          `The [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
-        );
-      }
-    } else {
-      if (TENANT_PLACEHOLDER_REGEX.test(this.authConfig.loginUrl)) {
-        throw new TypeError(
-          `The [loginUrl] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
-        );
-      }
-      if (TENANT_PLACEHOLDER_REGEX.test(this.authConfig.redirectUri)) {
-        throw new TypeError(
-          `The [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
-        );
-      }
+    this.validateTenantPlaceholderPosition('loginUrl', this.authConfig.loginUrl);
+    this.validateTenantPlaceholderPosition('redirectUri', this.authConfig.redirectUri);
+
+    const loginUrlHasPlaceholder = TENANT_PLACEHOLDER_REGEX.test(this.authConfig.loginUrl);
+    const redirectUriHasPlaceholder = TENANT_PLACEHOLDER_REGEX.test(this.authConfig.redirectUri);
+
+    if (loginUrlHasPlaceholder && !redirectUriHasPlaceholder) {
+      throw new TypeError(
+        `The [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when the [loginUrl] contains it.`
+      );
+    }
+    if (!loginUrlHasPlaceholder && redirectUriHasPlaceholder) {
+      throw new TypeError(
+        `The [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [loginUrl] does not contain it.`
+      );
     }
   }
 
+  /**
+   * Validates the manually provided URL configs when auto-configure is enabled.
+   *
+   * With auto-configure enabled, [loginUrl] and [redirectUri] are optional, and any value that is not provided
+   * comes from the SDK Auto-Configuration Endpoint later. This method only checks the values that are provided:
+   * - Each provided URL can only contain the {tenant_name} placeholder once, as the leftmost part of its hostname.
+   * - When both URLs are provided, either both contain the {tenant_name} placeholder or neither does.
+   *
+   * When only one of the two URLs is provided, the placeholder comparison happens in validateAllDynamicConfigs()
+   * instead, once the other URL is available from the SDK Auto-Configuration Endpoint.
+   *
+   * @throws {TypeError} If a provided URL fails any of the checks above.
+   */
   private validatePartialUrlAuthConfigs(): void {
     if (this.authConfig.loginUrl) {
-      if (this.authConfig.parseTenantFromRootDomain && !TENANT_PLACEHOLDER_REGEX.test(this.authConfig.loginUrl)) {
-        throw new TypeError(
-          `The [loginUrl] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
-        );
-      }
-      if (!this.authConfig.parseTenantFromRootDomain && TENANT_PLACEHOLDER_REGEX.test(this.authConfig.loginUrl)) {
-        throw new TypeError(
-          `The [loginUrl] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
-        );
-      }
+      this.validateTenantPlaceholderPosition('loginUrl', this.authConfig.loginUrl);
+    }
+    if (this.authConfig.redirectUri) {
+      this.validateTenantPlaceholderPosition('redirectUri', this.authConfig.redirectUri);
     }
 
-    if (this.authConfig.redirectUri) {
-      if (this.authConfig.parseTenantFromRootDomain && !TENANT_PLACEHOLDER_REGEX.test(this.authConfig.redirectUri)) {
+    if (this.authConfig.loginUrl && this.authConfig.redirectUri) {
+      const loginUrlHasPlaceholder = TENANT_PLACEHOLDER_REGEX.test(this.authConfig.loginUrl);
+      const redirectUriHasPlaceholder = TENANT_PLACEHOLDER_REGEX.test(this.authConfig.redirectUri);
+      if (loginUrlHasPlaceholder && !redirectUriHasPlaceholder) {
         throw new TypeError(
-          `The [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when using the [parseTenantFromRootDomain] config.`
+          `The [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when the [loginUrl] contains it.`
         );
       }
-      if (!this.authConfig.parseTenantFromRootDomain && TENANT_PLACEHOLDER_REGEX.test(this.authConfig.redirectUri)) {
+      if (!loginUrlHasPlaceholder && redirectUriHasPlaceholder) {
         throw new TypeError(
-          `The [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [parseTenantFromRootDomain] is absent.`
+          `The [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the [loginUrl] does not contain it.`
         );
       }
     }
   }
 
-  // Method to preload and validate all configurations
+  /**
+   * Validates the final resolved URL configs after the SDK Auto-Configuration Endpoint responds.
+   *
+   * Each of [loginUrl] and [redirectUri] resolves to the manually provided value if there is one, otherwise to
+   * the value returned by the SDK Auto-Configuration Endpoint. This method checks that:
+   * - Both resolved URLs have a value.
+   * - When at least one of the two URLs was provided manually, either both resolved URLs contain the
+   *   {tenant_name} placeholder or neither does.
+   *
+   * When both URLs come from the SDK Auto-Configuration Endpoint, their placeholders are trusted as-is.
+   *
+   * @param {SdkConfiguration} sdkConfiguration The response from the SDK Auto-Configuration Endpoint.
+   * @throws {WristbandError} If either resolved URL is missing or fails the check above.
+   */
   private validateAllDynamicConfigs(sdkConfiguration: SdkConfiguration): void {
     // Use manual config values if provided, otherwise use SDK config values
     const loginUrl = this.authConfig.loginUrl || sdkConfiguration.loginUrl || '';
     const redirectUri = this.authConfig.redirectUri || sdkConfiguration.redirectUri || '';
-    const parseTenantFromRootDomain =
-      this.authConfig.parseTenantFromRootDomain || sdkConfiguration.loginUrlTenantDomainSuffix || '';
 
     // Validate that required fields are present in the SDK config response
     if (!loginUrl) {
@@ -180,27 +224,19 @@ export class ConfigResolver {
       );
     }
 
-    // Validate the tenant name placeholder logic with final resolved values
-    if (parseTenantFromRootDomain) {
-      if (!TENANT_PLACEHOLDER_REGEX.test(loginUrl)) {
+    // Only one of loginUrl and redirectUri may have come from the manual config, so compare the final
+    // resolved values. Values that both come from the SDK Auto-Configuration Endpoint are trusted as-is.
+    if (this.authConfig.loginUrl || this.authConfig.redirectUri) {
+      const loginUrlHasPlaceholder = TENANT_PLACEHOLDER_REGEX.test(loginUrl);
+      const redirectUriHasPlaceholder = TENANT_PLACEHOLDER_REGEX.test(redirectUri);
+      if (loginUrlHasPlaceholder && !redirectUriHasPlaceholder) {
         throw new WristbandError(
-          `The resolved [loginUrl] must contain the ${TENANT_PLACEHOLDER_MSG} when using [parseTenantFromRootDomain].`
+          `The resolved [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when the resolved [loginUrl] contains it.`
         );
       }
-      if (!TENANT_PLACEHOLDER_REGEX.test(redirectUri)) {
+      if (!loginUrlHasPlaceholder && redirectUriHasPlaceholder) {
         throw new WristbandError(
-          `The resolved [redirectUri] must contain the ${TENANT_PLACEHOLDER_MSG} when using [parseTenantFromRootDomain].`
-        );
-      }
-    } else {
-      if (TENANT_PLACEHOLDER_REGEX.test(loginUrl)) {
-        throw new WristbandError(
-          `The resolved [loginUrl] cannot contain the ${TENANT_PLACEHOLDER_MSG} when [parseTenantFromRootDomain] is absent.`
-        );
-      }
-      if (TENANT_PLACEHOLDER_REGEX.test(redirectUri)) {
-        throw new WristbandError(
-          `The resolved [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when [parseTenantFromRootDomain] is absent.`
+          `The resolved [redirectUri] cannot contain the ${TENANT_PLACEHOLDER_MSG} when the resolved [loginUrl] does not contain it.`
         );
       }
     }
@@ -240,6 +276,10 @@ export class ConfigResolver {
 
   public getTokenExpirationBuffer(): number {
     return this.authConfig.tokenExpirationBuffer ?? DEFAULT_TOKEN_EXPIRATION_BUFFER;
+  }
+
+  public getTrustProxyHeaders(): boolean {
+    return this.authConfig.trustProxyHeaders ?? false;
   }
 
   // ////////////////////////////////////
@@ -295,9 +335,9 @@ export class ConfigResolver {
   }
 
   public async getParseTenantFromRootDomain(): Promise<string> {
-    // 1. Check if manually provided in authConfig
-    if (this.authConfig.parseTenantFromRootDomain) {
-      return this.authConfig.parseTenantFromRootDomain;
+    // 1. Derive from the manually provided loginUrl
+    if (this.authConfig.loginUrl) {
+      return deriveTenantRootDomain(this.authConfig.loginUrl);
     }
 
     // 2. If auto-configure is enabled, get from SDK config
@@ -324,5 +364,37 @@ export class ConfigResolver {
 
     // 3. This should not happen if validation is done properly
     throw new TypeError('The [redirectUri] config must have a value');
+  }
+
+  public async getApplicationAuthorizationRequestsEnabled(): Promise<boolean> {
+    // 1. Check if manually provided in authConfig
+    if (this.authConfig.applicationAuthorizationRequestsEnabled !== undefined) {
+      return this.authConfig.applicationAuthorizationRequestsEnabled;
+    }
+
+    // 2. If auto-configure is enabled, get from SDK config
+    if (this.getAutoConfigureEnabled()) {
+      const sdkConfig = await this.loadSdkConfig();
+      return sdkConfig.applicationAuthorizationRequestsEnabled ?? true;
+    }
+
+    // 3. Default fallback
+    return true;
+  }
+
+  public async getFallbackLoginUrl(): Promise<string> {
+    // 1. Derive from the manually provided loginUrl
+    if (this.authConfig.loginUrl) {
+      return deriveFallbackLoginUrl(this.authConfig.loginUrl);
+    }
+
+    // 2. If auto-configure is enabled, get from SDK config
+    if (this.getAutoConfigureEnabled()) {
+      const sdkConfig = await this.loadSdkConfig();
+      return sdkConfig.fallbackLoginUrl || '';
+    }
+
+    // 3. Default fallback
+    return '';
   }
 }

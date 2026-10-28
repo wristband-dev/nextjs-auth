@@ -9,16 +9,17 @@ import {
   saveSessionWithCookies,
 } from './session';
 import {
+  AppRouterCallbackResult,
   AuthConfig,
   AuthMiddlewareConfig,
   AuthStrategy,
   CallbackData,
-  CallbackResult,
   CallbackResultType,
   LoginConfig,
   LogoutConfig,
   MutableSession,
   NextJsCookieStore,
+  PagesRouterCallbackResult,
   ReadOnlySession,
   ServerActionAuthResult,
   TokenData,
@@ -31,11 +32,11 @@ import {
  * Exports
  */
 export {
+  type AppRouterCallbackResult,
   type AuthConfig,
   type AuthMiddlewareConfig,
   type AuthStrategy,
   type CallbackData,
-  type CallbackResult,
   type CallbackResultType,
   createWristbandAuth,
   destroySessionWithCookies,
@@ -47,6 +48,7 @@ export {
   type LogoutConfig,
   type MutableSession,
   type NextJsCookieStore,
+  type PagesRouterCallbackResult,
   type ReadOnlySession,
   saveSessionWithCookies,
   type ServerActionAuthResult,

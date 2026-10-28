@@ -3,10 +3,12 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import type { MockResponse } from 'node-mocks-http';
 
 import { createWristbandAuth, WristbandAuth } from '../../src/index';
+import { FetchError } from '../../src/error';
 import { CLIENT_ID, CLIENT_SECRET, createMockNextRequest, LOGIN_STATE_COOKIE_SECRET } from '../test-utils';
 import { expectValidateCalled, expectValidateNotCalled, mockWristbandFetch } from '../helpers/mock-fetch';
 
-const TENANT_CUSTOM_DOMAIN = 'login.tenant.com';
+const CONFIG_CUSTOM_DOMAIN = 'config.tenant.com';
+const PARAM_CUSTOM_DOMAIN = 'param.tenant.com';
 
 describe('Logout - Tenant Custom Domain Validation', () => {
   let wristbandAuth: WristbandAuth;
@@ -19,7 +21,7 @@ describe('Logout - Tenant Custom Domain Validation', () => {
     parseTenantFromRootDomain = 'localhost:6001';
     loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
     redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
-    wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
+    wristbandApplicationVanityDomain = 'invotasticb2c-invotastic.dev.wristband.dev';
 
     wristbandAuth = createWristbandAuth({
       clientId: CLIENT_ID,
@@ -29,6 +31,7 @@ describe('Logout - Tenant Custom Domain Validation', () => {
       redirectUri,
       wristbandApplicationVanityDomain,
       autoConfigureEnabled: false,
+      applicationAuthorizationRequestsEnabled: false,
     });
   });
 
@@ -46,36 +49,126 @@ describe('Logout - Tenant Custom Domain Validation', () => {
       return createMockNextRequest(req);
     }
 
-    test('Validates the tenant_custom_domain query param and uses it when valid', async () => {
-      mockWristbandFetch({ tenantCustomDomainValid: true });
+    describe('logoutConfig.tenantCustomDomain (developer-supplied)', () => {
+      test('Does not validate the config value, since it cannot be manipulated by the caller', async () => {
+        // The validation endpoint would reject this domain, but the config value is never sent to it.
+        mockWristbandFetch({ tenantCustomDomainValid: false });
 
-      const response = await wristbandAuth.appRouter.logout(
-        createRequest(`tenant_custom_domain=${TENANT_CUSTOM_DOMAIN}`)
-      );
-      const location = response.headers.get('location') as string;
+        const request = createRequest('');
+        const response = await wristbandAuth.appRouter.logout(request, { tenantCustomDomain: CONFIG_CUSTOM_DOMAIN });
+        const location = response.headers.get('location') as string;
 
-      expectValidateCalled(wristbandApplicationVanityDomain, TENANT_CUSTOM_DOMAIN);
-      expect(new URL(location).origin).toEqual(`https://${TENANT_CUSTOM_DOMAIN}`);
+        expectValidateNotCalled();
+        expect(new URL(location).origin).toEqual(`https://${CONFIG_CUSTOM_DOMAIN}`);
+      });
+
+      test('Still validates the query param even though the config value outranks it', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: true });
+
+        const request = createRequest(`tenant_custom_domain=${PARAM_CUSTOM_DOMAIN}`);
+        const response = await wristbandAuth.appRouter.logout(request, { tenantCustomDomain: CONFIG_CUSTOM_DOMAIN });
+        const location = response.headers.get('location') as string;
+
+        expectValidateCalled(wristbandApplicationVanityDomain, PARAM_CUSTOM_DOMAIN);
+        expect(new URL(location).origin).toEqual(`https://${CONFIG_CUSTOM_DOMAIN}`);
+      });
+
+      test('Still uses the config value when the query param is invalid', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: false });
+
+        const request = createRequest(`tenant_custom_domain=${PARAM_CUSTOM_DOMAIN}`);
+        const response = await wristbandAuth.appRouter.logout(request, { tenantCustomDomain: CONFIG_CUSTOM_DOMAIN });
+        const location = response.headers.get('location') as string;
+
+        expect(new URL(location).origin).toEqual(`https://${CONFIG_CUSTOM_DOMAIN}`);
+      });
     });
 
-    test('Skips an invalid tenant custom domain and falls through to tenant_name', async () => {
-      mockWristbandFetch({ tenantCustomDomainValid: false });
+    describe('Priority 2: logoutConfig.tenantName', () => {
+      test('Still uses tenantName when the query param is invalid', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: false });
 
-      const response = await wristbandAuth.appRouter.logout(
-        createRequest(`tenant_custom_domain=${TENANT_CUSTOM_DOMAIN}&tenant_name=devs4you`)
-      );
-      const location = response.headers.get('location') as string;
+        const request = createRequest(`tenant_custom_domain=${PARAM_CUSTOM_DOMAIN}`);
+        const response = await wristbandAuth.appRouter.logout(request, { tenantName: 'priority2tenant' });
+        const location = response.headers.get('location') as string;
 
-      expectValidateCalled(wristbandApplicationVanityDomain, TENANT_CUSTOM_DOMAIN);
-      expect(new URL(location).origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
+        expect(new URL(location).origin).toEqual(`https://priority2tenant-${wristbandApplicationVanityDomain}`);
+      });
+
+      test('Redirects using tenantName when the query param is valid', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: true });
+
+        const request = createRequest(`tenant_custom_domain=${PARAM_CUSTOM_DOMAIN}`);
+        const response = await wristbandAuth.appRouter.logout(request, { tenantName: 'priority2tenant' });
+        const location = response.headers.get('location') as string;
+
+        expect(new URL(location).origin).toEqual(`https://priority2tenant-${wristbandApplicationVanityDomain}`);
+      });
     });
 
-    test('Does not call the validation endpoint when no tenant custom domain is present', async () => {
-      mockWristbandFetch();
+    describe('Priority 3: tenant_custom_domain query param', () => {
+      test('Validates the query param and redirects to it when valid', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: true });
 
-      await wristbandAuth.appRouter.logout(createRequest('tenant_name=devs4you'));
+        const request = createRequest(`tenant_custom_domain=${PARAM_CUSTOM_DOMAIN}`);
+        const response = await wristbandAuth.appRouter.logout(request);
+        const location = response.headers.get('location') as string;
 
-      expectValidateNotCalled();
+        expectValidateCalled(wristbandApplicationVanityDomain, PARAM_CUSTOM_DOMAIN);
+        expect(new URL(location).origin).toEqual(`https://${PARAM_CUSTOM_DOMAIN}`);
+      });
+
+      test('Skips an invalid query param and falls through to the tenant name', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: false });
+
+        const request = createRequest(`tenant_custom_domain=${PARAM_CUSTOM_DOMAIN}&tenant_name=devs4you`);
+        const response = await wristbandAuth.appRouter.logout(request);
+        const location = response.headers.get('location') as string;
+
+        expectValidateCalled(wristbandApplicationVanityDomain, PARAM_CUSTOM_DOMAIN);
+        expect(new URL(location).origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
+      });
+
+      test('Falls back to application-level login when an invalid query param is the only domain', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: false });
+
+        const request = createRequest(`tenant_custom_domain=${PARAM_CUSTOM_DOMAIN}`);
+        const response = await wristbandAuth.appRouter.logout(request);
+        const location = response.headers.get('location') as string;
+
+        expect(location).toEqual(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
+      });
+
+      test('Propagates a FetchError when the validation endpoint fails', async () => {
+        mockWristbandFetch({ validateStatus: 500 });
+
+        const request = createRequest(`tenant_custom_domain=${PARAM_CUSTOM_DOMAIN}`);
+
+        await expect(wristbandAuth.appRouter.logout(request)).rejects.toThrow(FetchError);
+      });
+
+      test('Revokes the refresh token before validating the query param', async () => {
+        const fetchMock = mockWristbandFetch({ tenantCustomDomainValid: true });
+
+        const request = createRequest(`tenant_custom_domain=${PARAM_CUSTOM_DOMAIN}`);
+        await wristbandAuth.appRouter.logout(request, { refreshToken: 'refreshToken' });
+
+        expect(fetchMock.mock.calls[0][0]).toContain('/oauth2/revoke');
+        expect(fetchMock.mock.calls[1][0]).toContain('/custom-domains/validate');
+      });
+    });
+
+    describe('Priority 4: tenant name', () => {
+      test('Skips validation when no tenant custom domain is present anywhere', async () => {
+        mockWristbandFetch();
+
+        const request = createRequest('tenant_name=devs4you');
+        const response = await wristbandAuth.appRouter.logout(request);
+        const location = response.headers.get('location') as string;
+
+        expectValidateNotCalled();
+        expect(new URL(location).origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
+      });
     });
   });
 
@@ -93,27 +186,126 @@ describe('Logout - Tenant Custom Domain Validation', () => {
       };
     }
 
-    test('Validates the tenant_custom_domain query param and uses it when valid', async () => {
-      mockWristbandFetch({ tenantCustomDomainValid: true });
+    describe('logoutConfig.tenantCustomDomain (developer-supplied)', () => {
+      test('Does not validate the config value, since it cannot be manipulated by the caller', async () => {
+        // The validation endpoint would reject this domain, but the config value is never sent to it.
+        mockWristbandFetch({ tenantCustomDomainValid: false });
 
-      const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: TENANT_CUSTOM_DOMAIN });
-      const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
+        const { mockReq, mockRes } = createReqRes({});
+        const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+          tenantCustomDomain: CONFIG_CUSTOM_DOMAIN,
+        });
 
-      expectValidateCalled(wristbandApplicationVanityDomain, TENANT_CUSTOM_DOMAIN);
-      expect(new URL(location).origin).toEqual(`https://${TENANT_CUSTOM_DOMAIN}`);
+        expectValidateNotCalled();
+        expect(new URL(location).origin).toEqual(`https://${CONFIG_CUSTOM_DOMAIN}`);
+      });
+
+      test('Still validates the query param even though the config value outranks it', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: true });
+
+        const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: PARAM_CUSTOM_DOMAIN });
+        const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+          tenantCustomDomain: CONFIG_CUSTOM_DOMAIN,
+        });
+
+        expectValidateCalled(wristbandApplicationVanityDomain, PARAM_CUSTOM_DOMAIN);
+        expect(new URL(location).origin).toEqual(`https://${CONFIG_CUSTOM_DOMAIN}`);
+      });
+
+      test('Still uses the config value when the query param is invalid', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: false });
+
+        const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: PARAM_CUSTOM_DOMAIN });
+        const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+          tenantCustomDomain: CONFIG_CUSTOM_DOMAIN,
+        });
+
+        expect(new URL(location).origin).toEqual(`https://${CONFIG_CUSTOM_DOMAIN}`);
+      });
     });
 
-    test('Skips an invalid tenant custom domain and falls through to tenant_name', async () => {
-      mockWristbandFetch({ tenantCustomDomainValid: false });
+    describe('Priority 2: logoutConfig.tenantName', () => {
+      test('Still uses tenantName when the query param is invalid', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: false });
 
-      const { mockReq, mockRes } = createReqRes({
-        tenant_custom_domain: TENANT_CUSTOM_DOMAIN,
-        tenant_name: 'devs4you',
+        const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: PARAM_CUSTOM_DOMAIN });
+        const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, { tenantName: 'priority2tenant' });
+
+        expect(new URL(location).origin).toEqual(`https://priority2tenant-${wristbandApplicationVanityDomain}`);
       });
-      const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
 
-      expectValidateCalled(wristbandApplicationVanityDomain, TENANT_CUSTOM_DOMAIN);
-      expect(new URL(location).origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
+      test('Redirects using tenantName when the query param is valid', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: true });
+
+        const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: PARAM_CUSTOM_DOMAIN });
+        const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, { tenantName: 'priority2tenant' });
+
+        expect(new URL(location).origin).toEqual(`https://priority2tenant-${wristbandApplicationVanityDomain}`);
+      });
+    });
+
+    describe('Priority 3: tenant_custom_domain query param', () => {
+      test('Validates the query param and redirects to it when valid', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: true });
+
+        const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: PARAM_CUSTOM_DOMAIN });
+        const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
+
+        expectValidateCalled(wristbandApplicationVanityDomain, PARAM_CUSTOM_DOMAIN);
+        expect(new URL(location).origin).toEqual(`https://${PARAM_CUSTOM_DOMAIN}`);
+      });
+
+      test('Skips an invalid query param and falls through to the tenant name', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: false });
+
+        const { mockReq, mockRes } = createReqRes({
+          tenant_custom_domain: PARAM_CUSTOM_DOMAIN,
+          tenant_name: 'devs4you',
+        });
+        const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
+
+        expectValidateCalled(wristbandApplicationVanityDomain, PARAM_CUSTOM_DOMAIN);
+        expect(new URL(location).origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
+      });
+
+      test('Falls back to application-level login when an invalid query param is the only domain', async () => {
+        mockWristbandFetch({ tenantCustomDomainValid: false });
+
+        const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: PARAM_CUSTOM_DOMAIN });
+        const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
+
+        expect(location).toEqual(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
+      });
+
+      test('Propagates a FetchError when the validation endpoint fails', async () => {
+        mockWristbandFetch({ validateStatus: 500 });
+
+        const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: PARAM_CUSTOM_DOMAIN });
+
+        await expect(wristbandAuth.pagesRouter.logout(mockReq, mockRes)).rejects.toThrow(FetchError);
+      });
+
+      test('Revokes the refresh token before validating the query param', async () => {
+        const fetchMock = mockWristbandFetch({ tenantCustomDomainValid: true });
+
+        const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: PARAM_CUSTOM_DOMAIN });
+        await wristbandAuth.pagesRouter.logout(mockReq, mockRes, { refreshToken: 'refreshToken' });
+
+        expect(fetchMock.mock.calls[0][0]).toContain('/oauth2/revoke');
+        expect(fetchMock.mock.calls[1][0]).toContain('/custom-domains/validate');
+      });
+    });
+
+    describe('Priority 4: tenant name', () => {
+      test('Skips validation when no tenant custom domain is present anywhere', async () => {
+        mockWristbandFetch();
+
+        const { mockReq, mockRes } = createReqRes({ tenant_name: 'devs4you' });
+        const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
+
+        expectValidateNotCalled();
+        expect(new URL(location).origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
+      });
     });
   });
 });

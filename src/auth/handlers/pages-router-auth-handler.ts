@@ -5,24 +5,33 @@ import {
   CallbackData,
   LogoutConfig,
   LoginState,
-  CallbackResult,
+  PagesRouterCallbackResult,
   UserInfo,
   TokenResponse,
 } from '../../types';
 import { WristbandService } from '../../wristband-service';
 import {
-  createLoginState,
+  clearLoginStateCookie,
   createLoginStateCookie,
-  getAndClearLoginStateCookie,
-  getAuthorizeUrl,
+  getAuthorizationUrlParams,
+  getLoginStateCookie,
+  resolveReturnUrl,
   resolveTenantCustomDomainParam,
   resolveTenantName,
+  validateReturnUrl,
 } from '../../utils/auth/pages-router-utils';
 import { InvalidGrantError, WristbandError } from '../../error';
-import { LOGIN_REQUIRED_ERROR, TENANT_PLACEHOLDER_REGEX } from '../../utils/constants';
-import { decryptLoginState, encryptLoginState } from '../../utils/crypto';
+import { LOGIN_REQUIRED_ERROR, STATE_PARAM_MAX_CHAR_LENGTH, TENANT_PLACEHOLDER_REGEX } from '../../utils/constants';
 import { ConfigResolver } from '../../config-resolver';
-import { resolveValidTenantCustomDomain } from '../../utils/auth/common-utils';
+import {
+  createLoginState,
+  decryptLoginState,
+  encryptLoginState,
+  getAppLevelAuthorizationUrl,
+  getAppLevelLoginUrl,
+  getTenantLevelAuthorizationUrl,
+  resolveValidTenantCustomDomain,
+} from '../../utils/auth/common-utils';
 
 export class PagesRouterAuthHandler {
   private configResolver: ConfigResolver;
@@ -38,6 +47,8 @@ export class PagesRouterAuthHandler {
     response.setHeader('Pragma', 'no-cache');
 
     // Fetch our SDK configs
+    const applicationAuthorizationRequestsEnabled =
+      await this.configResolver.getApplicationAuthorizationRequestsEnabled();
     const clientId = this.configResolver.getClientId();
     const customApplicationLoginPageUrl = await this.configResolver.getCustomApplicationLoginPageUrl();
     const dangerouslyDisableSecureCookies = this.configResolver.getDangerouslyDisableSecureCookies();
@@ -46,6 +57,7 @@ export class PagesRouterAuthHandler {
     const parseTenantFromRootDomain = await this.configResolver.getParseTenantFromRootDomain();
     const redirectUri = await this.configResolver.getRedirectUri();
     const scopes = this.configResolver.getScopes();
+    const trustProxyHeaders = this.configResolver.getTrustProxyHeaders();
     const wristbandApplicationVanityDomain = this.configResolver.getWristbandApplicationVanityDomain();
 
     // Determine if a tenant custom domain is present as it will be needed for the authorize URL, if provided.
@@ -53,56 +65,88 @@ export class PagesRouterAuthHandler {
       resolveTenantCustomDomainParam(request),
       this.wristbandService
     );
-    const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
+    const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain, trustProxyHeaders);
     const defaultTenantCustomDomain: string = loginConfig.defaultTenantCustomDomain || '';
     const defaultTenantName: string = loginConfig.defaultTenantName || '';
 
+    // Create the login state which will be cached in a cookie so that it can be accessed in the callback.
+    const resolvedReturnUrl = resolveReturnUrl(request, loginConfig);
+    const loginState: LoginState = createLoginState(redirectUri, {
+      customState: loginConfig.customState,
+      returnUrl: resolvedReturnUrl,
+    });
+
+    // Create the authorization request params needed, regardless if using app-level or tenant-level Authorize Endpoint.
+    const { codeVerifier, state } = loginState;
+    const authorizationParamConfig = { clientId, codeVerifier, redirectUri, scopes, state };
+
+    // Determine whether to use the root domain for the login state cookie.
+    const cookieDomain =
+      applicationAuthorizationRequestsEnabled && parseTenantFromRootDomain
+        ? `.${parseTenantFromRootDomain}`
+        : undefined;
+
     // In the event we cannot determine either a tenant custom domain or subdomain, send the user to app-level login.
     if (!tenantCustomDomain && !tenantName && !defaultTenantCustomDomain && !defaultTenantName) {
-      const apploginUrl = customApplicationLoginPageUrl || `https://${wristbandApplicationVanityDomain}/login`;
-      return `${apploginUrl}?client_id=${clientId}`;
-    }
+      if (applicationAuthorizationRequestsEnabled) {
+        // Clear any stale login state cookies and add a new one for the current request.
+        const encryptedLoginState: string = await encryptLoginState(loginState, loginStateSecret);
+        createLoginStateCookie(
+          request,
+          response,
+          loginState.state,
+          encryptedLoginState,
+          dangerouslyDisableSecureCookies,
+          cookieDomain
+        );
 
-    // Create the login state which will be cached in a cookie so that it can be accessed in the callback.
-    const customState =
-      !!loginConfig.customState && !!Object.keys(loginConfig.customState).length ? loginConfig.customState : undefined;
-    const loginState: LoginState = createLoginState(request, redirectUri, {
-      customState,
-      returnUrl: loginConfig.returnUrl,
-    });
+        // Send users to the app-level Authorize Endpoint with a login state cookie instead of going to login URL.
+        const authorizationParams = await getAuthorizationUrlParams(request, authorizationParamConfig);
+        return getAppLevelAuthorizationUrl(wristbandApplicationVanityDomain, authorizationParams);
+      }
+
+      // For the login URL scenario, we don't actually want to touch any login state cookies.
+      return getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {
+        customApplicationLoginPageUrl,
+        returnUrl: resolvedReturnUrl,
+      });
+    }
 
     // Clear any stale login state cookies and add a new one for the current request.
     const encryptedLoginState: string = await encryptLoginState(loginState, loginStateSecret);
-    createLoginStateCookie(request, response, loginState.state, encryptedLoginState, dangerouslyDisableSecureCookies);
+    createLoginStateCookie(
+      request,
+      response,
+      loginState.state,
+      encryptedLoginState,
+      dangerouslyDisableSecureCookies,
+      cookieDomain
+    );
 
-    // Create the Wristband Authorize Endpoint URL which the user will get redirectd to.
-    const authorizeUrl: string = await getAuthorizeUrl(request, {
-      wristbandApplicationVanityDomain,
+    // Return the tenant-level Wristband Authorize Endpoint URL which the user will get redirected to.
+    const authorizationParams = await getAuthorizationUrlParams(request, authorizationParamConfig);
+    return getTenantLevelAuthorizationUrl(wristbandApplicationVanityDomain, authorizationParams, {
       isApplicationCustomDomainActive,
-      clientId,
-      redirectUri,
-      state: loginState.state,
-      codeVerifier: loginState.codeVerifier,
-      scopes,
       tenantCustomDomain,
       tenantName,
-      defaultTenantName,
       defaultTenantCustomDomain,
+      defaultTenantName,
     });
-
-    return authorizeUrl;
   }
 
-  async callback(request: NextApiRequest, response: NextApiResponse): Promise<CallbackResult> {
+  async callback(request: NextApiRequest, response: NextApiResponse): Promise<PagesRouterCallbackResult> {
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('Pragma', 'no-cache');
 
     // Fetch our SDK configs
+    const applicationAuthorizationRequestsEnabled =
+      await this.configResolver.getApplicationAuthorizationRequestsEnabled();
     const dangerouslyDisableSecureCookies = this.configResolver.getDangerouslyDisableSecureCookies();
     const loginStateSecret = this.configResolver.getLoginStateSecret();
     const loginUrl = await this.configResolver.getLoginUrl();
     const parseTenantFromRootDomain = await this.configResolver.getParseTenantFromRootDomain();
     const tokenExpirationBuffer = this.configResolver.getTokenExpirationBuffer();
+    const trustProxyHeaders = this.configResolver.getTrustProxyHeaders();
 
     // Safety checks -- Wristband backend should never send bad query params
     const {
@@ -136,7 +180,7 @@ export class PagesRouterAuthHandler {
     );
 
     // Resolve and validate the tenant name
-    const resolvedTenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
+    const resolvedTenantName: string = resolveTenantName(request, parseTenantFromRootDomain, trustProxyHeaders);
     if (!resolvedTenantName) {
       throw new WristbandError(
         parseTenantFromRootDomain ? 'missing_tenant_subdomain' : 'missing_tenant_name',
@@ -150,18 +194,28 @@ export class PagesRouterAuthHandler {
     let tenantLoginUrl: string = parseTenantFromRootDomain
       ? loginUrl.replace(TENANT_PLACEHOLDER_REGEX, resolvedTenantName)
       : `${loginUrl}?tenant_name=${resolvedTenantName}`;
-
     if (tenantCustomDomainParam) {
       tenantLoginUrl = `${tenantLoginUrl}${parseTenantFromRootDomain ? '?' : '&'}tenant_custom_domain=${tenantCustomDomainParam}`;
     }
 
-    // Make sure the login state cookie exists, extract it, and set it to be cleared by the server.
-    const loginStateCookie: string = getAndClearLoginStateCookie(request, response, dangerouslyDisableSecureCookies);
-    if (!loginStateCookie) {
+    // Make sure the login state cookie exists.
+    const { cookieName, loginStateCookie } = getLoginStateCookie(request);
+    if (!cookieName || !loginStateCookie) {
       return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'missing_login_state' };
     }
 
-    const loginState: LoginState = await decryptLoginState(loginStateCookie, loginStateSecret);
+    // Determine whether to use the root domain for clearing the login state cookie.
+    const cookieDomain =
+      applicationAuthorizationRequestsEnabled && parseTenantFromRootDomain
+        ? `.${parseTenantFromRootDomain}`
+        : undefined;
+    clearLoginStateCookie(response, cookieName, dangerouslyDisableSecureCookies, cookieDomain);
+
+    // Extract the login state from the cookie.
+    const loginState: LoginState | null = await decryptLoginState(loginStateCookie, loginStateSecret);
+    if (!loginState) {
+      return { type: 'redirect_required', redirectUrl: tenantLoginUrl, reason: 'invalid_login_state' };
+    }
     const { codeVerifier, customState, redirectUri, returnUrl, state: cookieState } = loginState;
 
     // Check for any potential error conditions
@@ -203,6 +257,16 @@ export class PagesRouterAuthHandler {
     const resolvedExpiresIn = expiresIn - (tokenExpirationBuffer || 0);
     const resolvedExpiresAt = Date.now() + resolvedExpiresIn * 1000;
 
+    // Prevent open redirects by validating the returnUrl against allowed hosts.
+    const validatedReturnUrl = validateReturnUrl(
+      request,
+      returnUrl,
+      resolvedTenantName,
+      applicationAuthorizationRequestsEnabled,
+      trustProxyHeaders,
+      parseTenantFromRootDomain
+    );
+
     const callbackData: CallbackData = {
       accessToken,
       ...(!!customState && { customState }),
@@ -210,7 +274,7 @@ export class PagesRouterAuthHandler {
       expiresIn: resolvedExpiresIn,
       idToken,
       ...(!!refreshToken && { refreshToken }),
-      ...(!!returnUrl && { returnUrl }),
+      ...(!!validatedReturnUrl && { returnUrl: validatedReturnUrl }),
       ...(!!tenantCustomDomainParam && { tenantCustomDomain: tenantCustomDomainParam }),
       tenantName: resolvedTenantName,
       userinfo,
@@ -227,24 +291,29 @@ export class PagesRouterAuthHandler {
     response.setHeader('Pragma', 'no-cache');
 
     // Fetch our SDK configs
+    const applicationAuthorizationRequestsEnabled =
+      await this.configResolver.getApplicationAuthorizationRequestsEnabled();
     const clientId = this.configResolver.getClientId();
     const customApplicationLoginPageUrl = await this.configResolver.getCustomApplicationLoginPageUrl();
+    const fallbackLoginUrl = await this.configResolver.getFallbackLoginUrl();
     const isApplicationCustomDomainActive = await this.configResolver.getIsApplicationCustomDomainActive();
+    const loginUrl = await this.configResolver.getLoginUrl();
     const parseTenantFromRootDomain = await this.configResolver.getParseTenantFromRootDomain();
+    const trustProxyHeaders = this.configResolver.getTrustProxyHeaders();
     const wristbandApplicationVanityDomain = this.configResolver.getWristbandApplicationVanityDomain();
 
     // Revoke the refresh token only if present.
     if (logoutConfig.refreshToken) {
       try {
         await this.wristbandService.revokeRefreshToken(logoutConfig.refreshToken);
-      } catch (error) {
+      } catch {
         // No need to block logout execution if revoking fails
         console.debug(`Revoking the refresh token failed during logout`);
       }
     }
 
-    if (logoutConfig.state && logoutConfig.state.length > 512) {
-      throw new TypeError('The [state] logout config cannot exceed 512 characters.');
+    if (logoutConfig.state && logoutConfig.state.length > STATE_PARAM_MAX_CHAR_LENGTH) {
+      throw new TypeError(`The [state] logout config cannot exceed ${STATE_PARAM_MAX_CHAR_LENGTH} characters.`);
     }
 
     // The client ID is always required by the Wristband Logout Endpoint.
@@ -256,7 +325,7 @@ export class PagesRouterAuthHandler {
       resolveTenantCustomDomainParam(request),
       this.wristbandService
     );
-    const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain);
+    const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain, trustProxyHeaders);
 
     // Domain priority order resolution:
     // 1) If the LogoutConfig has a tenant custom domain explicitly defined, use that.
@@ -274,14 +343,25 @@ export class PagesRouterAuthHandler {
       return `https://${tenantCustomDomainParam}${logoutPath}`;
     }
 
-    // 4a) If tenant subdomains are enabled, get the tenant domain from the host.
+    // 4a) If tenant subdomains are enabled, get the tenant name from the host.
     // 4b) Otherwise, if tenant subdomains are not enabled, then look for it in the tenant_name query param.
     if (tenantName) {
       return `https://${tenantName}${separator}${wristbandApplicationVanityDomain}${logoutPath}`;
     }
 
-    // Fallback to the appropriate Application-Level Login or Redirect URL if tenant cannot be resolved.
-    const appLoginUrl: string = customApplicationLoginPageUrl || `https://${wristbandApplicationVanityDomain}/login`;
-    return logoutConfig.redirectUrl || `${appLoginUrl}?client_id=${clientId}`;
+    // 5) First try falling back to the Logout Redirect URL (if the LogoutConfig has it) when tenant cannot be resolved.
+    if (logoutConfig.redirectUrl) {
+      return logoutConfig.redirectUrl;
+    }
+
+    // 6) If app-level authorization requests are enabled, then redirect to appropriate app-level Login Endpoint
+    // to start a new app-level Authorize Endpoint flow.
+    if (applicationAuthorizationRequestsEnabled) {
+      return TENANT_PLACEHOLDER_REGEX.test(loginUrl) ? fallbackLoginUrl : loginUrl;
+    }
+
+    // 7a) If a custom page URL is set, fallback to that appropriate Application-Level Login when tenant cannot be resolved.
+    // 7b) Finally, fallback to the Wristband-hosted Application-Level Login Page when tenant cannot be resolved.
+    return getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, { customApplicationLoginPageUrl });
   }
 }

@@ -1,9 +1,333 @@
 import { FetchError, InvalidGrantError, WristbandError } from '../../../src/error';
+import { CryptoError } from '../../../src/error/crypto-error';
+import { LoginState, LoginStateMapConfig } from '../../../src/types';
 import { WristbandService } from '../../../src/wristband-service';
-import { refreshExpiredToken } from '../../../src/utils/auth/common-utils';
+import {
+  createLoginState,
+  decryptLoginState,
+  deriveFallbackLoginUrl,
+  deriveTenantRootDomain,
+  encryptLoginState,
+  generateRandomString,
+  getAppLevelAuthorizationUrl,
+  getAppLevelLoginUrl,
+  getTenantLevelAuthorizationUrl,
+  isTenantPlaceholderPositionValid,
+  refreshExpiredToken,
+  resolveValidTenantCustomDomain,
+} from '../../../src/utils/auth/common-utils';
+import { CookieCrypto } from '../../../src/utils/crypto';
+import { STATE_PARAM_MAX_CHAR_LENGTH } from '../../../src/utils/constants';
 
 // Mock WristbandService
 jest.mock('../../../src/wristband-service');
+
+describe('resolveValidTenantCustomDomain()', () => {
+  let mockWristbandService: jest.Mocked<WristbandService>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockWristbandService = {
+      validateTenantCustomDomain: jest.fn(),
+    } as any;
+  });
+
+  test('should return empty string when tenantCustomDomain is empty string', async () => {
+    const result = await resolveValidTenantCustomDomain('', mockWristbandService);
+    expect(result).toBe('');
+    expect(mockWristbandService.validateTenantCustomDomain).not.toHaveBeenCalled();
+  });
+
+  test('should return empty string when tenantCustomDomain is undefined', async () => {
+    const result = await resolveValidTenantCustomDomain(undefined as any, mockWristbandService);
+    expect(result).toBe('');
+    expect(mockWristbandService.validateTenantCustomDomain).not.toHaveBeenCalled();
+  });
+
+  test('should return the tenant custom domain when validation succeeds', async () => {
+    mockWristbandService.validateTenantCustomDomain.mockResolvedValue(true);
+
+    const result = await resolveValidTenantCustomDomain('tenant.custom.com', mockWristbandService);
+
+    expect(result).toBe('tenant.custom.com');
+    expect(mockWristbandService.validateTenantCustomDomain).toHaveBeenCalledWith('tenant.custom.com');
+    expect(mockWristbandService.validateTenantCustomDomain).toHaveBeenCalledTimes(1);
+  });
+
+  test('should return empty string when validation fails', async () => {
+    mockWristbandService.validateTenantCustomDomain.mockResolvedValue(false);
+
+    const result = await resolveValidTenantCustomDomain('tenant.custom.com', mockWristbandService);
+
+    expect(result).toBe('');
+    expect(mockWristbandService.validateTenantCustomDomain).toHaveBeenCalledWith('tenant.custom.com');
+  });
+});
+
+describe('createLoginState', () => {
+  const redirectUri = 'https://example.com/callback';
+
+  test('Creates basic login state', () => {
+    const result = createLoginState(redirectUri);
+
+    expect(result.state).toBeDefined();
+    expect(result.codeVerifier).toBeDefined();
+    expect(result.redirectUri).toBe(redirectUri);
+    expect(result.returnUrl).toBeUndefined();
+    expect(result.customState).toBeUndefined();
+  });
+
+  test('Does not include returnUrl or customState keys when not provided', () => {
+    const result = createLoginState(redirectUri, {});
+
+    expect(Object.keys(result).sort()).toEqual(['codeVerifier', 'redirectUri', 'state']);
+  });
+
+  test('Generates a different state and codeVerifier on each call', () => {
+    const result1 = createLoginState(redirectUri);
+    const result2 = createLoginState(redirectUri);
+
+    expect(result1.state).not.toBe(result2.state);
+    expect(result1.codeVerifier).not.toBe(result2.codeVerifier);
+  });
+
+  test('Includes return URL from config', () => {
+    const config: LoginStateMapConfig = { returnUrl: 'https://example.com/dashboard' };
+
+    const result = createLoginState(redirectUri, config);
+
+    expect(result.returnUrl).toBe('https://example.com/dashboard');
+  });
+
+  test('Excludes return URL when it is an empty string', () => {
+    const config: LoginStateMapConfig = { returnUrl: '' };
+
+    const result = createLoginState(redirectUri, config);
+
+    expect(result).not.toHaveProperty('returnUrl');
+  });
+
+  test('Includes custom state from config', () => {
+    const customState = { userId: '123', feature: 'test' };
+    const config: LoginStateMapConfig = { customState };
+
+    const result = createLoginState(redirectUri, config);
+
+    expect(result.customState).toEqual(customState);
+  });
+
+  test('Excludes empty custom state object', () => {
+    const config: LoginStateMapConfig = { customState: {} };
+
+    const result = createLoginState(redirectUri, config);
+
+    expect(result).not.toHaveProperty('customState');
+  });
+
+  test('Includes both return URL and custom state', () => {
+    const customState = { userId: '123' };
+    const config: LoginStateMapConfig = {
+      returnUrl: 'https://example.com/dashboard',
+      customState,
+    };
+
+    const result = createLoginState(redirectUri, config);
+
+    expect(result.returnUrl).toBe('https://example.com/dashboard');
+    expect(result.customState).toEqual(customState);
+  });
+});
+
+describe('getAppLevelLoginUrl()', () => {
+  const wristbandApplicationVanityDomain = 'auth.example.com';
+  const clientId = 'test-client-id';
+
+  test('Returns Wristband-hosted app login URL when no options are provided', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId);
+
+    expect(result).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${clientId}`);
+  });
+
+  test('Returns Wristband-hosted app login URL when an empty options object is provided', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {});
+
+    expect(result).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${clientId}`);
+  });
+
+  test('Returns custom application login page URL with client_id appended when provided', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {
+      customApplicationLoginPageUrl: 'https://custom.example.com/login',
+    });
+
+    expect(result).toBe(`https://custom.example.com/login?client_id=${clientId}`);
+  });
+
+  test('Appends the return URL as the state query parameter', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {
+      returnUrl: '/settings',
+    });
+
+    expect(result).toBe(
+      `https://${wristbandApplicationVanityDomain}/login?client_id=${clientId}&state=${encodeURIComponent('/settings')}`
+    );
+  });
+
+  test('URL-encodes the return URL so its own query params do not leak into the login URL', () => {
+    const returnUrl = 'https://app.example.com/settings?tab=billing&x=1#top';
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, { returnUrl });
+
+    const { searchParams } = new URL(result);
+    expect(searchParams.get('client_id')).toBe(clientId);
+    expect(searchParams.get('state')).toBe(returnUrl);
+    expect(searchParams.has('tab')).toBe(false);
+    expect(searchParams.has('x')).toBe(false);
+    expect(result).toContain(`&state=${encodeURIComponent(returnUrl)}`);
+  });
+
+  test('Appends the return URL to the custom application login page URL', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, {
+      customApplicationLoginPageUrl: 'https://custom.example.com/login',
+      returnUrl: '/dashboard',
+    });
+
+    expect(result).toBe(
+      `https://custom.example.com/login?client_id=${clientId}&state=${encodeURIComponent('/dashboard')}`
+    );
+  });
+
+  test('Includes the return URL when it is exactly the max state length', () => {
+    const returnUrl = `/${'a'.repeat(STATE_PARAM_MAX_CHAR_LENGTH - 1)}`;
+    expect(returnUrl).toHaveLength(STATE_PARAM_MAX_CHAR_LENGTH);
+
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, { returnUrl });
+
+    expect(new URL(result).searchParams.get('state')).toBe(returnUrl);
+  });
+
+  test('Drops the return URL when it exceeds the max state length', () => {
+    const returnUrl = `/${'a'.repeat(STATE_PARAM_MAX_CHAR_LENGTH)}`;
+    expect(returnUrl).toHaveLength(STATE_PARAM_MAX_CHAR_LENGTH + 1);
+
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, { returnUrl });
+
+    expect(result).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${clientId}`);
+  });
+
+  test('Does not append state when the return URL is an empty string', () => {
+    const result = getAppLevelLoginUrl(wristbandApplicationVanityDomain, clientId, { returnUrl: '' });
+
+    expect(result).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${clientId}`);
+  });
+
+  test('Throws error when wristbandApplicationVanityDomain is missing', () => {
+    expect(() => {
+      return getAppLevelLoginUrl('', clientId);
+    }).toThrow('wristbandApplicationVanityDomain cannot be null or undefined');
+  });
+
+  test('Throws error when clientId is missing', () => {
+    expect(() => {
+      return getAppLevelLoginUrl(wristbandApplicationVanityDomain, '');
+    }).toThrow('clientId cannot be null or undefined');
+  });
+});
+
+describe('getAppLevelAuthorizationUrl()', () => {
+  const validParams = new URLSearchParams({ client_id: 'clientId', state: 'state123' });
+
+  test('should throw Error when wristbandApplicationVanityDomain is empty', () => {
+    expect(() => {
+      return getAppLevelAuthorizationUrl('', validParams);
+    }).toThrow('wristbandApplicationVanityDomain cannot be null or undefined');
+  });
+
+  test('should throw Error when authorizationParams is null', () => {
+    expect(() => {
+      return getAppLevelAuthorizationUrl('auth.invotastic.com', null as any);
+    }).toThrow('authorizationParams cannot be null or empty');
+  });
+
+  test('should throw Error when authorizationParams is empty', () => {
+    expect(() => {
+      return getAppLevelAuthorizationUrl('auth.invotastic.com', new URLSearchParams());
+    }).toThrow('authorizationParams cannot be null or empty');
+  });
+
+  test('should build the app-level Wristband Authorize Endpoint URL using the vanity domain', () => {
+    const url = getAppLevelAuthorizationUrl('auth.invotastic.com', validParams);
+    expect(url).toBe(`https://auth.invotastic.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+});
+
+describe('getTenantLevelAuthorizationUrl()', () => {
+  const validParams = new URLSearchParams({ client_id: 'clientId', state: 'state123' });
+
+  test('should throw Error when wristbandApplicationVanityDomain is empty', () => {
+    expect(() => {
+      return getTenantLevelAuthorizationUrl('', validParams, { tenantName: 'devs4you' });
+    }).toThrow('wristbandApplicationVanityDomain cannot be null or undefined');
+  });
+
+  test('should throw Error when authorizationParams is null', () => {
+    expect(() => {
+      return getTenantLevelAuthorizationUrl('auth.invotastic.com', null as any, { tenantName: 'devs4you' });
+    }).toThrow('authorizationParams cannot be null or empty');
+  });
+
+  test('should throw Error when authorizationParams is empty', () => {
+    expect(() => {
+      return getTenantLevelAuthorizationUrl('auth.invotastic.com', new URLSearchParams(), { tenantName: 'devs4you' });
+    }).toThrow('authorizationParams cannot be null or empty');
+  });
+
+  test('should throw Error when no tenant name or tenant custom domain is provided in config', () => {
+    expect(() => {
+      return getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {});
+    }).toThrow('No tenant name or tenant custom domain was provided');
+  });
+
+  test('should prioritize tenantCustomDomain over all other config values', () => {
+    const url = getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {
+      tenantCustomDomain: 'tenant.custom.com',
+      tenantName: 'devs4you',
+      defaultTenantCustomDomain: 'default.custom.com',
+      defaultTenantName: 'defaulttenant',
+    });
+    expect(url).toBe(`https://tenant.custom.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+
+  test('should use tenantName with a dash separator when isApplicationCustomDomainActive is false', () => {
+    const url = getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {
+      tenantName: 'devs4you',
+      isApplicationCustomDomainActive: false,
+    });
+    expect(url).toBe(`https://devs4you-auth.invotastic.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+
+  test('should use tenantName with a dot separator when isApplicationCustomDomainActive is true', () => {
+    const url = getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {
+      tenantName: 'devs4you',
+      isApplicationCustomDomainActive: true,
+    });
+    expect(url).toBe(`https://devs4you.auth.invotastic.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+
+  test('should fall back to defaultTenantCustomDomain when no tenantCustomDomain or tenantName is provided', () => {
+    const url = getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {
+      defaultTenantCustomDomain: 'default.custom.com',
+      defaultTenantName: 'defaulttenant',
+    });
+    expect(url).toBe(`https://default.custom.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+
+  test('should fall back to defaultTenantName as the last resort', () => {
+    const url = getTenantLevelAuthorizationUrl('auth.invotastic.com', validParams, {
+      defaultTenantName: 'defaulttenant',
+      isApplicationCustomDomainActive: false,
+    });
+    expect(url).toBe(`https://defaulttenant-auth.invotastic.com/api/v1/oauth2/authorize?${validParams.toString()}`);
+  });
+});
 
 describe('refreshExpiredToken()', () => {
   let mockWristbandService: jest.Mocked<WristbandService>;
@@ -168,6 +492,7 @@ describe('refreshExpiredToken()', () => {
 
   describe('Error Handling - InvalidGrantError', () => {
     test('should throw WristbandError with invalid_refresh_token when InvalidGrantError occurs', async () => {
+      expect.assertions(4);
       const expiredTime = Date.now() - 1000;
       const invalidGrantError = new InvalidGrantError('Token is invalid');
 
@@ -175,7 +500,6 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('invalid-token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Token is invalid'); // message is the errorDescription
@@ -200,6 +524,7 @@ describe('refreshExpiredToken()', () => {
 
   describe('Error Handling - FetchError (4xx)', () => {
     test('should throw WristbandError for 400 FetchError', async () => {
+      expect.assertions(4);
       const expiredTime = Date.now() - 1000;
       const fetchError = new FetchError('Bad Request', {
         status: 400,
@@ -212,7 +537,6 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('bad-token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Invalid token format'); // message is errorDescription
@@ -241,6 +565,7 @@ describe('refreshExpiredToken()', () => {
     });
 
     test('should use default error message when error_description is missing', async () => {
+      expect.assertions(3);
       const expiredTime = Date.now() - 1000;
       const fetchError = new FetchError('Bad Request', {
         status: 400,
@@ -252,7 +577,6 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('bad-token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Invalid Refresh Token'); // message is errorDescription
@@ -261,6 +585,7 @@ describe('refreshExpiredToken()', () => {
     });
 
     test('should use default error message when body is missing', async () => {
+      expect.assertions(3);
       const expiredTime = Date.now() - 1000;
       const fetchError = new FetchError('Bad Request', {
         status: 400,
@@ -272,7 +597,6 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('bad-token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Invalid Refresh Token'); // message is errorDescription
@@ -318,6 +642,7 @@ describe('refreshExpiredToken()', () => {
   // tests, so refreshExpiredToken calls it exactly once and only maps the surfacing error.
   describe('Error Handling - Server Errors (5xx)', () => {
     test('should throw unexpected_error for 500 errors without retrying at this layer', async () => {
+      expect.assertions(4);
       const expiredTime = Date.now() - 1000;
       const fetchError = new FetchError('Internal Server Error', {
         status: 500,
@@ -327,7 +652,6 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Unexpected Error'); // message is errorDescription
@@ -358,6 +682,24 @@ describe('refreshExpiredToken()', () => {
       mockWristbandService.refreshToken.mockRejectedValue(new Error('Temporary failure'));
 
       await expect(refreshExpiredToken('token', expiredTime, mockWristbandService)).rejects.toThrow(WristbandError);
+      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(1);
+    });
+
+    test('should throw unexpected_error with an undefined originalError for a non-Error rejection', async () => {
+      expect.assertions(5);
+      const expiredTime = Date.now() - 1000;
+      // eslint-disable-next-line prefer-promise-reject-errors
+      mockWristbandService.refreshToken.mockRejectedValue('a non-Error rejection value');
+
+      try {
+        await refreshExpiredToken('token', expiredTime, mockWristbandService);
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(WristbandError);
+        expect(error.code).toBe('unexpected_error');
+        expect(error.errorDescription).toBe('Unexpected Error');
+        expect(error.originalError).toBeUndefined();
+      }
+
       expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(1);
     });
   });
@@ -442,6 +784,7 @@ describe('refreshExpiredToken()', () => {
     });
 
     test('should throw WristbandError if tokenResponse is null', async () => {
+      expect.assertions(3);
       const expiredTime = Date.now() - 1000;
 
       // Mock a scenario where refreshToken somehow returns null
@@ -449,12 +792,319 @@ describe('refreshExpiredToken()', () => {
 
       try {
         await refreshExpiredToken('token', expiredTime, mockWristbandService);
-        fail('Expected error to be thrown');
       } catch (error: any) {
         expect(error).toBeInstanceOf(WristbandError);
         expect(error.message).toBe('Unexpected Error'); // message is errorDescription
         expect(error.errorDescription).toBe('Unexpected Error');
       }
     });
+  });
+});
+
+describe('generateRandomString', () => {
+  let getRandomValuesSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Mock globalThis.crypto.getRandomValues to return predictable values for testing
+    getRandomValuesSpy = jest.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation((array: any) => {
+      const uint8Array = array as Uint8Array;
+      for (let i = 0; i < uint8Array.length; i += 1) {
+        uint8Array[i] = i % 256; // Predictable pattern
+      }
+      return array;
+    });
+  });
+
+  afterEach(() => {
+    getRandomValuesSpy.mockRestore();
+  });
+
+  it('should generate string of specified length', () => {
+    const result = generateRandomString(10);
+    expect(typeof result).toBe('string');
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('should generate different results for different lengths', () => {
+    const result1 = generateRandomString(5);
+    const result2 = generateRandomString(10);
+    expect(result1.length).not.toBe(result2.length);
+  });
+
+  it('should return URL-safe characters only', () => {
+    const result = generateRandomString(20);
+    // Should only contain URL-safe base64 characters (no +, /, =)
+    expect(result).toMatch(/^[A-Za-z0-9_-]*$/);
+  });
+
+  it('should handle length of 1', () => {
+    const result = generateRandomString(1);
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('should call crypto.getRandomValues with correct array size', () => {
+    generateRandomString(10);
+    expect(getRandomValuesSpy).toHaveBeenCalledWith(expect.any(Uint8Array));
+    expect(getRandomValuesSpy).toHaveBeenCalledWith(expect.objectContaining({ length: 10 }));
+  });
+
+  it('should generate strings without padding characters', () => {
+    const result = generateRandomString(50);
+    expect(result).not.toContain('=');
+    expect(result).not.toContain('+');
+    expect(result).not.toContain('/');
+  });
+
+  it('should generate URL-safe strings that are different each time', () => {
+    // Since we're mocking getRandomValues with a pattern, we can predict behavior
+    const result1 = generateRandomString(10);
+    const result2 = generateRandomString(10);
+
+    // Both should be URL-safe
+    expect(result1).toMatch(/^[A-Za-z0-9_-]*$/);
+    expect(result2).toMatch(/^[A-Za-z0-9_-]*$/);
+  });
+});
+
+describe('encryptLoginState and decryptLoginState', () => {
+  const loginStateSecret = '12345678901234567890123456789012'; // 32 chars
+
+  test('Encrypts and decrypts login state successfully', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+    const decrypted = await decryptLoginState(encrypted, loginStateSecret);
+
+    expect(decrypted).toEqual(loginState);
+  });
+
+  test('Encrypts and decrypts login state with custom state', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+      customState: { userId: '123', feature: 'test' },
+    };
+
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+    const decrypted = await decryptLoginState(encrypted, loginStateSecret);
+
+    expect(decrypted).toEqual(loginState);
+  });
+
+  test('Encrypts and decrypts login state with return URL', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+      returnUrl: 'https://example.com/dashboard',
+    };
+
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+    const decrypted = await decryptLoginState(encrypted, loginStateSecret);
+
+    expect(decrypted).toEqual(loginState);
+  });
+
+  test('Encrypts and decrypts login state with domain', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+    const decrypted = await decryptLoginState(encrypted, loginStateSecret);
+
+    expect(decrypted).toEqual(loginState);
+  });
+
+  test('Throws error when encrypted state exceeds 4kB', async () => {
+    const largeCustomState = {
+      data: 'x'.repeat(5000), // Large data to exceed 4kB
+    };
+
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+      customState: largeCustomState,
+    };
+
+    await expect(encryptLoginState(loginState, loginStateSecret)).rejects.toThrow(
+      'Login state cookie exceeds 4kB in size'
+    );
+  });
+
+  test('Throws TypeError when customState is not JSON-serializable', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+      customState: { id: BigInt(1) },
+    };
+
+    await expect(encryptLoginState(loginState, loginStateSecret)).rejects.toThrow(TypeError);
+    await expect(encryptLoginState(loginState, loginStateSecret)).rejects.toThrow(
+      'The [customState] value must be JSON-serializable.'
+    );
+  });
+
+  test('Passes through other crypto errors from encryption unchanged', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+
+    await expect(encryptLoginState(loginState, 'too-short-secret')).rejects.toThrow(CryptoError);
+    await expect(encryptLoginState(loginState, 'too-short-secret')).rejects.toMatchObject({
+      code: 'INVALID_SECRET',
+    });
+  });
+
+  test('Returns null when decrypting with the wrong secret', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+
+    await expect(decryptLoginState(encrypted, 'x'.repeat(32))).resolves.toBeNull();
+  });
+
+  test('Decrypts a login state cookie that is still within its 1 hour max age', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+    const startTime = Date.now();
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+
+    jest.spyOn(Date, 'now').mockReturnValue(startTime + 3600 * 1000);
+    try {
+      await expect(decryptLoginState(encrypted, loginStateSecret)).resolves.toEqual(loginState);
+    } finally {
+      jest.restoreAllMocks();
+    }
+  });
+
+  test('Returns null when the login state cookie is older than its 1 hour max age', async () => {
+    const loginState: LoginState = {
+      state: 'test-state',
+      codeVerifier: 'test-verifier',
+      redirectUri: 'https://example.com/callback',
+    };
+    const startTime = Date.now();
+    const encrypted = await encryptLoginState(loginState, loginStateSecret);
+
+    // 1 hour max age plus the 60-second clock skew tolerance, plus 1 second
+    jest.spyOn(Date, 'now').mockReturnValue(startTime + (3600 + 60 + 1) * 1000);
+    try {
+      await expect(decryptLoginState(encrypted, loginStateSecret)).resolves.toBeNull();
+    } finally {
+      jest.restoreAllMocks();
+    }
+  });
+
+  test('Returns null when the login state cookie is malformed', async () => {
+    await expect(decryptLoginState('not-a-valid-cookie', loginStateSecret)).resolves.toBeNull();
+  });
+
+  test('Rethrows non-crypto errors from decryption unchanged', async () => {
+    const unexpectedError = new Error('Unexpected failure');
+    jest.spyOn(CookieCrypto, 'decrypt').mockRejectedValue(unexpectedError);
+    try {
+      await expect(decryptLoginState('any-cookie-value', loginStateSecret)).rejects.toBe(unexpectedError);
+    } finally {
+      jest.restoreAllMocks();
+    }
+  });
+});
+
+describe('deriveFallbackLoginUrl', () => {
+  test('Removes the leading placeholder from the login URL', () => {
+    expect(deriveFallbackLoginUrl('https://{tenant_name}.myapp.com/api/auth/login')).toBe(
+      'https://myapp.com/api/auth/login'
+    );
+  });
+
+  test('Keeps the port, path, and query string', () => {
+    expect(deriveFallbackLoginUrl('http://{tenant_name}.localhost:6001/api/auth/login?x=1')).toBe(
+      'http://localhost:6001/api/auth/login?x=1'
+    );
+  });
+
+  test('Handles a nested root domain', () => {
+    expect(deriveFallbackLoginUrl('https://{tenant_name}.business.myapp.com/login')).toBe(
+      'https://business.myapp.com/login'
+    );
+  });
+
+  test('Returns an empty string when the login URL has no placeholder', () => {
+    expect(deriveFallbackLoginUrl('https://myapp.com/api/auth/login')).toBe('');
+  });
+
+  test('Returns an empty string when the login URL is empty', () => {
+    expect(deriveFallbackLoginUrl('')).toBe('');
+  });
+});
+
+describe('deriveTenantRootDomain', () => {
+  test('Returns the hostname without the leading placeholder', () => {
+    expect(deriveTenantRootDomain('https://{tenant_name}.myapp.com/api/auth/login')).toBe('myapp.com');
+  });
+
+  test('Excludes the port', () => {
+    expect(deriveTenantRootDomain('http://{tenant_name}.localhost:6001/api/auth/login')).toBe('localhost');
+  });
+
+  test('Handles a nested root domain', () => {
+    expect(deriveTenantRootDomain('https://{tenant_name}.business.myapp.com/login')).toBe('business.myapp.com');
+  });
+
+  test('Returns an empty string when the login URL has no placeholder', () => {
+    expect(deriveTenantRootDomain('https://myapp.com/api/auth/login')).toBe('');
+  });
+
+  test('Returns an empty string when the login URL is empty', () => {
+    expect(deriveTenantRootDomain('')).toBe('');
+  });
+});
+
+describe('isTenantPlaceholderPositionValid', () => {
+  test('Returns true when the URL has no placeholder', () => {
+    expect(isTenantPlaceholderPositionValid('https://myapp.com/api/auth/login')).toBe(true);
+  });
+
+  test('Returns true when the placeholder is the leftmost part of the hostname (https)', () => {
+    expect(isTenantPlaceholderPositionValid('https://{tenant_name}.myapp.com/api/auth/login')).toBe(true);
+  });
+
+  test('Returns true when the placeholder is the leftmost part of the hostname (http)', () => {
+    expect(isTenantPlaceholderPositionValid('http://{tenant_name}.localhost:6001/api/auth/login')).toBe(true);
+  });
+
+  test('Returns false when the placeholder is not the leftmost part of the hostname', () => {
+    expect(isTenantPlaceholderPositionValid('https://app.{tenant_name}.myapp.com/api/auth/login')).toBe(false);
+  });
+
+  test('Returns false when the placeholder is in the path', () => {
+    expect(isTenantPlaceholderPositionValid('https://myapp.com/{tenant_name}/api/auth/login')).toBe(false);
+  });
+
+  test('Returns false when the placeholder is the entire hostname', () => {
+    expect(isTenantPlaceholderPositionValid('https://{tenant_name}/api/auth/login')).toBe(false);
+  });
+
+  test('Returns false when the placeholder appears more than once', () => {
+    expect(isTenantPlaceholderPositionValid('https://{tenant_name}.myapp.com/{tenant_name}/login')).toBe(false);
   });
 });

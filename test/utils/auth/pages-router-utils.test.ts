@@ -1,31 +1,29 @@
+import httpMocks from 'node-mocks-http';
 import { NextApiRequest, NextApiResponse } from 'next';
 import {
   parseTenantSubdomain,
   resolveTenantName,
   resolveTenantCustomDomainParam,
-  createLoginState,
+  resolveReturnUrl,
+  validateReturnUrl,
   createLoginStateCookie,
-  getAuthorizeUrl,
-  getAndClearLoginStateCookie,
+  getAuthorizationUrlParams,
+  getLoginStateCookie,
+  clearLoginStateCookie,
 } from '../../../src/utils/auth/pages-router-utils';
-import { LoginStateMapConfig } from '../../../src/types';
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
-import * as commonUtils from '../../../src/utils/crypto';
+import * as authCommonUtils from '../../../src/utils/auth/common-utils';
 
 // Mock common utils
-jest.mock('../../../src/utils/crypto');
-const mockGenerateRandomString = commonUtils.generateRandomString as jest.MockedFunction<
-  typeof commonUtils.generateRandomString
+jest.mock('../../../src/utils/auth/common-utils');
+const mockGenerateRandomString = authCommonUtils.generateRandomString as jest.MockedFunction<
+  typeof authCommonUtils.generateRandomString
 >;
-const mockSha256Base64 = commonUtils.sha256Base64 as jest.MockedFunction<typeof commonUtils.sha256Base64>;
-const mockBase64ToURLSafe = commonUtils.base64ToURLSafe as jest.MockedFunction<typeof commonUtils.base64ToURLSafe>;
 
 describe('Page Router Utils', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGenerateRandomString.mockReturnValue('mock-random-string');
-    mockSha256Base64.mockResolvedValue('mock-sha256-hash');
-    mockBase64ToURLSafe.mockReturnValue('mock-url-safe-hash');
   });
 
   describe('parseTenantSubdomain', () => {
@@ -34,7 +32,7 @@ describe('Page Router Utils', () => {
         headers: { host: 'tenant1.example.com' },
       } as NextApiRequest;
 
-      const result = parseTenantSubdomain(req, 'example.com');
+      const result = parseTenantSubdomain(req, 'example.com', false);
       expect(result).toBe('tenant1');
     });
 
@@ -43,7 +41,7 @@ describe('Page Router Utils', () => {
         headers: { host: 'tenant1.different.com' },
       } as NextApiRequest;
 
-      const result = parseTenantSubdomain(req, 'example.com');
+      const result = parseTenantSubdomain(req, 'example.com', false);
       expect(result).toBe('');
     });
 
@@ -52,7 +50,7 @@ describe('Page Router Utils', () => {
         headers: { host: 'tenant1.app.example.com' },
       } as NextApiRequest;
 
-      const result = parseTenantSubdomain(req, 'app.example.com');
+      const result = parseTenantSubdomain(req, 'app.example.com', false);
       expect(result).toBe('tenant1');
     });
 
@@ -61,7 +59,7 @@ describe('Page Router Utils', () => {
         headers: { host: 'example.com' },
       } as NextApiRequest;
 
-      const result = parseTenantSubdomain(req, 'example.com');
+      const result = parseTenantSubdomain(req, 'example.com', false);
       expect(result).toBe('');
     });
 
@@ -70,7 +68,7 @@ describe('Page Router Utils', () => {
         headers: { host: 'tenant1.example.com:3000' },
       } as NextApiRequest;
 
-      const result = parseTenantSubdomain(req, 'example.com');
+      const result = parseTenantSubdomain(req, 'example.com', false);
       expect(result).toBe('tenant1');
     });
 
@@ -79,7 +77,7 @@ describe('Page Router Utils', () => {
         headers: { host: 'my-tenant-123.example.com:8080' },
       } as NextApiRequest;
 
-      const result = parseTenantSubdomain(req, 'example.com');
+      const result = parseTenantSubdomain(req, 'example.com', false);
       expect(result).toBe('my-tenant-123');
     });
 
@@ -88,7 +86,7 @@ describe('Page Router Utils', () => {
         headers: { host: 'tenant1.example.com' },
       } as NextApiRequest;
 
-      const result = parseTenantSubdomain(req, 'example.com');
+      const result = parseTenantSubdomain(req, 'example.com', false);
       expect(result).toBe('tenant1');
     });
 
@@ -97,7 +95,7 @@ describe('Page Router Utils', () => {
         headers: { host: 'tenant1.otherdomain.com:3000' },
       } as NextApiRequest;
 
-      const result = parseTenantSubdomain(req, 'example.com');
+      const result = parseTenantSubdomain(req, 'example.com', false);
       expect(result).toBe('');
     });
 
@@ -106,7 +104,7 @@ describe('Page Router Utils', () => {
         headers: { host: 'example.com:3000' },
       } as NextApiRequest;
 
-      const result = parseTenantSubdomain(req, 'example.com');
+      const result = parseTenantSubdomain(req, 'example.com', false);
       expect(result).toBe('');
     });
 
@@ -115,8 +113,73 @@ describe('Page Router Utils', () => {
         headers: {},
       } as NextApiRequest;
 
-      const result = parseTenantSubdomain(req, 'example.com');
+      const result = parseTenantSubdomain(req, 'example.com', false);
       expect(result).toBe('');
+    });
+
+    describe('trustProxyHeaders', () => {
+      it('should ignore x-forwarded-host when trustProxyHeaders is false', () => {
+        const req = {
+          headers: { host: 'localhost:3000', 'x-forwarded-host': 'tenant1.example.com' },
+        } as unknown as NextApiRequest;
+
+        const result = parseTenantSubdomain(req, 'example.com', false);
+        expect(result).toBe('');
+      });
+
+      it('should use x-forwarded-host when trustProxyHeaders is true', () => {
+        const req = {
+          headers: { host: 'localhost:3000', 'x-forwarded-host': 'tenant1.example.com' },
+        } as unknown as NextApiRequest;
+
+        const result = parseTenantSubdomain(req, 'example.com', true);
+        expect(result).toBe('tenant1');
+      });
+
+      it('should strip port from x-forwarded-host', () => {
+        const req = {
+          headers: { host: 'localhost:3000', 'x-forwarded-host': 'tenant1.example.com:8443' },
+        } as unknown as NextApiRequest;
+
+        const result = parseTenantSubdomain(req, 'example.com', true);
+        expect(result).toBe('tenant1');
+      });
+
+      it('should use the first value of a comma-separated x-forwarded-host', () => {
+        const req = {
+          headers: { host: 'localhost:3000', 'x-forwarded-host': 'tenant1.example.com, internal.local:8080' },
+        } as unknown as NextApiRequest;
+
+        const result = parseTenantSubdomain(req, 'example.com', true);
+        expect(result).toBe('tenant1');
+      });
+
+      it('should use the first entry when x-forwarded-host is an array', () => {
+        const req = {
+          headers: { host: 'localhost:3000', 'x-forwarded-host': ['tenant1.example.com', 'internal.local:8080'] },
+        } as unknown as NextApiRequest;
+
+        const result = parseTenantSubdomain(req, 'example.com', true);
+        expect(result).toBe('tenant1');
+      });
+
+      it('should fall back to the host header when x-forwarded-host is missing', () => {
+        const req = {
+          headers: { host: 'tenant1.example.com' },
+        } as NextApiRequest;
+
+        const result = parseTenantSubdomain(req, 'example.com', true);
+        expect(result).toBe('tenant1');
+      });
+
+      it('should fall back to the host header when x-forwarded-host is empty', () => {
+        const req = {
+          headers: { host: 'tenant1.example.com', 'x-forwarded-host': '' },
+        } as unknown as NextApiRequest;
+
+        const result = parseTenantSubdomain(req, 'example.com', true);
+        expect(result).toBe('tenant1');
+      });
     });
   });
 
@@ -127,7 +190,7 @@ describe('Page Router Utils', () => {
         query: { tenant_name: 'query-tenant' },
       } as unknown as NextApiRequest;
 
-      const result = resolveTenantName(req, 'example.com');
+      const result = resolveTenantName(req, 'example.com', false);
       expect(result).toBe('tenant1');
     });
 
@@ -137,7 +200,7 @@ describe('Page Router Utils', () => {
         query: { tenant_name: 'query-tenant' },
       } as unknown as NextApiRequest;
 
-      const result = resolveTenantName(req, 'example.com');
+      const result = resolveTenantName(req, 'example.com', false);
       expect(result).toBe('');
     });
 
@@ -147,7 +210,7 @@ describe('Page Router Utils', () => {
         query: { tenant_name: 'query-tenant' },
       } as unknown as NextApiRequest;
 
-      const result = resolveTenantName(req, '');
+      const result = resolveTenantName(req, '', false);
       expect(result).toBe('query-tenant');
     });
 
@@ -157,7 +220,7 @@ describe('Page Router Utils', () => {
         query: {},
       } as NextApiRequest;
 
-      const result = resolveTenantName(req, '');
+      const result = resolveTenantName(req, '', false);
       expect(result).toBe('');
     });
 
@@ -168,7 +231,7 @@ describe('Page Router Utils', () => {
       } as unknown as NextApiRequest;
 
       expect(() => {
-        return resolveTenantName(req, '');
+        return resolveTenantName(req, '', false);
       }).toThrow('More than one [tenant_name] query parameter was encountered');
     });
 
@@ -178,7 +241,7 @@ describe('Page Router Utils', () => {
         query: {},
       } as NextApiRequest;
 
-      const result = resolveTenantName(req, 'example.com');
+      const result = resolveTenantName(req, 'example.com', false);
       expect(result).toBe('tenant1');
     });
 
@@ -188,7 +251,7 @@ describe('Page Router Utils', () => {
         query: { tenant_name: 'query-tenant' },
       } as unknown as NextApiRequest;
 
-      const result = resolveTenantName(req, 'example.com');
+      const result = resolveTenantName(req, 'example.com', false);
       expect(result).toBe('subdomain-tenant');
     });
 
@@ -198,8 +261,18 @@ describe('Page Router Utils', () => {
         query: { tenant_name: 'query-tenant' },
       } as unknown as NextApiRequest;
 
-      const result = resolveTenantName(req, 'example.com');
+      const result = resolveTenantName(req, 'example.com', false);
       expect(result).toBe('');
+    });
+
+    it('should resolve tenant subdomain from x-forwarded-host when trustProxyHeaders is true', () => {
+      const req = {
+        headers: { host: 'localhost:3000', 'x-forwarded-host': 'tenant1.example.com' },
+        query: {},
+      } as unknown as NextApiRequest;
+
+      const result = resolveTenantName(req, 'example.com', true);
+      expect(result).toBe('tenant1');
     });
   });
 
@@ -233,138 +306,381 @@ describe('Page Router Utils', () => {
     });
   });
 
-  describe('createLoginState', () => {
-    beforeEach(() => {
-      mockGenerateRandomString.mockReset();
-      mockGenerateRandomString
-        .mockReturnValueOnce('mock-state-32')
-        .mockReturnValueOnce('mock-code-verifier-32')
-        .mockReturnValue('mock-nonce-32');
+  describe('resolveReturnUrl', () => {
+    test('Returns undefined when no return URL is provided anywhere', () => {
+      const req = httpMocks.createRequest() as any;
+
+      expect(resolveReturnUrl(req)).toBeUndefined();
     });
 
-    it('should create basic login state', () => {
-      const req = {
-        query: {},
-      } as NextApiRequest;
+    test('Returns the return_url query parameter when no config is provided', () => {
+      const req = httpMocks.createRequest({
+        query: { return_url: 'https://example.com/dashboard' },
+      }) as any;
 
-      const result = createLoginState(req, 'https://app.com/callback');
-
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
-      });
+      expect(resolveReturnUrl(req)).toBe('https://example.com/dashboard');
     });
 
-    it('should include return_url from query params', () => {
-      const req = {
-        query: { return_url: 'https://app.com/dashboard' },
-      } as unknown as NextApiRequest;
+    test('Returns LoginConfig.returnUrl when no query parameter is present', () => {
+      const req = httpMocks.createRequest() as any;
 
-      const result = createLoginState(req, 'https://app.com/callback');
-
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
-        returnUrl: 'https://app.com/dashboard',
-      });
+      expect(resolveReturnUrl(req, { returnUrl: 'https://example.com/config' })).toBe('https://example.com/config');
     });
 
-    it('should include returnUrl from config over query param', () => {
-      const req = {
-        query: { return_url: 'https://app.com/dashboard' },
-      } as unknown as NextApiRequest;
+    test('LoginConfig.returnUrl takes precedence over the return_url query parameter', () => {
+      const req = httpMocks.createRequest({
+        query: { return_url: 'https://example.com/query' },
+      }) as any;
 
-      const config: LoginStateMapConfig = {
-        returnUrl: 'https://app.com/admin',
-      };
-
-      const result = createLoginState(req, 'https://app.com/callback', config);
-
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
-        returnUrl: 'https://app.com/admin',
-      });
+      expect(resolveReturnUrl(req, { returnUrl: 'https://example.com/config' })).toBe('https://example.com/config');
     });
 
-    it('should include customState from config', () => {
-      const req = {
-        query: {},
-      } as NextApiRequest;
+    test('Falls back to the query parameter when LoginConfig.returnUrl is an empty string', () => {
+      const req = httpMocks.createRequest({
+        query: { return_url: 'https://example.com/query' },
+      }) as any;
 
-      const config: LoginStateMapConfig = {
-        customState: { userId: '123', tenantId: 'tenant-456' },
-      };
-
-      const result = createLoginState(req, 'https://app.com/callback', config);
-
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
-        customState: { userId: '123', tenantId: 'tenant-456' },
-      });
+      expect(resolveReturnUrl(req, { returnUrl: '' })).toBe('https://example.com/query');
     });
 
-    it('should include both returnUrl and customState', () => {
-      const req = {
-        query: { return_url: 'https://app.com/dashboard' },
-      } as unknown as NextApiRequest;
+    test('Returns undefined when the return_url query parameter is an empty string', () => {
+      const req = httpMocks.createRequest({
+        query: { return_url: '' },
+      }) as any;
 
-      const config: LoginStateMapConfig = {
-        returnUrl: 'https://app.com/admin',
-        customState: { role: 'admin' },
-      };
-
-      const result = createLoginState(req, 'https://app.com/callback', config);
-
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
-        returnUrl: 'https://app.com/admin',
-        customState: { role: 'admin' },
-      });
+      expect(resolveReturnUrl(req)).toBeUndefined();
     });
 
-    it('should throw error when multiple return_url query params are provided', () => {
-      const req = {
+    test('Throws error for multiple return_url query parameters', () => {
+      const req = httpMocks.createRequest({
         query: { return_url: ['url1', 'url2'] },
-      } as unknown as NextApiRequest;
+      }) as any;
 
       expect(() => {
-        return createLoginState(req, 'https://app.com/callback');
+        return resolveReturnUrl(req);
       }).toThrow('More than one [return_url] query parameter was encountered');
     });
 
-    it('should not include customState when empty object', () => {
-      const req = { query: {} } as NextApiRequest;
+    test('Does not throw for multiple return_url query parameters when LoginConfig.returnUrl is set', () => {
+      const req = httpMocks.createRequest({
+        query: { return_url: ['url1', 'url2'] },
+      }) as any;
 
-      const config: LoginStateMapConfig = {
-        customState: {},
-      };
+      expect(resolveReturnUrl(req, { returnUrl: 'https://example.com/config' })).toBe('https://example.com/config');
+    });
+  });
 
-      const result = createLoginState(req, 'https://app.com/callback', config);
+  describe('validateReturnUrl', () => {
+    // Minimal request mock exposing only what validateReturnUrl reads.
+    const buildReq = (host: string, protocol: string = 'https') => {
+      return {
+        headers: { host, 'x-forwarded-proto': protocol },
+      } as unknown as NextApiRequest;
+    };
 
-      expect(result).toEqual({
-        state: 'mock-state-32',
-        codeVerifier: 'mock-code-verifier-32',
-        redirectUri: 'https://app.com/callback',
+    const rootDomain = 'myapp.com';
+    const tenantName = 'acme';
+
+    describe('Input guards', () => {
+      test('Throws when tenantName is empty', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(() => {
+          return validateReturnUrl(req, '/settings', '', true, false, rootDomain);
+        }).toThrow('Tenant name is required to validate returnUrl');
       });
-      expect(result).not.toHaveProperty('customState');
+
+      test('Throws when tenantName is empty even if returnUrl is missing', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(() => {
+          return validateReturnUrl(req, undefined, '', true, false, rootDomain);
+        }).toThrow('Tenant name is required to validate returnUrl');
+      });
+
+      test('Returns undefined when returnUrl is undefined', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, undefined, tenantName, true, false, rootDomain)).toBeUndefined();
+      });
+
+      test('Returns undefined when returnUrl is an empty string', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, '', tenantName, true, false, rootDomain)).toBeUndefined();
+      });
     });
 
-    it('should call generateRandomString with correct parameters', () => {
-      const req = { query: {} } as NextApiRequest;
+    describe('Allowed hosts', () => {
+      test('Allows a relative path and returns it unchanged', () => {
+        const req = buildReq('acme.myapp.com');
 
-      createLoginState(req, 'https://app.com/callback');
+        expect(validateReturnUrl(req, '/settings?tab=1#top', tenantName, true, false, rootDomain)).toBe(
+          '/settings?tab=1#top'
+        );
+      });
 
-      expect(mockGenerateRandomString).toHaveBeenCalledTimes(2);
-      expect(mockGenerateRandomString).toHaveBeenNthCalledWith(1, 32);
-      expect(mockGenerateRandomString).toHaveBeenNthCalledWith(2, 32);
+      test('Allows an absolute URL on the same host as the request', () => {
+        const req = buildReq('acme.myapp.com');
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Ignores port when comparing hostnames', () => {
+        const req = buildReq('acme.myapp.com');
+        const returnUrl = 'https://acme.myapp.com:9999/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Allows same-host URLs when parseTenantFromRootDomain is not set', () => {
+        const req = buildReq('app.example.com');
+        const returnUrl = 'https://app.example.com/home';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, false, false)).toBe(returnUrl);
+      });
+    });
+
+    describe('Rejected hosts', () => {
+      test('Rejects a different domain', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'https://evil.com/phish', tenantName, true, false, rootDomain)).toBeUndefined();
+      });
+
+      test('Rejects a different tenant subdomain', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(
+          validateReturnUrl(req, 'https://other.myapp.com/dashboard', tenantName, true, false, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Rejects a protocol-relative URL to another host', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, '//evil.com/phish', tenantName, true, false, rootDomain)).toBeUndefined();
+      });
+
+      test('Rejects a backslash-prefixed URL to another host', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, '/\\evil.com/phish', tenantName, true, false, rootDomain)).toBeUndefined();
+      });
+
+      test('Rejects a lookalike domain that starts with the root domain', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(
+          validateReturnUrl(req, 'https://myapp.com.evil.com/', tenantName, true, false, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Rejects a URL using userinfo to disguise the real host', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(
+          validateReturnUrl(req, 'https://acme.myapp.com@evil.com/', tenantName, true, false, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Rejects a javascript: URL', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'javascript:alert(1)', tenantName, true, false, rootDomain)).toBeUndefined();
+      });
+
+      test('Rejects the root domain when parseTenantFromRootDomain is not set', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'https://myapp.com/dashboard', tenantName, true, false)).toBeUndefined();
+      });
+
+      test('Returns undefined for a malformed URL', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'https://', tenantName, true, false, rootDomain)).toBeUndefined();
+      });
+    });
+
+    describe('Root domain tenant rewrite', () => {
+      test('Prepends the tenant subdomain to a root domain URL', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'https://myapp.com/dashboard?x=1#top', tenantName, true, false, rootDomain)).toBe(
+          'https://acme.myapp.com/dashboard?x=1#top'
+        );
+      });
+
+      test('Preserves the port when rewriting', () => {
+        const req = buildReq('acme.localhost:6001', 'http');
+
+        expect(validateReturnUrl(req, 'http://localhost:6001/home', tenantName, true, false, 'localhost')).toBe(
+          'http://acme.localhost:6001/home'
+        );
+      });
+
+      test('Does not rewrite when applicationAuthorizationRequestsEnabled is false', () => {
+        const req = buildReq('acme.myapp.com');
+        const returnUrl = 'https://myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, false, false, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Does not rewrite a relative path even when rewrite is enabled', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, '/dashboard', tenantName, true, false, rootDomain)).toBe('/dashboard');
+      });
+    });
+
+    describe('Protocol matching', () => {
+      test('Rejects an http returnUrl when the request is https', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(
+          validateReturnUrl(req, 'http://acme.myapp.com/dashboard', tenantName, true, false, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Rejects an https returnUrl when the request is http', () => {
+        const req = buildReq('acme.localhost:6001', 'http');
+
+        expect(
+          validateReturnUrl(req, 'https://acme.localhost:6001/home', tenantName, true, false, 'localhost')
+        ).toBeUndefined();
+      });
+
+      test('Rejects a root domain returnUrl with a mismatched protocol instead of rewriting it', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(
+          validateReturnUrl(req, 'http://myapp.com/dashboard', tenantName, true, false, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Rejects a non-http protocol on an allowed host', () => {
+        const req = buildReq('acme.myapp.com');
+
+        expect(
+          validateReturnUrl(req, 'ftp://acme.myapp.com/file', tenantName, true, false, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Allows a relative path on an http request', () => {
+        const req = buildReq('acme.localhost:6001', 'http');
+
+        expect(validateReturnUrl(req, '/home', tenantName, true, false, 'localhost')).toBe('/home');
+      });
+    });
+
+    describe('Request protocol resolution', () => {
+      // Request mock with raw headers and socket, for exercising how the protocol is resolved.
+      const buildRawReq = (headers: Record<string, string | string[]>, encrypted?: boolean) => {
+        return {
+          headers,
+          socket: encrypted === undefined ? {} : { encrypted },
+        } as unknown as NextApiRequest;
+      };
+
+      test('Uses https from a TLS socket when x-forwarded-proto is missing', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com' }, true);
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Uses http from a plain socket when x-forwarded-proto is missing', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com' });
+
+        expect(validateReturnUrl(req, 'http://acme.myapp.com/dashboard', tenantName, true, false, rootDomain)).toBe(
+          'http://acme.myapp.com/dashboard'
+        );
+        expect(
+          validateReturnUrl(req, 'https://acme.myapp.com/dashboard', tenantName, true, false, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Falls back to the socket when x-forwarded-proto is not http or https', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com', 'x-forwarded-proto': 'ftp' }, true);
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Falls back to the socket when x-forwarded-proto is an array', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com', 'x-forwarded-proto': ['https', 'http'] });
+
+        expect(
+          validateReturnUrl(req, 'https://acme.myapp.com/dashboard', tenantName, true, false, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Uses the first value of a comma-separated x-forwarded-proto', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com', 'x-forwarded-proto': 'https, http' });
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Accepts x-forwarded-proto regardless of case', () => {
+        const req = buildRawReq({ host: 'acme.myapp.com', 'x-forwarded-proto': 'HTTPS' });
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, false, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Returns undefined when the host header is missing', () => {
+        const req = buildRawReq({ 'x-forwarded-proto': 'https' });
+
+        expect(validateReturnUrl(req, '/settings', tenantName, true, false, rootDomain)).toBeUndefined();
+      });
+    });
+
+    describe('Trusted proxy headers', () => {
+      // The request's Host header is the proxy's upstream address; the browser's host is in x-forwarded-host.
+      const buildProxiedReq = (forwardedHost: string, protocol: string = 'https') => {
+        return {
+          headers: { host: 'localhost:3000', 'x-forwarded-host': forwardedHost, 'x-forwarded-proto': protocol },
+        } as unknown as NextApiRequest;
+      };
+
+      test('Ignores x-forwarded-host when trustProxyHeaders is false', () => {
+        const req = buildProxiedReq('acme.myapp.com');
+
+        expect(
+          validateReturnUrl(req, 'https://acme.myapp.com/dashboard', tenantName, true, false, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Allows a URL on the forwarded host when trustProxyHeaders is true', () => {
+        const req = buildProxiedReq('acme.myapp.com');
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, true, rootDomain)).toBe(returnUrl);
+      });
+
+      test('Rejects a URL on the Host header host when trustProxyHeaders is true', () => {
+        const req = buildProxiedReq('acme.myapp.com');
+
+        expect(
+          validateReturnUrl(req, 'https://localhost:3000/dashboard', tenantName, true, true, rootDomain)
+        ).toBeUndefined();
+      });
+
+      test('Still rejects a different domain when trustProxyHeaders is true', () => {
+        const req = buildProxiedReq('acme.myapp.com');
+
+        expect(validateReturnUrl(req, 'https://evil.com/phish', tenantName, true, true, rootDomain)).toBeUndefined();
+      });
+
+      test('Falls back to the host header when x-forwarded-host is missing', () => {
+        const req = buildReq('acme.myapp.com');
+        const returnUrl = 'https://acme.myapp.com/dashboard';
+
+        expect(validateReturnUrl(req, returnUrl, tenantName, true, true, rootDomain)).toBe(returnUrl);
+      });
     });
   });
 
@@ -394,7 +710,7 @@ describe('Page Router Utils', () => {
       createLoginStateCookie(req, mockRes, 'test-state', 'encrypted-data', false);
 
       const expectedCookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
-      const expectedCookieValue = `${expectedCookieName}=encrypted-data; HTTPOnly; Max-Age=3600; Path=/; SameSite=lax; Secure`;
+      const expectedCookieValue = `${expectedCookieName}=encrypted-data; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600; Secure`;
 
       expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [expectedCookieValue]);
     });
@@ -407,7 +723,7 @@ describe('Page Router Utils', () => {
       createLoginStateCookie(req, mockRes, 'test-state', 'encrypted-data', true);
 
       const expectedCookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
-      const expectedCookieValue = `${expectedCookieName}=encrypted-data; HTTPOnly; Max-Age=3600; Path=/; SameSite=lax`;
+      const expectedCookieValue = `${expectedCookieName}=encrypted-data; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600`;
 
       expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [expectedCookieValue]);
     });
@@ -423,7 +739,7 @@ describe('Page Router Utils', () => {
       createLoginStateCookie(req, mockRes, 'test-state', 'encrypted-data', false);
 
       const expectedCookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
-      const expectedCookieValue = `${expectedCookieName}=encrypted-data; HTTPOnly; Max-Age=3600; Path=/; SameSite=lax; Secure`;
+      const expectedCookieValue = `${expectedCookieName}=encrypted-data; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600; Secure`;
 
       expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [expectedCookieValue]);
     });
@@ -443,9 +759,29 @@ describe('Page Router Utils', () => {
       const newCookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
 
       const staleCookieHeader = `${oldestCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure`;
-      const newCookieHeader = `${newCookieName}=encrypted-data; HTTPOnly; Max-Age=3600; Path=/; SameSite=lax; Secure`;
+      const newCookieHeader = `${newCookieName}=encrypted-data; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600; Secure`;
 
-      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [[staleCookieHeader], newCookieHeader]);
+      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [staleCookieHeader, newCookieHeader]);
+    });
+
+    it('should remove oldest cookie without Secure flag when dangerouslyDisableSecureCookies is true', () => {
+      const req = {
+        cookies: {
+          [`${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}1234567880000`]: 'data1', // oldest
+          [`${LOGIN_STATE_COOKIE_PREFIX}state2${LOGIN_STATE_COOKIE_SEPARATOR}1234567885000`]: 'data2',
+          [`${LOGIN_STATE_COOKIE_PREFIX}state3${LOGIN_STATE_COOKIE_SEPARATOR}1234567888000`]: 'data3',
+        },
+      } as NextApiRequest;
+
+      createLoginStateCookie(req, mockRes, 'test-state', 'encrypted-data', true);
+
+      const oldestCookieName = `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}1234567880000`;
+      const newCookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
+
+      const staleCookieHeader = `${oldestCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+      const newCookieHeader = `${newCookieName}=encrypted-data; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600`;
+
+      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [staleCookieHeader, newCookieHeader]);
     });
 
     it('should handle non-login-state cookies correctly', () => {
@@ -460,92 +796,71 @@ describe('Page Router Utils', () => {
       createLoginStateCookie(req, mockRes, 'test-state', 'encrypted-data', false);
 
       const expectedCookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
-      const expectedCookieValue = `${expectedCookieName}=encrypted-data; HTTPOnly; Max-Age=3600; Path=/; SameSite=lax; Secure`;
+      const expectedCookieValue = `${expectedCookieName}=encrypted-data; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600; Secure`;
 
       expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [expectedCookieValue]);
     });
+
+    it('should include Domain attribute when domain is provided', () => {
+      const req = {
+        cookies: {},
+      } as NextApiRequest;
+
+      createLoginStateCookie(req, mockRes, 'test-state', 'encrypted-data', false, '.business.invotastic.com');
+
+      const expectedCookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
+      const expectedCookieValue = `${expectedCookieName}=encrypted-data; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=3600; Secure`;
+
+      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [expectedCookieValue]);
+    });
+
+    it('should include Domain attribute on the stale cookie cleared when 3 or more exist', () => {
+      const req = {
+        cookies: {
+          [`${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}1234567880000`]: 'data1', // oldest
+          [`${LOGIN_STATE_COOKIE_PREFIX}state2${LOGIN_STATE_COOKIE_SEPARATOR}1234567885000`]: 'data2',
+          [`${LOGIN_STATE_COOKIE_PREFIX}state3${LOGIN_STATE_COOKIE_SEPARATOR}1234567888000`]: 'data3',
+        },
+      } as NextApiRequest;
+
+      createLoginStateCookie(req, mockRes, 'test-state', 'encrypted-data', false, '.business.invotastic.com');
+
+      const oldestCookieName = `${LOGIN_STATE_COOKIE_PREFIX}state1${LOGIN_STATE_COOKIE_SEPARATOR}1234567880000`;
+      const staleCookieHeader = `${oldestCookieName}=; Path=/; HttpOnly; Domain=.business.invotastic.com; SameSite=Lax; Max-Age=0; Secure`;
+
+      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
+        staleCookieHeader,
+        expect.stringContaining('Domain=.business.invotastic.com'),
+      ]);
+    });
   });
 
-  describe('getAuthorizeUrl', () => {
+  describe('getAuthorizationUrlParams', () => {
     const baseConfig = {
       clientId: 'test-client-id',
       codeVerifier: 'test-code-verifier',
       redirectUri: 'https://app.com/callback',
       scopes: ['openid', 'email'],
       state: 'test-state',
-      wristbandApplicationVanityDomain: 'myapp.wristband.dev',
     };
 
     beforeEach(() => {
       mockGenerateRandomString.mockReturnValue('mock-nonce-32');
     });
 
-    it('should generate authorize URL with tenant custom domain', async () => {
+    it('should include all required OAuth2 parameters', async () => {
       const req = { query: {} } as NextApiRequest;
-      const config = { ...baseConfig, tenantCustomDomain: 'tenant.custom.com' };
 
-      const result = await getAuthorizeUrl(req, config);
+      const params = await getAuthorizationUrlParams(req, baseConfig);
 
-      expect(result).toContain('https://tenant.custom.com/api/v1/oauth2/authorize');
-      expect(result).toContain('client_id=test-client-id');
-      expect(result).toContain('redirect_uri=https%3A%2F%2Fapp.com%2Fcallback');
-      expect(result).toContain('response_type=code');
-      expect(result).toContain('state=test-state');
-      expect(result).toContain('scope=openid+email');
-      expect(result).toContain('code_challenge=mock-url-safe-hash');
-      expect(result).toContain('code_challenge_method=S256');
-      expect(result).toContain('nonce=mock-nonce-32');
-    });
-
-    it('should generate authorize URL with tenant domain name and application custom domain active', async () => {
-      const req = { query: {} } as NextApiRequest;
-      const config = {
-        ...baseConfig,
-        tenantName: 'tenant1',
-        isApplicationCustomDomainActive: true,
-      };
-
-      const result = await getAuthorizeUrl(req, config);
-
-      expect(result).toContain('https://tenant1.myapp.wristband.dev/api/v1/oauth2/authorize');
-    });
-
-    it('should generate authorize URL with tenant domain name and application custom domain inactive', async () => {
-      const req = { query: {} } as NextApiRequest;
-      const config = {
-        ...baseConfig,
-        tenantName: 'tenant1',
-        isApplicationCustomDomainActive: false,
-      };
-
-      const result = await getAuthorizeUrl(req, config);
-
-      expect(result).toContain('https://tenant1-myapp.wristband.dev/api/v1/oauth2/authorize');
-    });
-
-    it('should use default tenant custom domain when no tenant params', async () => {
-      const req = { query: {} } as NextApiRequest;
-      const config = {
-        ...baseConfig,
-        defaultTenantCustomDomain: 'default.custom.com',
-      };
-
-      const result = await getAuthorizeUrl(req, config);
-
-      expect(result).toContain('https://default.custom.com/api/v1/oauth2/authorize');
-    });
-
-    it('should use default tenant domain name as fallback', async () => {
-      const req = { query: {} } as NextApiRequest;
-      const config = {
-        ...baseConfig,
-        defaultTenantName: 'default-tenant',
-        isApplicationCustomDomainActive: false,
-      };
-
-      const result = await getAuthorizeUrl(req, config);
-
-      expect(result).toContain('https://default-tenant-myapp.wristband.dev/api/v1/oauth2/authorize');
+      expect(params.get('client_id')).toBe('test-client-id');
+      expect(params.get('redirect_uri')).toBe('https://app.com/callback');
+      expect(params.get('response_type')).toBe('code');
+      expect(params.get('state')).toBe('test-state');
+      expect(params.get('scope')).toBe('openid email');
+      expect(params.get('code_challenge')).toBe('0FLIKahrX7kqxncwhV5WD82lu_wi5GA8FsRSLubaOpU');
+      expect(params.get('code_challenge_method')).toBe('S256');
+      expect(params.get('nonce')).toBe('mock-nonce-32');
     });
 
     it('should include login_hint when provided in query', async () => {
@@ -553,9 +868,9 @@ describe('Page Router Utils', () => {
         query: { login_hint: 'user@example.com' },
       } as unknown as NextApiRequest;
 
-      const result = await getAuthorizeUrl(req, baseConfig);
+      const params = await getAuthorizationUrlParams(req, baseConfig);
 
-      expect(result).toContain('login_hint=user%40example.com');
+      expect(params.get('login_hint')).toBe('user@example.com');
     });
 
     it('should throw error when multiple login_hint query params are provided', async () => {
@@ -563,7 +878,7 @@ describe('Page Router Utils', () => {
         query: { login_hint: ['hint1', 'hint2'] },
       } as unknown as NextApiRequest;
 
-      await expect(getAuthorizeUrl(req, baseConfig)).rejects.toThrow(
+      await expect(getAuthorizationUrlParams(req, baseConfig)).rejects.toThrow(
         'More than one [login_hint] query parameter was encountered'
       );
     });
@@ -573,9 +888,9 @@ describe('Page Router Utils', () => {
         query: { idp_hint: 'google' },
       } as unknown as NextApiRequest;
 
-      const result = await getAuthorizeUrl(req, baseConfig);
+      const params = await getAuthorizationUrlParams(req, baseConfig);
 
-      expect(result).toContain('idp_hint=google');
+      expect(params.get('idp_hint')).toBe('google');
     });
 
     it('should throw error when multiple idp_hint query params are provided', async () => {
@@ -583,50 +898,22 @@ describe('Page Router Utils', () => {
         query: { idp_hint: ['google', 'facebook'] },
       } as unknown as NextApiRequest;
 
-      await expect(getAuthorizeUrl(req, baseConfig)).rejects.toThrow(
+      await expect(getAuthorizationUrlParams(req, baseConfig)).rejects.toThrow(
         'More than one [idp_hint] query parameter was encountered'
       );
     });
 
-    it('should call crypto functions correctly', async () => {
+    it('should generate the nonce with 32 bytes', async () => {
       const req = { query: {} } as NextApiRequest;
 
-      await getAuthorizeUrl(req, baseConfig);
+      await getAuthorizationUrlParams(req, baseConfig);
 
-      expect(mockSha256Base64).toHaveBeenCalledWith('test-code-verifier');
-      expect(mockBase64ToURLSafe).toHaveBeenCalledWith('mock-sha256-hash');
       expect(mockGenerateRandomString).toHaveBeenCalledWith(32);
-    });
-
-    it('should handle domain priority correctly', async () => {
-      const req = { query: {} } as NextApiRequest;
-
-      // Test priority: tenant custom domain > tenant domain > default custom domain > default domain
-      const configWithAll = {
-        ...baseConfig,
-        tenantCustomDomain: 'tenant.custom.com',
-        tenantName: 'tenant1',
-        defaultTenantCustomDomain: 'default.custom.com',
-        defaultTenantName: 'default-tenant',
-      };
-
-      const result = await getAuthorizeUrl(req, configWithAll);
-      expect(result).toContain('https://tenant.custom.com/api/v1/oauth2/authorize');
     });
   });
 
-  describe('getAndClearLoginStateCookie', () => {
-    let mockRes: NextApiResponse;
-    let mockSetHeader: jest.Mock;
-
-    beforeEach(() => {
-      mockSetHeader = jest.fn();
-      mockRes = {
-        setHeader: mockSetHeader,
-      } as any;
-    });
-
-    it('should return cookie value and clear it when found', () => {
+  describe('getLoginStateCookie', () => {
+    it('should return cookie name and value when found', () => {
       const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
       const req = {
         cookies: {
@@ -635,32 +922,12 @@ describe('Page Router Utils', () => {
         query: { state: 'test-state' },
       } as unknown as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      expect(result).toBe('encrypted-login-state-data');
-      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
-        `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure`,
-      ]);
+      expect(result).toEqual({ cookieName, loginStateCookie: 'encrypted-login-state-data' });
     });
 
-    it('should return cookie value and clear it without Secure flag when dangerouslyDisableSecureCookies is true', () => {
-      const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
-      const req = {
-        cookies: {
-          [cookieName]: 'encrypted-login-state-data',
-        },
-        query: { state: 'test-state' },
-      } as unknown as NextApiRequest;
-
-      const result = getAndClearLoginStateCookie(req, mockRes, true);
-
-      expect(result).toBe('encrypted-login-state-data');
-      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
-        `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
-      ]);
-    });
-
-    it('should return empty string when no matching cookie found', () => {
+    it('should return empty strings when no matching cookie found', () => {
       const req = {
         cookies: {
           'other-cookie': 'value',
@@ -668,34 +935,31 @@ describe('Page Router Utils', () => {
         query: { state: 'test-state' },
       } as unknown as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      expect(result).toBe('');
-      expect(mockSetHeader).not.toHaveBeenCalled();
+      expect(result).toEqual({ cookieName: '', loginStateCookie: '' });
     });
 
-    it('should handle empty state parameter', () => {
+    it('should return empty strings when state query param is missing', () => {
       const req = {
         cookies: {},
         query: {},
       } as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      expect(result).toBe('');
-      expect(mockSetHeader).not.toHaveBeenCalled();
+      expect(result).toEqual({ cookieName: '', loginStateCookie: '' });
     });
 
-    it('should handle array state parameter', () => {
+    it('should return empty strings when state query param is an array', () => {
       const req = {
         cookies: {},
         query: { state: ['state1', 'state2'] },
       } as unknown as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      expect(result).toBe('');
-      expect(mockSetHeader).not.toHaveBeenCalled();
+      expect(result).toEqual({ cookieName: '', loginStateCookie: '' });
     });
 
     it('should ignore non-matching login state cookies', () => {
@@ -707,13 +971,12 @@ describe('Page Router Utils', () => {
         query: { state: 'test-state' },
       } as unknown as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      expect(result).toBe('data2');
-      expect(mockSetHeader).toHaveBeenCalledTimes(1);
+      expect(result.loginStateCookie).toBe('data2');
     });
 
-    it('should handle multiple matching cookies by using the first one', () => {
+    it('should return the first matching cookie when multiple match', () => {
       const cookieName1 = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567880000`;
       const cookieName2 = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
 
@@ -725,11 +988,51 @@ describe('Page Router Utils', () => {
         query: { state: 'test-state' },
       } as unknown as NextApiRequest;
 
-      const result = getAndClearLoginStateCookie(req, mockRes, false);
+      const result = getLoginStateCookie(req);
 
-      // Should return the first matching cookie's value
-      expect(['data1', 'data2']).toContain(result);
-      expect(mockSetHeader).toHaveBeenCalledTimes(1);
+      expect(['data1', 'data2']).toContain(result.loginStateCookie);
+    });
+  });
+
+  describe('clearLoginStateCookie', () => {
+    let mockRes: NextApiResponse;
+    let mockSetHeader: jest.Mock;
+
+    beforeEach(() => {
+      mockSetHeader = jest.fn();
+      mockRes = {
+        setHeader: mockSetHeader,
+      } as any;
+    });
+
+    it('should clear the cookie with Secure flag by default', () => {
+      const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
+
+      clearLoginStateCookie(mockRes, cookieName, false);
+
+      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
+        `${cookieName}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax; Secure`,
+      ]);
+    });
+
+    it('should clear the cookie without Secure flag when dangerouslyDisableSecureCookies is true', () => {
+      const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
+
+      clearLoginStateCookie(mockRes, cookieName, true);
+
+      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
+        `${cookieName}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`,
+      ]);
+    });
+
+    it('should include Domain attribute when domain is provided', () => {
+      const cookieName = `${LOGIN_STATE_COOKIE_PREFIX}test-state${LOGIN_STATE_COOKIE_SEPARATOR}1234567890000`;
+
+      clearLoginStateCookie(mockRes, cookieName, false, '.business.invotastic.com');
+
+      expect(mockSetHeader).toHaveBeenCalledWith('Set-Cookie', [
+        `${cookieName}=; HttpOnly; Domain=.business.invotastic.com; Path=/; Max-Age=0; SameSite=Lax; Secure`,
+      ]);
     });
   });
 });

@@ -215,15 +215,12 @@ describe('App Router Multi Tenant Logout', () => {
       });
     });
 
-    describe('Priority 4: tenant domain from request (subdomain or query param)', () => {
-      describe.each([
-        ['tenant_domain', '{tenant_domain}'],
-        ['tenant_name', '{tenant_name}'],
-      ])('4a: Tenant subdomains enabled with %s placeholder', (placeholderName, placeholder) => {
-        test(`tenant subdomain from host header using ${placeholderName}`, async () => {
+    describe('Priority 4: tenant name from request (subdomain or query param)', () => {
+      describe('4a: Tenant subdomains enabled', () => {
+        test('tenant subdomain from host header using tenant_name', async () => {
           parseTenantFromRootDomain = 'business.invotastic.com';
-          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+          loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
           wristbandAuth = createWristbandAuth({
             clientId: CLIENT_ID,
@@ -231,7 +228,6 @@ describe('App Router Multi Tenant Logout', () => {
             loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
             loginUrl,
             redirectUri,
-            parseTenantFromRootDomain,
             wristbandApplicationVanityDomain,
             autoConfigureEnabled: false,
           });
@@ -248,10 +244,10 @@ describe('App Router Multi Tenant Logout', () => {
           validateRedirectResponse(response, `https://priority4a-${wristbandApplicationVanityDomain}`, null);
         });
 
-        test(`tenant subdomain with custom domain separator using ${placeholderName}`, async () => {
+        test('tenant subdomain with custom domain separator using tenant_name', async () => {
           parseTenantFromRootDomain = 'business.invotastic.com';
-          loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-          redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+          loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
           wristbandAuth = createWristbandAuth({
             clientId: CLIENT_ID,
@@ -259,7 +255,6 @@ describe('App Router Multi Tenant Logout', () => {
             loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
             loginUrl,
             redirectUri,
-            parseTenantFromRootDomain,
             isApplicationCustomDomainActive: true,
             wristbandApplicationVanityDomain,
             autoConfigureEnabled: false,
@@ -275,6 +270,38 @@ describe('App Router Multi Tenant Logout', () => {
           const response = await wristbandAuth.appRouter.logout(mockNextRequest);
 
           validateRedirectResponse(response, `https://priority4a.${wristbandApplicationVanityDomain}`, null);
+        });
+
+        test('tenant subdomain from X-Forwarded-Host behind a trusted proxy', async () => {
+          parseTenantFromRootDomain = 'business.invotastic.com';
+          loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+          redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+
+          wristbandAuth = createWristbandAuth({
+            clientId: CLIENT_ID,
+            clientSecret: CLIENT_SECRET,
+            loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+            loginUrl,
+            redirectUri,
+            wristbandApplicationVanityDomain,
+            autoConfigureEnabled: false,
+            trustProxyHeaders: true,
+          });
+
+          // The proxy forwards to an internal host, so the tenant subdomain is only in X-Forwarded-Host.
+          const { req } = createMocks({
+            method: 'GET',
+            url: 'http://internal-app:3000/api/auth/logout',
+            headers: {
+              host: 'internal-app:3000',
+              'x-forwarded-host': `priority4a.${parseTenantFromRootDomain}`,
+            },
+          });
+          const mockNextRequest = createMockNextRequest(req);
+
+          const response = await wristbandAuth.appRouter.logout(mockNextRequest);
+
+          validateRedirectResponse(response, `https://priority4a-${wristbandApplicationVanityDomain}`, null);
         });
       });
 
@@ -338,6 +365,7 @@ describe('App Router Multi Tenant Logout', () => {
           redirectUri,
           wristbandApplicationVanityDomain,
           autoConfigureEnabled: false,
+          applicationAuthorizationRequestsEnabled: false,
         });
 
         const { req } = createMocks({
@@ -363,6 +391,7 @@ describe('App Router Multi Tenant Logout', () => {
           wristbandApplicationVanityDomain,
           customApplicationLoginPageUrl: customLoginUrl,
           autoConfigureEnabled: false,
+          applicationAuthorizationRequestsEnabled: false,
         });
 
         const { req } = createMocks({
@@ -588,14 +617,11 @@ describe('App Router Multi Tenant Logout', () => {
   });
 
   describe('Edge Cases and Error Scenarios', () => {
-    describe.each([
-      ['tenant_domain', '{tenant_domain}'],
-      ['tenant_name', '{tenant_name}'],
-    ])('Edge cases with %s placeholder', (placeholderName, placeholder) => {
-      test(`empty tenant subdomain resolves correctly using ${placeholderName}`, async () => {
+    describe('Edge cases', () => {
+      test('empty tenant subdomain resolves correctly using tenant_name', async () => {
         parseTenantFromRootDomain = 'business.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+        loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+        redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
         wristbandAuth = createWristbandAuth({
           clientId: CLIENT_ID,
@@ -603,9 +629,9 @@ describe('App Router Multi Tenant Logout', () => {
           loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
           loginUrl,
           redirectUri,
-          parseTenantFromRootDomain,
           wristbandApplicationVanityDomain,
           autoConfigureEnabled: false,
+          applicationAuthorizationRequestsEnabled: false,
         });
 
         // Host matches parseTenantFromRootDomain exactly (no subdomain)
@@ -622,10 +648,10 @@ describe('App Router Multi Tenant Logout', () => {
         validateAppLoginRedirect(response, `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
       });
 
-      test(`all config options provided - priority order maintained using ${placeholderName}`, async () => {
+      test('all config options provided - priority order maintained using tenant_name', async () => {
         parseTenantFromRootDomain = 'business.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+        loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+        redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
         wristbandAuth = createWristbandAuth({
           clientId: CLIENT_ID,
@@ -633,7 +659,6 @@ describe('App Router Multi Tenant Logout', () => {
           loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
           loginUrl,
           redirectUri,
-          parseTenantFromRootDomain,
           wristbandApplicationVanityDomain,
           customApplicationLoginPageUrl: 'https://should.be.ignored.com',
           autoConfigureEnabled: false,
@@ -687,14 +712,11 @@ describe('App Router Multi Tenant Logout', () => {
       validateRedirectResponse(response, `https://devs4you-${wristbandApplicationVanityDomain}`, 'https://google.com');
     });
 
-    describe.each([
-      ['tenant_domain', '{tenant_domain}'],
-      ['tenant_name', '{tenant_name}'],
-    ])('Tenant Subdomains Configuration with %s placeholder', (placeholderName, placeholder) => {
-      test(`Tenant Subdomains Configuration using ${placeholderName}`, async () => {
+    describe('Tenant Subdomains Configuration', () => {
+      test('Tenant Subdomains Configuration using tenant_name', async () => {
         parseTenantFromRootDomain = 'business.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+        loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+        redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
         wristbandAuth = createWristbandAuth({
           clientId: CLIENT_ID,
@@ -702,7 +724,6 @@ describe('App Router Multi Tenant Logout', () => {
           loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
           loginUrl,
           redirectUri,
-          parseTenantFromRootDomain,
           wristbandApplicationVanityDomain,
           autoConfigureEnabled: false,
         });
@@ -719,11 +740,11 @@ describe('App Router Multi Tenant Logout', () => {
         validateRedirectResponse(response, `https://devs4you-${wristbandApplicationVanityDomain}`, null);
       });
 
-      test(`Custom Domains and Tenant Subdomains Configuration using ${placeholderName}`, async () => {
+      test('Custom Domains and Tenant Subdomains Configuration using tenant_name', async () => {
         parseTenantFromRootDomain = 'business.invotastic.com';
         wristbandApplicationVanityDomain = 'auth.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+        loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+        redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
         wristbandAuth = createWristbandAuth({
           clientId: CLIENT_ID,
@@ -731,7 +752,6 @@ describe('App Router Multi Tenant Logout', () => {
           loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
           loginUrl,
           redirectUri,
-          parseTenantFromRootDomain,
           isApplicationCustomDomainActive: true,
           wristbandApplicationVanityDomain,
           autoConfigureEnabled: false,
@@ -749,11 +769,11 @@ describe('App Router Multi Tenant Logout', () => {
         validateRedirectResponse(response, `https://devs4you.${wristbandApplicationVanityDomain}`, null);
       });
 
-      test(`Unresolved tenant subdomain using ${placeholderName}`, async () => {
+      test('Unresolved tenant subdomain using tenant_name', async () => {
         parseTenantFromRootDomain = 'business.invotastic.com';
         wristbandApplicationVanityDomain = 'auth.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+        loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+        redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
         wristbandAuth = createWristbandAuth({
           clientId: CLIENT_ID,
@@ -761,10 +781,10 @@ describe('App Router Multi Tenant Logout', () => {
           loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
           loginUrl,
           redirectUri,
-          parseTenantFromRootDomain,
           isApplicationCustomDomainActive: true,
           wristbandApplicationVanityDomain,
           autoConfigureEnabled: false,
+          applicationAuthorizationRequestsEnabled: false,
         });
 
         const { req } = createMocks({
@@ -779,11 +799,11 @@ describe('App Router Multi Tenant Logout', () => {
         validateAppLoginRedirect(response, `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
       });
 
-      test(`Custom application login URL redirect using ${placeholderName}`, async () => {
+      test('Custom application login URL redirect using tenant_name', async () => {
         parseTenantFromRootDomain = 'business.invotastic.com';
         wristbandApplicationVanityDomain = 'auth.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+        loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+        redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
         wristbandAuth = createWristbandAuth({
           clientId: CLIENT_ID,
@@ -791,11 +811,11 @@ describe('App Router Multi Tenant Logout', () => {
           loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
           loginUrl,
           redirectUri,
-          parseTenantFromRootDomain,
           isApplicationCustomDomainActive: true,
           wristbandApplicationVanityDomain,
           customApplicationLoginPageUrl: 'https://google.com',
           autoConfigureEnabled: false,
+          applicationAuthorizationRequestsEnabled: false,
         });
 
         const { req } = createMocks({
@@ -810,11 +830,11 @@ describe('App Router Multi Tenant Logout', () => {
         validateAppLoginRedirect(response, `https://google.com?client_id=${CLIENT_ID}`);
       });
 
-      test(`Logout redirect URL precedence over custom application login URL using ${placeholderName}`, async () => {
+      test('Logout redirect URL precedence over custom application login URL using tenant_name', async () => {
         parseTenantFromRootDomain = 'business.invotastic.com';
         wristbandApplicationVanityDomain = 'auth.invotastic.com';
-        loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-        redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+        loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+        redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
 
         wristbandAuth = createWristbandAuth({
           clientId: CLIENT_ID,
@@ -822,7 +842,6 @@ describe('App Router Multi Tenant Logout', () => {
           loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
           loginUrl,
           redirectUri,
-          parseTenantFromRootDomain,
           isApplicationCustomDomainActive: true,
           wristbandApplicationVanityDomain,
           customApplicationLoginPageUrl: 'https://google.com',
@@ -851,6 +870,7 @@ describe('App Router Multi Tenant Logout', () => {
         redirectUri,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       const { req } = createMocks({
@@ -948,7 +968,7 @@ describe('App Router Multi Tenant Logout', () => {
       expect(locationUrl.searchParams.get('redirect_url')).toBeNull();
     });
 
-    test('special characters in tenant domain name', async () => {
+    test('special characters in tenant name', async () => {
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
         clientSecret: CLIENT_SECRET,
@@ -1186,6 +1206,7 @@ describe('App Router Multi Tenant Logout', () => {
         redirectUri,
         wristbandApplicationVanityDomain,
         autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
       });
 
       const { req } = createMocks({

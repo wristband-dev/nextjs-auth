@@ -2,7 +2,7 @@ import httpMocks, { createMocks, MockResponse } from 'node-mocks-http';
 
 import { NextApiRequest, NextApiResponse } from 'next';
 import { LoginState } from '../../src/types';
-import { encryptLoginState } from '../../src/utils/crypto';
+import { encryptLoginState } from '../../src/utils/auth/common-utils';
 import { createWristbandAuth, WristbandAuth, WristbandError } from '../../src/index';
 
 const CLIENT_ID = 'clientId';
@@ -30,6 +30,7 @@ describe('Callback Errors', () => {
   });
 
   test('Invalid state query param', async () => {
+    expect.assertions(4);
     // Create mock request and response
     let { req, res } = createMocks({
       method: 'GET',
@@ -43,7 +44,6 @@ describe('Callback Errors', () => {
     // Missing state query parameter should throw an error
     try {
       await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('Invalid query parameter [state] passed from Wristband during callback');
@@ -59,7 +59,6 @@ describe('Callback Errors', () => {
     // Multiple state query parameters should throw an error
     try {
       await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('Invalid query parameter [state] passed from Wristband during callback');
@@ -67,6 +66,7 @@ describe('Callback Errors', () => {
   });
 
   test('Invalid code query param', async () => {
+    expect.assertions(4);
     // Mock login state
     const loginState: LoginState = {
       codeVerifier: 'codeVerifier',
@@ -89,7 +89,6 @@ describe('Callback Errors', () => {
     // Missing code query parameter should throw an error for happy path scenarios.
     try {
       await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('Invalid query parameter [code] passed from Wristband during callback');
@@ -105,7 +104,6 @@ describe('Callback Errors', () => {
     // Multiple code query parameters should throw an error.
     try {
       await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('Invalid query parameter [code] passed from Wristband during callback');
@@ -113,6 +111,7 @@ describe('Callback Errors', () => {
   });
 
   test('Invalid error query param', async () => {
+    expect.assertions(2);
     // Create mock request and response
     const { req, res } = createMocks({
       method: 'GET',
@@ -127,7 +126,6 @@ describe('Callback Errors', () => {
     // Multiple error query parameters should throw an error.
     try {
       await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('Invalid query parameter [error] passed from Wristband during callback');
@@ -135,6 +133,7 @@ describe('Callback Errors', () => {
   });
 
   test('Invalid error_description query param', async () => {
+    expect.assertions(2);
     // Create mock request and response
     const { req, res } = createMocks({
       method: 'GET',
@@ -149,7 +148,6 @@ describe('Callback Errors', () => {
     // Multiple error_description query parameters should throw an error.
     try {
       await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('Invalid query parameter [error_description] passed from Wristband during callback');
@@ -157,6 +155,7 @@ describe('Callback Errors', () => {
   });
 
   test('Invalid tenant_name query param', async () => {
+    expect.assertions(2);
     // Create mock request and response
     const { req, res } = createMocks({
       method: 'GET',
@@ -171,7 +170,6 @@ describe('Callback Errors', () => {
     // Multiple error query parameters should throw an error.
     try {
       await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe('More than one [tenant_name] query parameter was encountered');
@@ -179,6 +177,7 @@ describe('Callback Errors', () => {
   });
 
   test('Invalid tenant_custom_domain query param', async () => {
+    expect.assertions(2);
     // Create mock request and response
     const { req, res } = createMocks({
       method: 'GET',
@@ -193,7 +192,6 @@ describe('Callback Errors', () => {
     // Multiple error query parameters should throw an error.
     try {
       await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
       expect(error.message).toBe(
@@ -203,6 +201,7 @@ describe('Callback Errors', () => {
   });
 
   test('Error query parameter throws WristbandError', async () => {
+    expect.assertions(3);
     // Mock login state
     const loginState: LoginState = {
       codeVerifier: 'codeVerifier',
@@ -225,11 +224,42 @@ describe('Callback Errors', () => {
     // Only some errors are handled automatically by the SDK. All others will throw a WristbandError.
     try {
       await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-      fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof WristbandError).toBe(true);
       expect(error.code).toBe('BAD');
       expect(error.errorDescription).toBe('Really bad');
+    }
+  });
+
+  test('Error query parameter without error_description falls back to the error code', async () => {
+    expect.assertions(4);
+    // Mock login state
+    const loginState: LoginState = {
+      codeVerifier: 'codeVerifier',
+      redirectUri: REDIRECT_URI,
+      state: 'state',
+    };
+    const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+    // Create mock request and response, deliberately omitting error_description
+    const { req, res } = createMocks({
+      method: 'GET',
+      url: `${REDIRECT_URI}`,
+      query: { state: 'state', tenant_name: 'devs4you', error: 'server_error' },
+      cookies: { 'login#state#1234567890': encryptedLoginState },
+    });
+    // Cast req and res to NextApiRequest and NextApiResponse
+    const mockReq = req as unknown as NextApiRequest;
+    const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+    // With no error_description, the WristbandError message falls back to the error code itself.
+    try {
+      await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+    } catch (error: any) {
+      expect(error instanceof WristbandError).toBe(true);
+      expect(error.code).toBe('server_error');
+      expect(error.errorDescription).toBe('');
+      expect(error.message).toBe('server_error');
     }
   });
 
@@ -248,6 +278,50 @@ describe('Callback Errors', () => {
       url: `${REDIRECT_URI}`,
       query: { state: 'wrong_state', code: 'code', tenant_name: 'devs4you' },
       cookies: { 'login#wrong_state#1234567890': encryptedLoginState },
+    });
+    const mockReq = req as unknown as NextApiRequest;
+    const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+    const result = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+
+    expect(result.type).toBe('redirect_required');
+    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_name=devs4you`);
+    expect(result.reason).toBe('invalid_login_state');
+  });
+
+  test('Login state cookie encrypted with a different secret returns redirect with invalid_login_state reason', async () => {
+    // Mock login state encrypted with a secret the SDK is not configured with
+    const loginState: LoginState = {
+      codeVerifier: 'codeVerifier',
+      redirectUri: REDIRECT_URI,
+      state: 'state',
+    };
+    const encryptedLoginState: string = await encryptLoginState(loginState, '00000000-0000-0000-0000-000000000000');
+
+    // Create mock request and response
+    const { req, res } = createMocks({
+      method: 'GET',
+      url: `${REDIRECT_URI}`,
+      query: { state: 'state', code: 'code', tenant_name: 'devs4you' },
+      cookies: { 'login#state#1234567890': encryptedLoginState },
+    });
+    const mockReq = req as unknown as NextApiRequest;
+    const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+    const result = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+
+    expect(result.type).toBe('redirect_required');
+    expect(result.redirectUrl).toBe(`${LOGIN_URL}?tenant_name=devs4you`);
+    expect(result.reason).toBe('invalid_login_state');
+  });
+
+  test('Malformed login state cookie returns redirect with invalid_login_state reason', async () => {
+    // Create mock request and response with a login state cookie that cannot be decrypted
+    const { req, res } = createMocks({
+      method: 'GET',
+      url: `${REDIRECT_URI}`,
+      query: { state: 'state', code: 'code', tenant_name: 'devs4you' },
+      cookies: { 'login#state#1234567890': 'not-a-valid-cookie' },
     });
     const mockReq = req as unknown as NextApiRequest;
     const mockRes = res as unknown as MockResponse<NextApiResponse>;
@@ -335,6 +409,7 @@ describe('Callback Errors', () => {
   });
 
   test('Non-InvalidGrantError during token exchange is re-thrown', async () => {
+    expect.assertions(5);
     // Mock login state
     const loginState: LoginState = {
       codeVerifier: 'codeVerifier',
@@ -372,7 +447,6 @@ describe('Callback Errors', () => {
 
     try {
       await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-      fail('Expected error to be thrown');
     } catch (error: any) {
       expect(error).toBeInstanceOf(WristbandError);
       const typedError = error as WristbandError;
@@ -385,6 +459,51 @@ describe('Callback Errors', () => {
     // MAX_API_RETRY_ATTEMPTS times -- see withRetry() in utils/retry.ts.
     expect(global.fetch).toHaveBeenCalledTimes(3);
   });
+
+  test('Non-Error value thrown during token exchange is wrapped with an undefined originalError', async () => {
+    expect.assertions(5);
+    // Mock login state
+    const loginState: LoginState = {
+      codeVerifier: 'codeVerifier',
+      redirectUri: REDIRECT_URI,
+      state: 'state',
+    };
+    const encryptedLoginState: string = await encryptLoginState(loginState, LOGIN_STATE_COOKIE_SECRET);
+
+    // Create mock request and response
+    const { req, res } = createMocks({
+      method: 'GET',
+      url: `${REDIRECT_URI}`,
+      query: { state: 'state', code: 'code', tenant_name: 'devs4you' },
+      cookies: { 'login#state#state': encryptedLoginState },
+    });
+    const mockReq = req as unknown as NextApiRequest;
+    const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+    // Reject with a plain value (not an Error instance) on every attempt, including retries,
+    // so the final caught error genuinely fails `instanceof Error` -- unlike the 500-response
+    // test above, where the underlying rejection would itself be an Error.
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url === `https://${WRISTBAND_APPLICATION_DOMAIN}/api/v1/oauth2/token`) {
+        // eslint-disable-next-line prefer-promise-reject-errors
+        return Promise.reject('a non-Error rejection value');
+      }
+      return Promise.reject(new Error('Unexpected URL'));
+    });
+
+    try {
+      await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+    } catch (error: any) {
+      expect(error).toBeInstanceOf(WristbandError);
+      const typedError = error as WristbandError;
+      expect(typedError.code).toBe('unexpected_error');
+      expect(typedError.errorDescription).toBe('Unexpected error');
+      expect(typedError.originalError).toBeUndefined();
+    }
+
+    // Non-Error rejections are still treated as transient/retryable by withRetry().
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  }, 15000);
 
   test('Missing login state cookie returns redirect with missing_login_state reason', async () => {
     // Create mock request and response with no cookies
@@ -403,81 +522,80 @@ describe('Callback Errors', () => {
     expect(result.reason).toBe('missing_login_state');
   });
 
-  describe.each([
-    ['tenant_domain', '{tenant_domain}'],
-    ['tenant_name', '{tenant_name}'],
-  ])('Redirect to Application-level Login with %s placeholder', (placeholderName, placeholder) => {
-    test('Missing login state cookie, without subdomains, without tenant domain query param', async () => {
-      const parseTenantFromRootDomain = 'business.invotastic.com';
-      const loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
-      const redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
-      const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        wristbandApplicationVanityDomain,
-        autoConfigureEnabled: false,
+  describe.each([['tenant_name', '{tenant_name}']])(
+    'Redirect to Application-level Login with %s placeholder',
+    (placeholderName, placeholder) => {
+      test('Missing login state cookie, without subdomains, without tenant name query param', async () => {
+        expect.assertions(3);
+        const parseTenantFromRootDomain = 'business.invotastic.com';
+        const loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+        const redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
+        const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
+        wristbandAuth = createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl,
+          redirectUri,
+          wristbandApplicationVanityDomain,
+          autoConfigureEnabled: false,
+        });
+
+        // Create mock request and response
+        const { req, res } = createMocks({
+          method: 'GET',
+          url: `${REDIRECT_URI}`,
+          query: { state: 'state', code: 'code' },
+        });
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+        try {
+          await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+        } catch (error: any) {
+          expect(error instanceof WristbandError).toBe(true);
+          expect(error.code).toBe('missing_tenant_name');
+          expect(error.errorDescription).toBe(
+            'Callback request is missing the [tenant_name] query parameter from Wristband'
+          );
+        }
       });
 
-      // Create mock request and response
-      const { req, res } = createMocks({
-        method: 'GET',
-        url: `${REDIRECT_URI}`,
-        query: { state: 'state', code: 'code' },
+      test(`Missing login state cookie, with subdomains using ${placeholderName}, and without URL subdomain`, async () => {
+        expect.assertions(3);
+        const parseTenantFromRootDomain = 'business.invotastic.com';
+        const loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
+        const redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
+        const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
+        wristbandAuth = createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          customApplicationLoginPageUrl: 'https://google.com',
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl,
+          redirectUri,
+          wristbandApplicationVanityDomain,
+          autoConfigureEnabled: false,
+        });
+
+        // Create mock request and response
+        const { req, res } = createMocks({
+          method: 'GET',
+          url: `${REDIRECT_URI}`,
+          query: { state: 'state', code: 'code' },
+          headers: { host: parseTenantFromRootDomain },
+        });
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+        try {
+          await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+        } catch (error: any) {
+          expect(error instanceof WristbandError).toBe(true);
+          expect(error.code).toBe('missing_tenant_subdomain');
+          expect(error.errorDescription).toBe('Callback request URL is missing a tenant subdomain');
+        }
       });
-      const mockReq = req as unknown as NextApiRequest;
-      const mockRes = res as unknown as MockResponse<NextApiResponse>;
-
-      try {
-        await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-        fail('Error expected to be thrown.');
-      } catch (error: any) {
-        expect(error instanceof WristbandError).toBe(true);
-        expect(error.code).toBe('missing_tenant_name');
-        expect(error.errorDescription).toBe(
-          'Callback request is missing the [tenant_name] query parameter from Wristband'
-        );
-      }
-    });
-
-    test(`Missing login state cookie, with subdomains using ${placeholderName}, and without URL subdomain`, async () => {
-      const parseTenantFromRootDomain = 'business.invotastic.com';
-      const loginUrl = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/login`;
-      const redirectUri = `https://${placeholder}.${parseTenantFromRootDomain}/api/auth/callback`;
-      const wristbandApplicationVanityDomain = 'invotasticb2b-invotastic.dev.wristband.dev';
-      wristbandAuth = createWristbandAuth({
-        clientId: CLIENT_ID,
-        clientSecret: CLIENT_SECRET,
-        customApplicationLoginPageUrl: 'https://google.com',
-        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
-        loginUrl,
-        redirectUri,
-        parseTenantFromRootDomain,
-        wristbandApplicationVanityDomain,
-        autoConfigureEnabled: false,
-      });
-
-      // Create mock request and response
-      const { req, res } = createMocks({
-        method: 'GET',
-        url: `${REDIRECT_URI}`,
-        query: { state: 'state', code: 'code' },
-        headers: { host: parseTenantFromRootDomain },
-      });
-      const mockReq = req as unknown as NextApiRequest;
-      const mockRes = res as unknown as MockResponse<NextApiResponse>;
-
-      try {
-        await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
-        fail('Error expected to be thrown.');
-      } catch (error: any) {
-        expect(error instanceof WristbandError).toBe(true);
-        expect(error.code).toBe('missing_tenant_subdomain');
-        expect(error.errorDescription).toBe('Callback request URL is missing a tenant subdomain');
-      }
-    });
-  });
+    }
+  );
 });
