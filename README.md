@@ -505,7 +505,7 @@ The Session Endpoint returns the `SessionResponse` type to your frontend:
 #### Token Endpoint (Optional)
 
 > [!NOTE]
-> This endpoint is required when your frontend needs to make authenticated API requests directly to Wristband or other protected services. For more details, see the [Wristband documentation on using access tokens from the frontend](https://docs.wristband.dev/docs/authenticating-api-requests-with-bearer-tokens#using-access-tokens-from-the-frontend).
+> This endpoint is required when your frontend needs to make authenticated API requests directly to Wristband or other protected services. For more details, see the [Wristband documentation on using access tokens from the frontend](https://docs.wristband.dev/docs/backend-server-integration#using-access-tokens-from-the-frontend).
 >
 > If your application doesn't need frontend access to tokens (e.g., all API calls go through your backend), you can skip this endpoint.
 
