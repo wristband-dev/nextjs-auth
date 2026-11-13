@@ -780,6 +780,35 @@ describe('Multi Tenant Logout', () => {
       );
     });
 
+    test('should not revoke the refresh token when state exceeds 512 characters', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      await expect(
+        wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+          refreshToken: 'refreshToken',
+          tenantName: 'devs4you',
+          state: 'a'.repeat(513),
+        })
+      ).rejects.toThrow('The [state] logout config cannot exceed 512 characters.');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
     test('should accept state with exactly 512 characters', async () => {
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -836,8 +865,47 @@ describe('Multi Tenant Logout', () => {
         state: stateWithSpecialChars,
       });
 
-      expect(logoutUrl).toContain(`state=${stateWithSpecialChars}`);
+      expect(new URL(logoutUrl).searchParams.get('state')).toBe(stateWithSpecialChars);
       validateRedirectResponse(mockRes, logoutUrl, `https://test-tenant-${wristbandApplicationVanityDomain}`, null);
+    });
+
+    test('should URL-encode state and redirectUrl parameters', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      const redirectUrl = 'https://example.com/logged-out?lang=en&theme=dark';
+      const state = 'step=2&from=settings #top';
+
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+        tenantName: 'devs4you',
+        state,
+        redirectUrl,
+      });
+
+      const locationUrl = new URL(logoutUrl);
+      const { searchParams } = locationUrl;
+
+      expect(searchParams.get('redirect_url')).toEqual(redirectUrl);
+      expect(searchParams.get('state')).toEqual(state);
+      expect(searchParams.get('client_id')).toEqual(CLIENT_ID);
+      expect(searchParams.has('theme')).toBe(false);
+      expect(searchParams.has('from')).toBe(false);
+      expect(locationUrl.hash).toBe('');
     });
 
     test('should handle empty string state', async () => {
@@ -955,6 +1023,91 @@ describe('Multi Tenant Logout', () => {
       // When redirectUrl takes precedence over fallback, state should be ignored
       expect(logoutUrl).toBe(redirectUrl);
       expect(logoutUrl).not.toContain('state=');
+    });
+  });
+
+  describe('Invalid Tenant Values', () => {
+    const appLoginUrl = () => {
+      return `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`;
+    };
+
+    function createAuth(config: { tenantSubdomains?: boolean } = {}) {
+      if (config.tenantSubdomains) {
+        parseTenantFromRootDomain = 'business.invotastic.com';
+        loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+        redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+      }
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+    }
+
+    function createReqRes(query: Record<string, string> = {}, host: string = parseTenantFromRootDomain) {
+      const { req, res } = createMocks({
+        method: 'GET',
+        url: `https://${host}/api/auth/logout`,
+        headers: { host },
+        query,
+      });
+      return {
+        mockReq: req as unknown as NextApiRequest,
+        mockRes: res as unknown as MockResponse<NextApiResponse>,
+      };
+    }
+
+    test.each(['evil.com#', 'evil.com/path', 'evil.com:443', 'user@evil.com', 'localhost'])(
+      'Invalid tenantCustomDomain logout config falls through to the tenantName logout config: %s',
+      async (tenantCustomDomain) => {
+        createAuth();
+        const { mockReq, mockRes } = createReqRes();
+
+        const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, {
+          tenantCustomDomain,
+          tenantName: 'devs4you',
+        });
+
+        validateRedirectResponse(mockRes, logoutUrl, `https://devs4you-${wristbandApplicationVanityDomain}`, null);
+      }
+    );
+
+    test.each(['evil.com#', 'evil.com/path', 'evil.com?x=', 'user@evil', 'ten_ant'])(
+      'Invalid tenantName logout config falls back to application-level login: %s',
+      async (tenantName) => {
+        createAuth();
+        const { mockReq, mockRes } = createReqRes();
+
+        const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes, { tenantName });
+
+        expect(logoutUrl).toBe(appLoginUrl());
+      }
+    );
+
+    test.each(['evil.com#', 'evil.com/path', 'evil.com?x=', 'user@evil', 'ten_ant'])(
+      'Invalid tenant_name query param falls back to application-level login: %s',
+      async (tenantName) => {
+        createAuth();
+        const { mockReq, mockRes } = createReqRes({ tenant_name: tenantName });
+
+        const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
+
+        expect(logoutUrl).toBe(appLoginUrl());
+      }
+    );
+
+    test('Invalid tenant subdomain falls back to application-level login', async () => {
+      createAuth({ tenantSubdomains: true });
+      const { mockReq, mockRes } = createReqRes({}, `ten_ant.${parseTenantFromRootDomain}`);
+
+      const logoutUrl = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
+
+      expect(logoutUrl).toBe(appLoginUrl());
     });
   });
 });

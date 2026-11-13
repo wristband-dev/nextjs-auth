@@ -8,6 +8,7 @@ import {
   normalizeMiddlewareConfig,
   resolveOnPageUnauthenticated,
   copyResponseHeaders,
+  setSessionCookieOnRequest,
 } from '../../src/utils/middleware';
 import { AuthConfig, AuthMiddlewareConfig } from '../../src/types';
 
@@ -22,6 +23,7 @@ jest.mock('../../src/utils/middleware', () => {
     copyResponseHeaders: jest.fn((source, target) => {
       return target;
     }),
+    setSessionCookieOnRequest: jest.fn(),
   };
 });
 
@@ -32,9 +34,20 @@ const mockIsValidCsrf = isValidCsrf as jest.MockedFunction<typeof isValidCsrf>;
 const mockNormalizeMiddlewareConfig = normalizeMiddlewareConfig as jest.Mock;
 const mockResolveOnPageUnauthenticated = resolveOnPageUnauthenticated as jest.Mock;
 const mockCopyResponseHeaders = copyResponseHeaders as jest.MockedFunction<typeof copyResponseHeaders>;
+const mockSetSessionCookieOnRequest = setSessionCookieOnRequest as jest.MockedFunction<
+  typeof setSessionCookieOnRequest
+>;
 
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
+
+// The middleware skips the SESSION strategy when the request has no session cookie, so requests that should
+// reach the session read carry one. The name matches the cookieName in mockMiddlewareConfig.
+const SESSION_COOKIE = 'test-session=encrypted-session-value';
+
+function createRequestWithSession(url: string, headers: Record<string, string> = {}): NextRequest {
+  return new NextRequest(url, { headers: { cookie: SESSION_COOKIE, ...headers } });
+}
 
 describe('WristbandAuth Middleware - Chaining', () => {
   let wristbandAuth: WristbandAuthImpl;
@@ -104,7 +117,7 @@ describe('WristbandAuth Middleware - Chaining', () => {
 
     mockIsProtectedApi.mockReturnValue(false);
     mockIsProtectedPage.mockReturnValue(false);
-    mockIsValidCsrf.mockReturnValue(true);
+    mockIsValidCsrf.mockResolvedValue(true);
 
     mockCopyResponseHeaders.mockImplementation((source, target) => {
       return target;
@@ -141,7 +154,7 @@ describe('WristbandAuth Middleware - Chaining', () => {
 
   describe('Protected Route Chaining with SESSION Strategy', () => {
     it('should preserve headers from previous middleware and add session headers', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       // Create a previous response with custom headers
@@ -178,15 +191,16 @@ describe('WristbandAuth Middleware - Chaining', () => {
       // Verify session headers are added
       expect(result.headers.get('set-cookie')).toContain('session=encrypted');
 
-      // Should be the same response object (mutated)
-      expect(result).toBe(previousResponse);
+      // A new forwarded response is returned, so the route handler can read the saved session
+      expect(result).not.toBe(previousResponse);
 
-      // copyResponseHeaders should have been called to merge session headers
-      expect(mockCopyResponseHeaders).toHaveBeenCalledWith(mockSessionResponse, previousResponse);
+      // copyResponseHeaders copies the previous headers, then the session headers, onto the new response
+      expect(mockCopyResponseHeaders).toHaveBeenNthCalledWith(1, previousResponse, result);
+      expect(mockCopyResponseHeaders).toHaveBeenNthCalledWith(2, mockSessionResponse, result);
     });
 
     it('should work with multiple middleware in sequence', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       // Simulate middleware 01 adding a header
@@ -223,8 +237,82 @@ describe('WristbandAuth Middleware - Chaining', () => {
       expect(middleware02Response.headers.get('set-cookie')).toContain('session=abc');
       expect(middleware02Response.headers.get('x-middleware-02')).toBe('value-02');
 
-      // All should be the same response object
-      expect(middleware02Response).toBe(middleware01Response);
+      // The Wristband middleware returns a new forwarded response instead of middleware 01's response
+      expect(wristbandResponse).not.toBe(middleware01Response);
+    });
+
+    it('should forward the saved session cookie to the route handler on the same request', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+
+      const previousResponse = NextResponse.next();
+      previousResponse.cookies.set('theme', 'dark');
+
+      const mockSession = {
+        isAuthenticated: true,
+        csrfToken: 'test-csrf-token',
+        refreshToken: 'test-refresh-token',
+        expiresAt: Date.now() + 3600000,
+        saveToResponse: jest.fn().mockResolvedValue(
+          new Response(null, {
+            headers: [
+              ['set-cookie', 'test-session=refreshed-value; Path=/; HttpOnly'],
+              ['set-cookie', 'CSRF-TOKEN=test-csrf-token; Path=/'],
+            ],
+          })
+        ),
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+
+      const actualMiddlewareUtils = jest.requireActual('../../src/utils/middleware');
+      mockCopyResponseHeaders.mockImplementation(actualMiddlewareUtils.copyResponseHeaders);
+      mockSetSessionCookieOnRequest.mockImplementation(actualMiddlewareUtils.setSessionCookieOnRequest);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest, previousResponse);
+
+      // The route handler gets the refreshed session cookie, not the one the browser sent, and no CSRF cookie
+      expect(result.headers.get('x-middleware-request-cookie')).toBe('test-session=refreshed-value');
+
+      // The browser gets the previous cookies and both session cookies, each once
+      expect(result.headers.getSetCookie()).toEqual([
+        'theme=dark; Path=/',
+        'test-session=refreshed-value; Path=/; HttpOnly',
+        'CSRF-TOKEN=test-csrf-token; Path=/',
+      ]);
+    });
+
+    it('should keep a redirect from previous middleware and add the session cookies to it', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+
+      const previousResponse = NextResponse.redirect('https://test.com/elsewhere');
+
+      const mockSession = {
+        isAuthenticated: true,
+        csrfToken: 'test-csrf-token',
+        refreshToken: 'test-refresh-token',
+        expiresAt: Date.now() + 3600000,
+        saveToResponse: jest
+          .fn()
+          .mockResolvedValue(
+            new Response(null, { headers: { 'set-cookie': 'test-session=refreshed-value; Path=/; HttpOnly' } })
+          ),
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+
+      const actualMiddlewareUtils = jest.requireActual('../../src/utils/middleware');
+      mockCopyResponseHeaders.mockImplementation(actualMiddlewareUtils.copyResponseHeaders);
+      mockSetSessionCookieOnRequest.mockImplementation(actualMiddlewareUtils.setSessionCookieOnRequest);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest, previousResponse);
+
+      expect(result).toBe(previousResponse);
+      expect(result.status).toBe(307);
+      expect(result.headers.get('location')).toBe('https://test.com/elsewhere');
+      expect(result.headers.getSetCookie()).toEqual(['test-session=refreshed-value; Path=/; HttpOnly']);
+      expect(result.headers.get('x-middleware-request-cookie')).toBeNull();
     });
 
     it('should preserve previous response headers when auth fails', async () => {
@@ -287,7 +375,7 @@ describe('WristbandAuth Middleware - Chaining', () => {
 
   describe('No Previous Response', () => {
     it('should work correctly without previous response for protected routes', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSessionResponse = new Response(null, {
@@ -356,7 +444,7 @@ describe('WristbandAuth Middleware - Chaining', () => {
     });
 
     it('should pass csrf_failed reason and preserve previous headers when CSRF validation fails', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const previousResponse = NextResponse.next();
@@ -382,7 +470,7 @@ describe('WristbandAuth Middleware - Chaining', () => {
         expiresAt: Date.now() + 3600000,
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
-      mockIsValidCsrf.mockReturnValue(false); // CSRF validation fails
+      mockIsValidCsrf.mockResolvedValue(false); // CSRF validation fails
 
       const { copyResponseHeaders: realCopyResponseHeaders } = jest.requireActual('../../src/utils/middleware');
       mockCopyResponseHeaders.mockImplementation(realCopyResponseHeaders);
@@ -400,7 +488,7 @@ describe('WristbandAuth Middleware - Chaining', () => {
     });
 
     it('should pass token_refresh_failed reason and preserve headers when refresh fails', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
 
       const previousResponse = NextResponse.next();
@@ -431,7 +519,7 @@ describe('WristbandAuth Middleware - Chaining', () => {
     });
 
     it('should pass unexpected_error reason when session retrieval throws', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
 
       const previousResponse = NextResponse.next();

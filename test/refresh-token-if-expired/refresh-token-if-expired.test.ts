@@ -39,14 +39,82 @@ describe('Refresh Token If Expired', () => {
       fail('Error expected to be thrown.');
     } catch (error: any) {
       expect(error instanceof TypeError).toBe(true);
-      expect(error.message).toBe('The expiresAt field must be an integer greater than 0');
+      expect(error.message).toBe('The expiresAt field must be an integer greater than or equal to 0');
     }
+  });
+
+  test('Null expiresAt', async () => {
+    await expect(wristbandAuth.refreshTokenIfExpired('refreshToken', null as any)).rejects.toThrow(
+      'The expiresAt field must be an integer greater than or equal to 0'
+    );
   });
 
   test('Token is not expired', async () => {
     // Choose some arbitrary time in the future from the current time (in milliseconds)
     const tokenData = await wristbandAuth.refreshTokenIfExpired('refreshToken', Date.now().valueOf() + 1000000);
     expect(tokenData).toBeNull();
+  });
+
+  test('Token at exact expiration boundary', async () => {
+    const currentTime = Date.now();
+    const mockTokens = {
+      access_token: 'accessToken',
+      expires_in: 1800,
+      id_token: 'idToken',
+      refresh_token: 'refreshToken',
+      token_type: 'bearer',
+    };
+
+    (global.fetch as jest.Mock).mockImplementationOnce((url: string) => {
+      if (url === `https://${WRISTBAND_APPLICATION_DOMAIN}/api/v1/oauth2/token`) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: jest.fn().mockResolvedValueOnce(JSON.stringify(mockTokens)),
+        });
+      }
+      return Promise.reject(new Error('Unexpected URL'));
+    });
+
+    const mockDateNow = jest.spyOn(Date, 'now').mockReturnValue(currentTime);
+
+    try {
+      const tokenData = await wristbandAuth.refreshTokenIfExpired('refreshToken', currentTime);
+
+      // At exact expiration time, token should be considered expired and refreshed
+      expect(tokenData).not.toBeNull();
+      expect(tokenData?.accessToken).toBe('accessToken');
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      mockDateNow.mockRestore();
+    }
+  });
+
+  test('Zero expiresAt is treated as expired, perform a token refresh', async () => {
+    const mockTokens = {
+      access_token: 'accessToken',
+      expires_in: 1800,
+      id_token: 'idToken',
+      refresh_token: 'refreshToken',
+      token_type: 'bearer',
+    };
+
+    (global.fetch as jest.Mock).mockImplementationOnce((url: string) => {
+      if (url === `https://${WRISTBAND_APPLICATION_DOMAIN}/api/v1/oauth2/token`) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: jest.fn().mockResolvedValueOnce(JSON.stringify(mockTokens)),
+        });
+      }
+      return Promise.reject(new Error('Unexpected URL'));
+    });
+
+    const tokenData = await wristbandAuth.refreshTokenIfExpired('refreshToken', 0);
+
+    expect(tokenData).not.toBeNull();
+    expect(tokenData?.accessToken).toBe('accessToken');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   test('Token is expired, perform a token refresh', async () => {

@@ -796,4 +796,65 @@ describe('Multi Tenant Callback - Page Router', () => {
       });
     });
   });
+
+  describe('Invalid Tenant Name', () => {
+    test.each(['evil.com#', 'evil.com/path', 'user@evil', 'ten_ant'])(
+      'Throws missing_tenant_name when the tenant_name query param is not a valid DNS label: %s',
+      async (tenantName) => {
+        wristbandAuth = createWristbandAuth({
+          clientId: CLIENT_ID,
+          clientSecret: CLIENT_SECRET,
+          loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+          loginUrl,
+          redirectUri,
+          wristbandApplicationVanityDomain,
+          autoConfigureEnabled: false,
+        });
+
+        // No login state cookie, so a valid tenant name would redirect to login instead of throwing.
+        const { req, res } = createMocks({
+          method: 'GET',
+          headers: { host: `${parseTenantFromRootDomain}` },
+          query: { state: 'state', code: 'code', tenant_name: tenantName },
+        });
+        const mockReq = req as unknown as NextApiRequest;
+        const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+        await expect(wristbandAuth.pagesRouter.callback(mockReq, mockRes)).rejects.toMatchObject({
+          code: 'missing_tenant_name',
+        });
+        expect(global.fetch).not.toHaveBeenCalled();
+      }
+    );
+
+    test('Throws missing_tenant_subdomain when the tenant subdomain is not a valid DNS label', async () => {
+      parseTenantFromRootDomain = 'business.invotastic.com';
+      loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+
+      // No login state cookie, so a valid tenant subdomain would redirect to login instead of throwing.
+      const { req, res } = createMocks({
+        method: 'GET',
+        headers: { host: `ten_ant.${parseTenantFromRootDomain}` },
+        query: { state: 'state', code: 'code' },
+      });
+      const mockReq = req as unknown as NextApiRequest;
+      const mockRes = res as unknown as MockResponse<NextApiResponse>;
+
+      await expect(wristbandAuth.pagesRouter.callback(mockReq, mockRes)).rejects.toMatchObject({
+        code: 'missing_tenant_subdomain',
+      });
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+  });
 });

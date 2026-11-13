@@ -9,6 +9,7 @@ import {
   normalizeMiddlewareConfig,
   resolveOnPageUnauthenticated,
   copyResponseHeaders,
+  setSessionCookieOnRequest,
 } from '../../src/utils/middleware';
 import { AuthConfig, AuthMiddlewareConfig, TokenData } from '../../src/types';
 
@@ -23,6 +24,7 @@ jest.mock('../../src/utils/middleware', () => {
     copyResponseHeaders: jest.fn((source, target) => {
       return target;
     }),
+    setSessionCookieOnRequest: jest.fn(),
   };
 });
 
@@ -33,9 +35,20 @@ const mockIsValidCsrf = isValidCsrf as jest.MockedFunction<typeof isValidCsrf>;
 const mockNormalizeMiddlewareConfig = normalizeMiddlewareConfig as jest.Mock;
 const mockResolveOnPageUnauthenticated = resolveOnPageUnauthenticated as jest.Mock;
 const mockCopyResponseHeaders = copyResponseHeaders as jest.MockedFunction<typeof copyResponseHeaders>;
+const mockSetSessionCookieOnRequest = setSessionCookieOnRequest as jest.MockedFunction<
+  typeof setSessionCookieOnRequest
+>;
 
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
+
+// The middleware skips the SESSION strategy when the request has no session cookie, so every request
+// in these tests carries one. The name matches the cookieName in mockMiddlewareConfig.
+const SESSION_COOKIE = 'test-session=encrypted-session-value';
+
+function createRequestWithSession(url: string, headers: Record<string, string> = {}): NextRequest {
+  return new NextRequest(url, { headers: { cookie: SESSION_COOKIE, ...headers } });
+}
 
 describe('WristbandAuth Middleware - Session Strategy', () => {
   let wristbandAuth: WristbandAuthImpl;
@@ -100,11 +113,11 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
 
     mockResolveOnPageUnauthenticated.mockReturnValue(mockOnPageUnauthenticated);
 
-    mockRequest = new NextRequest('https://test.com/dashboard');
+    mockRequest = createRequestWithSession('https://test.com/dashboard');
 
     mockIsProtectedApi.mockReturnValue(false);
     mockIsProtectedPage.mockReturnValue(false);
-    mockIsValidCsrf.mockReturnValue(true);
+    mockIsValidCsrf.mockResolvedValue(true);
 
     mockCopyResponseHeaders.mockImplementation((source, target) => {
       return target;
@@ -113,7 +126,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
 
   describe('Session Retrieval', () => {
     it('should check session for protected routes', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSession = {
@@ -137,7 +150,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
 
   describe('Session Retrieval Errors', () => {
     it('should return 500 for protected API when session retrieval fails (no previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session read failed'));
 
@@ -152,7 +165,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should return 500 for protected API when session retrieval fails (with previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session read failed'));
 
@@ -168,7 +181,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should call onPageUnauthenticated for protected page when session retrieval fails (no previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session read failed'));
 
@@ -185,7 +198,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should call onPageUnauthenticated for protected page when session retrieval fails (with previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session read failed'));
 
@@ -199,7 +212,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
 
   describe('Authentication Checks', () => {
     it('should return 401 for unauthenticated API request (no previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       const mockSession = {
         isAuthenticated: false,
@@ -218,7 +231,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should return 401 for unauthenticated API request (with previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       const mockSession = {
         isAuthenticated: false,
@@ -237,7 +250,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should call onPageUnauthenticated for unauthenticated page request (no previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
       const mockSession = {
         isAuthenticated: false,
@@ -256,7 +269,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should call onPageUnauthenticated for unauthenticated page request (with previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
       const mockSession = {
         isAuthenticated: false,
@@ -274,7 +287,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should allow authenticated requests to continue and save session (no previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSessionResponse = new Response();
@@ -296,7 +309,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should allow authenticated requests to continue and save session (with previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSessionResponse = new Response();
@@ -311,16 +324,19 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
 
       const previousResponse = NextResponse.next();
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
-      await middleware(mockRequest, previousResponse);
+      const result = await middleware(mockRequest, previousResponse);
 
-      expect(mockCopyResponseHeaders).toHaveBeenCalledTimes(1);
-      expect(mockCopyResponseHeaders).toHaveBeenCalledWith(mockSessionResponse, previousResponse);
+      // previousResponse headers are copied first, then the session headers, onto a new forwarded response.
+      expect(result).not.toBe(previousResponse);
+      expect(mockCopyResponseHeaders).toHaveBeenCalledTimes(2);
+      expect(mockCopyResponseHeaders).toHaveBeenNthCalledWith(1, previousResponse, result);
+      expect(mockCopyResponseHeaders).toHaveBeenNthCalledWith(2, mockSessionResponse, result);
     });
   });
 
   describe('CSRF Protection', () => {
     it('should skip CSRF validation when CSRF protection is disabled', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       // CSRF disabled in sessionOptions (default is false)
@@ -342,9 +358,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should validate CSRF token for protected API routes when CSRF protection is enabled', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users', {
-        headers: { 'X-CSRF-TOKEN': 'test-csrf-token' },
-      });
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users', { 'X-CSRF-TOKEN': 'test-csrf-token' });
       mockIsProtectedApi.mockReturnValue(true);
 
       // CSRF enabled in sessionOptions
@@ -369,7 +383,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
         saveToResponse: jest.fn().mockResolvedValue(new Response()),
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
-      mockIsValidCsrf.mockReturnValue(true);
+      mockIsValidCsrf.mockResolvedValue(true);
 
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       await middleware(mockRequest);
@@ -378,7 +392,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should return 403 when CSRF validation fails for API routes (no previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       // CSRF enabled in sessionOptions
@@ -403,7 +417,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
         saveToResponse: jest.fn().mockResolvedValue(new Response()),
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
-      mockIsValidCsrf.mockReturnValue(false);
+      mockIsValidCsrf.mockResolvedValue(false);
 
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
@@ -416,7 +430,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should return 403 when CSRF validation fails for API routes (with previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       // CSRF enabled in sessionOptions
@@ -441,7 +455,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
         saveToResponse: jest.fn().mockResolvedValue(new Response()),
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
-      mockIsValidCsrf.mockReturnValue(false);
+      mockIsValidCsrf.mockResolvedValue(false);
 
       const previousResponse = NextResponse.next();
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
@@ -454,7 +468,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should not validate CSRF for protected page routes', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
 
       // CSRF enabled in sessionOptions
@@ -487,7 +501,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should handle missing CSRF token in session when CSRF is enabled', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       // CSRF enabled in sessionOptions
@@ -512,7 +526,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
         saveToResponse: jest.fn().mockResolvedValue(new Response()),
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
-      mockIsValidCsrf.mockReturnValue(false);
+      mockIsValidCsrf.mockResolvedValue(false);
 
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
@@ -526,7 +540,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
 
   describe('Token Refresh', () => {
     it('should refresh token when expired', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       const expiredTime = Date.now() - 1000;
 
@@ -559,7 +573,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should not refresh token when not expired', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       const futureTime = Date.now() + 3600000;
 
@@ -582,7 +596,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should return 401 for API route when token refresh fails (no previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       const expiredTime = Date.now() - 1000;
 
@@ -604,7 +618,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should return 401 for API route when token refresh fails (with previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       const expiredTime = Date.now() - 1000;
 
@@ -626,7 +640,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should call onPageUnauthenticated when token refresh fails for page route (no previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
       const expiredTime = Date.now() - 1000;
 
@@ -648,7 +662,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should call onPageUnauthenticated when token refresh fails for page route (with previous response)', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
       const expiredTime = Date.now() - 1000;
 
@@ -669,7 +683,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should skip token refresh when refreshToken is missing', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSession = {
@@ -691,7 +705,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should skip token refresh when expiresAt is undefined', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSession = {
@@ -713,7 +727,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should skip token refresh when both refreshToken and expiresAt are missing', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSession = {
@@ -735,7 +749,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should skip token refresh when refreshToken is null', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSession = {
@@ -757,7 +771,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should refresh token and save session with previous response', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       const expiredTime = Date.now() - 1000;
 
@@ -783,16 +797,20 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
 
       const previousResponse = NextResponse.next();
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
-      await middleware(mockRequest, previousResponse);
+      const result = await middleware(mockRequest, previousResponse);
 
       expect(wristbandAuth.refreshTokenIfExpired).toHaveBeenCalledWith('test-refresh-token', expiredTime);
       expect(mockSession.accessToken).toBe('new-access-token');
       expect(mockSession.refreshToken).toBe('new-refresh-token');
       expect(mockSession.expiresAt).toBe(newTokenData.expiresAt);
 
-      // Should copy session headers onto the previous response
-      expect(mockCopyResponseHeaders).toHaveBeenCalledTimes(1);
-      expect(mockCopyResponseHeaders).toHaveBeenCalledWith(mockSessionResponse, previousResponse);
+      // Should copy the previous response headers, then the session headers, onto a new forwarded response
+      expect(result).not.toBe(previousResponse);
+      expect(mockCopyResponseHeaders).toHaveBeenCalledTimes(2);
+      expect(mockCopyResponseHeaders).toHaveBeenNthCalledWith(1, previousResponse, result);
+      expect(mockCopyResponseHeaders).toHaveBeenNthCalledWith(2, mockSessionResponse, result);
+      // The refreshed session cookie is put on the request for the route handler
+      expect(mockSetSessionCookieOnRequest).toHaveBeenCalledWith(mockRequest, mockSessionResponse, 'test-session');
     });
   });
 
@@ -804,7 +822,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     }
 
     it('should support custom session data types', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSession: CustomSessionData = {
@@ -831,7 +849,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
 
   describe('Session Strategy Error Reasons', () => {
     it('should return 401 with not_authenticated reason when session is not authenticated', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSession = {
@@ -848,7 +866,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should return 401 with token_refresh_failed reason when token refresh fails for API', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
       const expiredTime = Date.now() - 1000;
 
@@ -870,7 +888,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should return 500 with unexpected_error reason when session retrieval throws for API', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session service crashed'));
@@ -884,7 +902,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should return 403 with csrf_failed reason when CSRF validation fails', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const configWithCsrf = {
@@ -904,7 +922,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
         csrfToken: 'test-csrf-token',
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
-      mockIsValidCsrf.mockReturnValue(false);
+      mockIsValidCsrf.mockResolvedValue(false);
 
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
@@ -915,7 +933,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should pass not_authenticated reason to onPageUnauthenticated when session not authenticated', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
 
       const mockSession = {
@@ -930,7 +948,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should pass token_refresh_failed reason to onPageUnauthenticated when refresh fails', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
       const expiredTime = Date.now() - 1000;
 
@@ -950,7 +968,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should pass unexpected_error reason to onPageUnauthenticated when session throws', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockRequest = createRequestWithSession('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
 
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session crashed'));
@@ -962,7 +980,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
     });
 
     it('should verify error message text matches HTTP status code', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       // Test 401
@@ -990,7 +1008,7 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
         csrfToken: 'test-csrf',
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession403 as any);
-      mockIsValidCsrf.mockReturnValue(false);
+      mockIsValidCsrf.mockResolvedValue(false);
       const result403 = await wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig)(mockRequest);
       expect(result403.status).toBe(403);
       const body403 = await result403.json();
@@ -1002,6 +1020,188 @@ describe('WristbandAuth Middleware - Session Strategy', () => {
       expect(result500.status).toBe(500);
       const body500 = await result500.json();
       expect(body500.error).toBe('Internal Server Error');
+    });
+  });
+
+  describe('Session Cookie Detection', () => {
+    it('should return 401 without reading the session when the request has no session cookie', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(mockGetSessionFromRequest).not.toHaveBeenCalled();
+      expect(result.status).toBe(401);
+      const body = await result.json();
+      expect(body.error).toBe('Unauthorized');
+    });
+
+    it('should pass not_authenticated to onPageUnauthenticated when a page request has no session cookie', async () => {
+      mockRequest = new NextRequest('https://test.com/dashboard');
+      mockIsProtectedPage.mockReturnValue(true);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      await middleware(mockRequest);
+
+      expect(mockGetSessionFromRequest).not.toHaveBeenCalled();
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated');
+    });
+
+    it('should treat an empty session cookie as missing', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users', { headers: { cookie: 'test-session=' } });
+      mockIsProtectedApi.mockReturnValue(true);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(mockGetSessionFromRequest).not.toHaveBeenCalled();
+      expect(result.status).toBe(401);
+    });
+
+    it('should ignore a default-named session cookie when a custom cookieName is configured', async () => {
+      // mockMiddlewareConfig uses cookieName 'test-session', so a 'session' cookie isn't the session credential.
+      mockRequest = new NextRequest('https://test.com/api/v1/users', { headers: { cookie: 'session=some-value' } });
+      mockIsProtectedApi.mockReturnValue(true);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(mockGetSessionFromRequest).not.toHaveBeenCalled();
+      expect(result.status).toBe(401);
+    });
+
+    it('should read the session when the configured custom cookieName is present', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users', {
+        headers: { cookie: 'other=1; test-session=encrypted-session-value' },
+      });
+      mockIsProtectedApi.mockReturnValue(true);
+
+      const mockSession = {
+        isAuthenticated: true,
+        saveToResponse: jest.fn().mockResolvedValue(new Response()),
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(mockGetSessionFromRequest).toHaveBeenCalled();
+      expect(result.status).not.toBe(401);
+    });
+
+    it("should use typescript-session's default cookie name when cookieName isn't configured", async () => {
+      const defaultCookieSessionOptions = { secrets: ['test-secret'] };
+      mockNormalizeMiddlewareConfig.mockReturnValue({
+        ...defaultNormalizedConfig,
+        sessionConfig: { ...defaultNormalizedConfig.sessionConfig, sessionOptions: defaultCookieSessionOptions },
+      });
+      mockRequest = new NextRequest('https://test.com/api/v1/users', { headers: { cookie: 'session=some-value' } });
+      mockIsProtectedApi.mockReturnValue(true);
+
+      const mockSession = {
+        isAuthenticated: true,
+        saveToResponse: jest.fn().mockResolvedValue(new Response()),
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+
+      const middleware = wristbandAuth.createMiddlewareAuth({
+        ...mockMiddlewareConfig,
+        sessionConfig: { sessionOptions: defaultCookieSessionOptions },
+      });
+      const result = await middleware(mockRequest);
+
+      expect(mockGetSessionFromRequest).toHaveBeenCalledWith(mockRequest, defaultCookieSessionOptions);
+      expect(result.status).not.toBe(401);
+    });
+  });
+
+  describe('Session Cookie Forwarding', () => {
+    function mockAuthenticatedSession(sessionResponse: Response) {
+      const mockSession = {
+        isAuthenticated: true,
+        csrfToken: 'test-csrf-token',
+        refreshToken: 'test-refresh-token',
+        expiresAt: Date.now() + 3600000,
+        saveToResponse: jest.fn().mockResolvedValue(sessionResponse),
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+      return mockSession;
+    }
+
+    it('should put the saved session cookie on the request using the configured cookie name', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+      const mockSessionResponse = new Response();
+      mockAuthenticatedSession(mockSessionResponse);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      await middleware(mockRequest);
+
+      expect(mockSetSessionCookieOnRequest).toHaveBeenCalledTimes(1);
+      expect(mockSetSessionCookieOnRequest).toHaveBeenCalledWith(mockRequest, mockSessionResponse, 'test-session');
+    });
+
+    it("should use typescript-session's default cookie name when cookieName isn't configured", async () => {
+      const defaultCookieSessionOptions = { secrets: ['test-secret'] };
+      mockNormalizeMiddlewareConfig.mockReturnValue({
+        ...defaultNormalizedConfig,
+        sessionConfig: { ...defaultNormalizedConfig.sessionConfig, sessionOptions: defaultCookieSessionOptions },
+      });
+      mockRequest = new NextRequest('https://test.com/api/v1/users', { headers: { cookie: 'session=some-value' } });
+      mockIsProtectedApi.mockReturnValue(true);
+      const mockSessionResponse = new Response();
+      mockAuthenticatedSession(mockSessionResponse);
+
+      const middleware = wristbandAuth.createMiddlewareAuth({
+        ...mockMiddlewareConfig,
+        sessionConfig: { sessionOptions: defaultCookieSessionOptions },
+      });
+      await middleware(mockRequest);
+
+      expect(mockSetSessionCookieOnRequest).toHaveBeenCalledWith(mockRequest, mockSessionResponse, 'session');
+    });
+
+    it('should return a forwarded response that passes the updated request headers to the route handler', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+      mockAuthenticatedSession(new Response());
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      // NextResponse.next({ request: { headers } }) marks the response with the request headers to forward.
+      expect(result.headers.get('x-middleware-override-headers')).toContain('cookie');
+      expect(result.headers.get('x-middleware-request-cookie')).toBe(mockRequest.headers.get('cookie'));
+    });
+
+    it('should add the session cookies to a redirect previousResponse without forwarding the request', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+      const mockSessionResponse = new Response();
+      mockAuthenticatedSession(mockSessionResponse);
+
+      const previousResponse = NextResponse.redirect('https://test.com/elsewhere');
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest, previousResponse);
+
+      expect(result).toBe(previousResponse);
+      expect(result.status).toBe(307);
+      expect(mockCopyResponseHeaders).toHaveBeenCalledTimes(1);
+      expect(mockCopyResponseHeaders).toHaveBeenCalledWith(mockSessionResponse, previousResponse);
+      expect(mockSetSessionCookieOnRequest).not.toHaveBeenCalled();
+    });
+
+    it('should not put the session cookie on the request when authentication fails', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
+      mockIsProtectedApi.mockReturnValue(true);
+      mockGetSessionFromRequest.mockResolvedValue({ isAuthenticated: false } as any);
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(result.status).toBe(401);
+      expect(mockSetSessionCookieOnRequest).not.toHaveBeenCalled();
     });
   });
 });

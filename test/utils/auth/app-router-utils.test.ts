@@ -15,8 +15,10 @@ import {
 import { createMockNextRequest, CLIENT_ID } from '../../test-utils';
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
 
+// Keep the real helpers (e.g. toSafeTenantName) and fake only generateRandomString.
 jest.mock('../../../src/utils/auth/common-utils', () => {
   return {
+    ...jest.requireActual('../../../src/utils/auth/common-utils'),
     generateRandomString: jest.fn((length) => {
       return 'a'.repeat(length);
     }),
@@ -267,6 +269,39 @@ describe('resolveTenantName', () => {
 
     const result = resolveTenantName(req, 'example.com', true);
     expect(result).toBe('tenant');
+  });
+
+  test.each(['evil.com#', 'evil.com/path', 'evil.com?x=', 'user@evil', 'ten_ant', '-tenant'])(
+    'should return empty string when the tenant_name query param is not a valid DNS label: %s',
+    (tenantName) => {
+      const req = createMockNextRequest({
+        url: `https://example.com/path?tenant_name=${encodeURIComponent(tenantName)}`,
+        headers: { host: 'example.com' },
+      });
+
+      expect(resolveTenantName(req, '', false)).toBe('');
+    }
+  );
+
+  test.each(['ten_ant.example.com', 'user@evil.example.com', '-tenant.example.com'])(
+    'should return empty string when the tenant subdomain is not a valid DNS label: %s',
+    (host) => {
+      const req = createMockNextRequest({
+        url: 'https://example.com/path',
+        headers: { host },
+      });
+
+      expect(resolveTenantName(req, 'example.com', false)).toBe('');
+    }
+  );
+
+  test('should return empty string when the forwarded tenant subdomain is not a valid DNS label', () => {
+    const req = createMockNextRequest({
+      url: 'http://localhost:3000/path',
+      headers: { host: 'localhost:3000', 'x-forwarded-host': 'ten_ant.example.com' },
+    });
+
+    expect(resolveTenantName(req, 'example.com', true)).toBe('');
   });
 });
 

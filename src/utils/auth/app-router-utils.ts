@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR, REDIRECT_RESPONSE_INIT } from '../constants';
 import { AppRouterLoginStateCookie, LoginConfig } from '../../types';
 import { Base64 } from '../base64';
-import { generateRandomString } from './common-utils';
+import { generateRandomString, toSafeTenantName } from './common-utils';
 import { WristbandError } from '../../error';
 
 function parseCookies(cookieHeader: string | null): Record<string, string> {
@@ -67,8 +67,9 @@ export function resolveTenantName(
   parseTenantFromRootDomain: string,
   trustProxyHeaders: boolean
 ): string {
+  // Tenant names that aren't a single DNS label are ignored, as if no tenant name was given.
   if (parseTenantFromRootDomain) {
-    return parseTenantSubdomain(request, parseTenantFromRootDomain, trustProxyHeaders) || '';
+    return toSafeTenantName(parseTenantSubdomain(request, parseTenantFromRootDomain, trustProxyHeaders));
   }
 
   const tenantNameParam = request.nextUrl.searchParams.getAll('tenant_name');
@@ -77,7 +78,7 @@ export function resolveTenantName(
     throw new TypeError('More than one [tenant_name] query parameter was encountered');
   }
 
-  return tenantNameParam[0] || '';
+  return toSafeTenantName(tenantNameParam[0]);
 }
 
 export function resolveTenantCustomDomainParam(request: NextRequest): string {

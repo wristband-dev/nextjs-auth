@@ -35,6 +35,7 @@ import {
   isValidCsrf,
   normalizeMiddlewareConfig,
   resolveOnPageUnauthenticated,
+  setSessionCookieOnRequest,
 } from '../utils/middleware';
 import { WristbandAuth } from './wristband-auth';
 import { WristbandService } from '../wristband-service';
@@ -164,19 +165,25 @@ export class WristbandAuthImpl implements WristbandAuth {
       // For session/token endpoints, ONLY use SESSION strategy (prevents JWT from breaking them)
       const strategiesToTry: AuthStrategy[] = isWristbandAuthEndpoint ? ['SESSION'] : normalizedConfig.authStrategies;
 
-      // Try all auth strategies in the sequential order in which they were provided.
+      // Check the auth strategies in the sequential order in which they were provided. If every strategy is
+      // skipped because the request carries no credentials, the request is not authenticated.
       let result: AuthStrategyResult<T> = { authenticated: false, reason: 'not_authenticated' };
 
       for (let i = 0; i < strategiesToTry.length; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
-        result = await this.tryAuthStrategy<T>(request, strategiesToTry[i], normalizedConfig, isProtectedApiRoute);
+        const strategy = strategiesToTry[i];
 
-        if (result.authenticated) {
-          break;
+        // Skip to the next strategy when the request doesn't carry this strategy's credential.
+        if (!this.hasCredential(request, strategy, normalizedConfig)) {
+          continue;
         }
+
+        // The credential is present, so its result is final: later strategies aren't tried.
+        // eslint-disable-next-line no-await-in-loop
+        result = await this.tryAuthStrategy<T>(request, strategy, normalizedConfig, isProtectedApiRoute);
+        break;
       }
 
-      // If no strategy succeeded, handle the auth faiure accordingly.
+      // If authentication failed, handle the auth failure accordingly.
       if (!result.authenticated) {
         const failureResponse = await this.getAuthFailureResponse(
           request,
@@ -187,16 +194,57 @@ export class WristbandAuthImpl implements WristbandAuth {
         return previousResponse ? copyResponseHeaders(previousResponse, failureResponse) : failureResponse;
       }
 
-      const finalResponse: NextResponse = previousResponse || NextResponse.next();
-
       // Save session/CSRF cookie headers only if we used SESSION strategy
       if (result.usedStrategy === 'SESSION' && result.session) {
         const sessionResponse = await result.session.saveToResponse(new Response());
-        return copyResponseHeaders(sessionResponse, finalResponse);
+
+        // A redirect from an earlier middleware ends the request here, so there is no route handler to update.
+        if (previousResponse && previousResponse.status >= 300 && previousResponse.status < 400) {
+          return copyResponseHeaders(sessionResponse, previousResponse);
+        }
+
+        // Also put the saved session cookie on the request, so the route handler on this same request reads
+        // the refreshed session instead of the old one. typescript-session default name is 'session'.
+        const sessionCookieName = normalizedConfig.sessionConfig.sessionOptions?.cookieName ?? 'session';
+        setSessionCookieOnRequest(request, sessionResponse, sessionCookieName);
+        const forwardedResponse = NextResponse.next({ request: { headers: request.headers } });
+
+        // Keep the headers and cookies from previousResponse, then add the session Set-Cookie headers.
+        if (previousResponse) {
+          copyResponseHeaders(previousResponse, forwardedResponse);
+        }
+        return copyResponseHeaders(sessionResponse, forwardedResponse);
       }
 
-      return finalResponse;
+      return previousResponse || NextResponse.next();
     };
+  }
+
+  /**
+   * Checks whether the request carries the credential for an auth strategy: a session cookie for SESSION,
+   * or an Authorization header for JWT. Only presence is checked, not validity.
+   *
+   * @param request - The incoming Next.js request.
+   * @param strategy - The auth strategy to check.
+   * @param normalizedConfig - The fully normalized middleware configuration.
+   * @returns True if the credential is present, otherwise false.
+   */
+  private hasCredential(
+    request: NextRequest,
+    strategy: AuthStrategy,
+    normalizedConfig: NormalizedMiddlewareConfig
+  ): boolean {
+    if (strategy === 'SESSION') {
+      // Matches typescript-session's default session cookie name.
+      const cookieName = normalizedConfig.sessionConfig.sessionOptions?.cookieName ?? 'session';
+      return !!request.cookies.get(cookieName)?.value;
+    }
+
+    if (strategy === 'JWT') {
+      return !!request.headers.get('authorization');
+    }
+
+    return false;
   }
 
   /**
@@ -250,7 +298,7 @@ export class WristbandAuthImpl implements WristbandAuth {
 
         // CSRF validation (only for API routes)
         if (isProtectedApiRoute && sessionOptions?.enableCsrfProtection) {
-          const csrfValid = isValidCsrf(request, session.csrfToken, csrfTokenHeaderName);
+          const csrfValid = await isValidCsrf(request, session.csrfToken, csrfTokenHeaderName);
           if (!csrfValid) {
             return { authenticated: false, reason: 'csrf_failed' };
           }
@@ -277,19 +325,31 @@ export class WristbandAuthImpl implements WristbandAuth {
     }
 
     if (strategy === 'JWT') {
+      let jwtValidator: WristbandJwtValidator;
       try {
-        const jwtValidator = this.getJwtValidator(normalizedConfig.jwtConfig);
+        jwtValidator = this.getJwtValidator(normalizedConfig.jwtConfig);
+      } catch {
+        return { authenticated: false, reason: 'unexpected_error' };
+      }
 
-        const authHeader = request.headers.get('authorization');
-        if (!authHeader) {
-          return { authenticated: false, reason: 'not_authenticated' };
-        }
+      const authHeader = request.headers.get('authorization');
+      if (!authHeader) {
+        return { authenticated: false, reason: 'not_authenticated' };
+      }
 
-        const bearerToken = jwtValidator.extractBearerToken(authHeader);
-        if (!bearerToken) {
-          return { authenticated: false, reason: 'not_authenticated' };
-        }
+      // A malformed or non-Bearer Authorization header is a missing credential, not a server error.
+      let bearerToken: string;
+      try {
+        bearerToken = jwtValidator.extractBearerToken(authHeader);
+      } catch {
+        return { authenticated: false, reason: 'not_authenticated' };
+      }
 
+      if (!bearerToken) {
+        return { authenticated: false, reason: 'not_authenticated' };
+      }
+
+      try {
         const validationResult = await jwtValidator.validate(bearerToken);
         if (!validationResult.isValid) {
           return { authenticated: false, reason: 'not_authenticated' };

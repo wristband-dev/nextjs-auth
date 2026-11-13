@@ -48,7 +48,7 @@
 
 ## Minimum Node.js and npm Versions
 
-The minimum supported Node.js version is now 22.0.0, and the minimum npm version is now 10.5.1. Node.js 20 reached end of life on April 30, 2026.
+The minimum supported Node.js version is now 22.3.0, and the minimum npm version is now 10.5.1. Node.js 20 reached end of life on April 30, 2026.
 
 The SDK's `package.json` now declares:
 
@@ -63,13 +63,13 @@ The SDK's `package.json` now declares:
 **After (v5.x):**
 ```json
 "engines": {
-+ "node": ">=22.0.0",
++ "node": ">=22.3.0",
 + "npm": ">=10.5.1"
 }
 ```
 
 **Key Changes:**
-1. Upgrade your app's runtime to Node.js 22 or later (Node.js 22.0.0 ships with npm 10.5.1, so upgrading Node covers npm too)
+1. Upgrade your app's runtime to Node.js 22.3.0 or later
 2. Update anything still pinned to Node.js 20, such as CI workflows, Dockerfiles, `.nvmrc` files, or hosting platform settings
 
 <br>

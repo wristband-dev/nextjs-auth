@@ -17,3 +17,7 @@ export const TENANT_NAME_PLACEHOLDER: string = '{tenant_name}';
 export const LEADING_TENANT_PLACEHOLDER_REGEX = /^https?:\/\/\{tenant_name\}\./;
 export const TENANT_PLACEHOLDER_REGEX = /\{tenant_name\}/;
 export const TENANT_PLACEHOLDER_MSG = '"{tenant_name}" placeholder';
+// One DNS label: letters, digits, and inner hyphens, up to 63 characters.
+const DNS_LABEL = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
+export const TENANT_NAME_REGEX = new RegExp(`^${DNS_LABEL}$`, 'i');
+export const DOMAIN_NAME_REGEX = new RegExp(`^(?:${DNS_LABEL}\\.)+${DNS_LABEL}$`, 'i');

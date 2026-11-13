@@ -112,7 +112,7 @@ describe('WristbandAuth Middleware - JWT Strategy', () => {
 
     mockIsProtectedApi.mockReturnValue(false);
     mockIsProtectedPage.mockReturnValue(false);
-    mockIsValidCsrf.mockReturnValue(true);
+    mockIsValidCsrf.mockResolvedValue(true);
 
     mockCopyResponseHeaders.mockImplementation((source, target) => {
       return target;
@@ -153,6 +153,26 @@ describe('WristbandAuth Middleware - JWT Strategy', () => {
 
       expect(mockJwtValidator.extractBearerToken).toHaveBeenCalledWith('InvalidFormat token');
       expect(result.status).toBe(401);
+      expect(mockJwtValidator.validate).not.toHaveBeenCalled();
+    });
+
+    it('should return 401 when bearer token extraction throws for a non-Bearer header', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users', {
+        headers: { Authorization: 'Basic abc' },
+      });
+      mockIsProtectedApi.mockReturnValue(true);
+      // typescript-jwt throws for any header that doesn't start with "Bearer ".
+      mockJwtValidator.extractBearerToken.mockImplementation(() => {
+        throw new Error('Authorization header must provide "Bearer" token');
+      });
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(mockJwtValidator.extractBearerToken).toHaveBeenCalledWith('Basic abc');
+      expect(result.status).toBe(401);
+      const body = await result.json();
+      expect(body.error).toBe('Unauthorized');
       expect(mockJwtValidator.validate).not.toHaveBeenCalled();
     });
 
@@ -471,6 +491,39 @@ describe('WristbandAuth Middleware - JWT Strategy', () => {
       await middleware(mockRequest);
 
       expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated');
+    });
+
+    it('should pass not_authenticated reason to onPageUnauthenticated for a non-Bearer header', async () => {
+      mockRequest = new NextRequest('https://test.com/dashboard', {
+        headers: { Authorization: 'Basic abc' },
+      });
+      mockIsProtectedPage.mockReturnValue(true);
+      mockJwtValidator.extractBearerToken.mockImplementation(() => {
+        throw new Error('Authorization header must provide "Bearer" token');
+      });
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      await middleware(mockRequest);
+
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated');
+    });
+
+    it('should return 500 with unexpected_error reason when the JWT validator cannot be created', async () => {
+      mockRequest = new NextRequest('https://test.com/api/v1/users', {
+        headers: { Authorization: 'Bearer test-jwt-token' },
+      });
+      mockIsProtectedApi.mockReturnValue(true);
+      mockCreateWristbandJwtValidator.mockImplementation(() => {
+        throw new Error('Invalid JWT validator config');
+      });
+
+      const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
+      const result = await middleware(mockRequest);
+
+      expect(result.status).toBe(500);
+      const body = await result.json();
+      expect(body.error).toBe('Internal Server Error');
+      expect(mockJwtValidator.extractBearerToken).not.toHaveBeenCalled();
     });
 
     it('should pass unexpected_error reason to onPageUnauthenticated when JWT validator throws', async () => {
