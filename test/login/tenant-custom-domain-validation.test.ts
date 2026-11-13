@@ -2,7 +2,7 @@ import { createMocks } from 'node-mocks-http';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import type { MockResponse } from 'node-mocks-http';
 
-import { createWristbandAuth, WristbandAuth } from '../../src/index';
+import { createWristbandAuth, WristbandAuth, WristbandError } from '../../src/index';
 import { CLIENT_ID, CLIENT_SECRET, createMockNextRequest, LOGIN_STATE_COOKIE_SECRET } from '../test-utils';
 import { expectValidateCalled, expectValidateNotCalled, mockWristbandFetch } from '../helpers/mock-fetch';
 
@@ -117,14 +117,13 @@ describe('Login - Tenant Custom Domain Validation', () => {
       expect(new URL(authorizeUrl).origin).toEqual('https://default.tenant.com');
     });
 
-    test('Skips the tenant custom domain when the validation endpoint fails', async () => {
-      // @wristband/typescript-auth treats a domain it can't validate as unverified and falls through (v5 threw FetchError)
+    test('Propagates a WristbandError when the validation endpoint fails', async () => {
+      // @wristband/typescript-auth wraps the failure in WristbandError (v5 threw the internal FetchError)
       mockWristbandFetch({ validateStatus: 500 });
 
-      const response = await wristbandAuth.appRouter.login(
-        createRequest(`tenant_custom_domain=${TENANT_CUSTOM_DOMAIN}`)
-      );
-      expect(new URL(response.headers.get('location') as string).host).not.toEqual(TENANT_CUSTOM_DOMAIN);
+      await expect(
+        wristbandAuth.appRouter.login(createRequest(`tenant_custom_domain=${TENANT_CUSTOM_DOMAIN}`))
+      ).rejects.toThrow(WristbandError);
     });
   });
 
@@ -207,13 +206,12 @@ describe('Login - Tenant Custom Domain Validation', () => {
       expect(new URL(authorizeUrl).origin).toEqual('https://default.tenant.com');
     });
 
-    test('Skips the tenant custom domain when the validation endpoint fails', async () => {
-      // @wristband/typescript-auth treats a domain it can't validate as unverified and falls through (v5 threw FetchError)
+    test('Propagates a WristbandError when the validation endpoint fails', async () => {
+      // @wristband/typescript-auth wraps the failure in WristbandError (v5 threw the internal FetchError)
       mockWristbandFetch({ validateStatus: 500 });
 
       const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: TENANT_CUSTOM_DOMAIN });
-      const location = await wristbandAuth.pagesRouter.login(mockReq, mockRes);
-      expect(new URL(location).host).not.toEqual(TENANT_CUSTOM_DOMAIN);
+      await expect(wristbandAuth.pagesRouter.login(mockReq, mockRes)).rejects.toThrow(WristbandError);
     });
   });
 });
