@@ -39,7 +39,7 @@ describe('Refresh Token Errors', () => {
       fail('Expected error to be thrown');
     } catch (error: any) {
       expect(error).toBeInstanceOf(TypeError);
-      expect(error.message).toBe('The expiresAt field must be an integer greater than 0');
+      expect(error.message).toBe('The expiresAt field must be an integer greater than or equal to 0');
     }
   });
 

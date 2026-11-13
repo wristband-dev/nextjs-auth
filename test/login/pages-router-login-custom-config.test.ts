@@ -925,4 +925,69 @@ describe('Custom Login Configurations', () => {
       }
     );
   });
+
+  describe('Invalid Default Tenant Config', () => {
+    beforeEach(() => {
+      loginUrl = `https://${parseTenantFromRootDomain}/api/auth/login`;
+      redirectUri = `https://${parseTenantFromRootDomain}/api/auth/callback`;
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        isApplicationCustomDomainActive: true,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+    });
+
+    function createReqRes() {
+      const { req, res } = createMocks({
+        method: 'GET',
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      return {
+        mockReq: req as unknown as NextApiRequest,
+        mockRes: res as unknown as MockResponse<NextApiResponse>,
+      };
+    }
+
+    test.each(['evil.com#', 'evil.com/path', 'evil.com:443', 'user@evil.com', 'localhost'])(
+      'Invalid default tenant custom domain falls through to the default tenant name: %s',
+      async (defaultTenantCustomDomain) => {
+        const { mockReq, mockRes } = createReqRes();
+        const authorizeUrl = await wristbandAuth.pagesRouter.login(mockReq, mockRes, {
+          defaultTenantCustomDomain,
+          defaultTenantName: 'global',
+        });
+
+        validateRedirectResponse(authorizeUrl, `https://global.${wristbandApplicationVanityDomain}`);
+        await validateLoginStateCookie(mockRes);
+      }
+    );
+
+    test.each(['evil.com#', 'evil.com/path', 'evil.com?x=', 'user@evil', 'ten_ant'])(
+      'Invalid default tenant name falls back to application-level login: %s',
+      async (defaultTenantName) => {
+        const { mockReq, mockRes } = createReqRes();
+        const location = await wristbandAuth.pagesRouter.login(mockReq, mockRes, { defaultTenantName });
+
+        expect(location).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
+        expect(mockRes.getHeader('Set-Cookie')).toBeUndefined();
+      }
+    );
+
+    test('Invalid default tenant custom domain and name fall back to application-level login', async () => {
+      const { mockReq, mockRes } = createReqRes();
+      const location = await wristbandAuth.pagesRouter.login(mockReq, mockRes, {
+        defaultTenantCustomDomain: 'evil.com/path',
+        defaultTenantName: 'evil.com#',
+      });
+
+      expect(location).toBe(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
+      expect(mockRes.getHeader('Set-Cookie')).toBeUndefined();
+    });
+  });
 });

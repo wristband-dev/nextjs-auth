@@ -31,6 +31,8 @@ import {
   getAppLevelLoginUrl,
   getTenantLevelAuthorizationUrl,
   resolveValidTenantCustomDomain,
+  toSafeDomainName,
+  toSafeTenantName,
 } from '../../utils/auth/common-utils';
 
 export class PagesRouterAuthHandler {
@@ -66,8 +68,8 @@ export class PagesRouterAuthHandler {
       this.wristbandService
     );
     const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain, trustProxyHeaders);
-    const defaultTenantCustomDomain: string = loginConfig.defaultTenantCustomDomain || '';
-    const defaultTenantName: string = loginConfig.defaultTenantName || '';
+    const defaultTenantCustomDomain: string = toSafeDomainName(loginConfig.defaultTenantCustomDomain);
+    const defaultTenantName: string = toSafeTenantName(loginConfig.defaultTenantName);
 
     // Create the login state which will be cached in a cookie so that it can be accessed in the callback.
     const resolvedReturnUrl = resolveReturnUrl(request, loginConfig);
@@ -302,6 +304,10 @@ export class PagesRouterAuthHandler {
     const trustProxyHeaders = this.configResolver.getTrustProxyHeaders();
     const wristbandApplicationVanityDomain = this.configResolver.getWristbandApplicationVanityDomain();
 
+    if (logoutConfig.state && logoutConfig.state.length > STATE_PARAM_MAX_CHAR_LENGTH) {
+      throw new TypeError(`The [state] logout config cannot exceed ${STATE_PARAM_MAX_CHAR_LENGTH} characters.`);
+    }
+
     // Revoke the refresh token only if present.
     if (logoutConfig.refreshToken) {
       try {
@@ -312,13 +318,12 @@ export class PagesRouterAuthHandler {
       }
     }
 
-    if (logoutConfig.state && logoutConfig.state.length > STATE_PARAM_MAX_CHAR_LENGTH) {
-      throw new TypeError(`The [state] logout config cannot exceed ${STATE_PARAM_MAX_CHAR_LENGTH} characters.`);
-    }
-
     // The client ID is always required by the Wristband Logout Endpoint.
-    const logoutRedirectUrl: string = logoutConfig.redirectUrl ? `&redirect_url=${logoutConfig.redirectUrl}` : '';
-    const state = logoutConfig.state ? `&state=${logoutConfig.state}` : '';
+    const logoutRedirectUrl: string = logoutConfig.redirectUrl
+      ? `&redirect_url=${encodeURIComponent(logoutConfig.redirectUrl)}`
+      : '';
+    const state: string = logoutConfig.state ? `&state=${encodeURIComponent(logoutConfig.state)}` : '';
+
     const logoutPath: string = `/api/v1/logout?client_id=${clientId}${logoutRedirectUrl}${state}`;
     const separator = isApplicationCustomDomainActive ? '.' : '-';
     const tenantCustomDomainParam: string = await resolveValidTenantCustomDomain(
@@ -327,15 +332,19 @@ export class PagesRouterAuthHandler {
     );
     const tenantName: string = resolveTenantName(request, parseTenantFromRootDomain, trustProxyHeaders);
 
+    // LogoutConfig values usually come from the session, so they are checked like request input.
+    const configTenantCustomDomain: string = toSafeDomainName(logoutConfig.tenantCustomDomain);
+    const configTenantName: string = toSafeTenantName(logoutConfig.tenantName);
+
     // Domain priority order resolution:
     // 1) If the LogoutConfig has a tenant custom domain explicitly defined, use that.
-    if (logoutConfig.tenantCustomDomain) {
-      return `https://${logoutConfig.tenantCustomDomain}${logoutPath}`;
+    if (configTenantCustomDomain) {
+      return `https://${configTenantCustomDomain}${logoutPath}`;
     }
 
     // 2) If the LogoutConfig has a tenant name defined, then use that.
-    if (logoutConfig.tenantName) {
-      return `https://${logoutConfig.tenantName}${separator}${wristbandApplicationVanityDomain}${logoutPath}`;
+    if (configTenantName) {
+      return `https://${configTenantName}${separator}${wristbandApplicationVanityDomain}${logoutPath}`;
     }
 
     // 3) If the tenant_custom_domain query param exists, then use that.

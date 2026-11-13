@@ -14,8 +14,13 @@ import {
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../../../src/utils/constants';
 import * as authCommonUtils from '../../../src/utils/auth/common-utils';
 
-// Mock common utils
-jest.mock('../../../src/utils/auth/common-utils');
+// Keep the real helpers (e.g. toSafeTenantName) and fake only generateRandomString.
+jest.mock('../../../src/utils/auth/common-utils', () => {
+  return {
+    ...jest.requireActual('../../../src/utils/auth/common-utils'),
+    generateRandomString: jest.fn(),
+  };
+});
 const mockGenerateRandomString = authCommonUtils.generateRandomString as jest.MockedFunction<
   typeof authCommonUtils.generateRandomString
 >;
@@ -273,6 +278,39 @@ describe('Page Router Utils', () => {
 
       const result = resolveTenantName(req, 'example.com', true);
       expect(result).toBe('tenant1');
+    });
+
+    it.each(['evil.com#', 'evil.com/path', 'evil.com?x=', 'user@evil', 'ten_ant', '-tenant'])(
+      'should return empty string when the tenant_name query param is not a valid DNS label: %s',
+      (tenantName) => {
+        const req = {
+          headers: { host: 'example.com' },
+          query: { tenant_name: tenantName },
+        } as unknown as NextApiRequest;
+
+        expect(resolveTenantName(req, '', false)).toBe('');
+      }
+    );
+
+    it.each(['ten_ant.example.com', 'user@evil.example.com', '-tenant.example.com'])(
+      'should return empty string when the tenant subdomain is not a valid DNS label: %s',
+      (host) => {
+        const req = {
+          headers: { host },
+          query: {},
+        } as unknown as NextApiRequest;
+
+        expect(resolveTenantName(req, 'example.com', false)).toBe('');
+      }
+    );
+
+    it('should return empty string when the forwarded tenant subdomain is not a valid DNS label', () => {
+      const req = {
+        headers: { host: 'localhost:3000', 'x-forwarded-host': 'ten_ant.example.com' },
+        query: {},
+      } as unknown as NextApiRequest;
+
+      expect(resolveTenantName(req, 'example.com', true)).toBe('');
     });
   });
 

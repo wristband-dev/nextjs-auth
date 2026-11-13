@@ -5,10 +5,12 @@ import { Base64 } from '../base64';
 import { CookieCrypto } from '../crypto';
 import { CryptoError } from '../../error/crypto-error';
 import {
+  DOMAIN_NAME_REGEX,
   LEADING_TENANT_PLACEHOLDER_REGEX,
   LOGIN_STATE_COOKIE_MAX_AGE_SEC,
   STATE_PARAM_MAX_CHAR_LENGTH,
   TENANT_NAME_PLACEHOLDER,
+  TENANT_NAME_REGEX,
   TENANT_PLACEHOLDER_REGEX,
 } from '../constants';
 
@@ -25,7 +27,8 @@ export async function resolveValidTenantCustomDomain(
   tenantCustomDomain: string,
   wristbandService: WristbandService
 ): Promise<string> {
-  if (!tenantCustomDomain) {
+  // Skip the API call when the value isn't a well-formed domain name.
+  if (!toSafeDomainName(tenantCustomDomain)) {
     return '';
   }
 
@@ -152,11 +155,12 @@ export async function refreshExpiredToken(
   if (!refreshToken) {
     throw new TypeError('Refresh token must be a valid string');
   }
-  if (!expiresAt || expiresAt < 0) {
-    throw new TypeError('The expiresAt field must be an integer greater than 0');
+  if (expiresAt === undefined || expiresAt === null || expiresAt < 0) {
+    throw new TypeError('The expiresAt field must be an integer greater than or equal to 0');
   }
 
-  if (Date.now().valueOf() <= expiresAt) {
+  // Nothing to do here if the access token is still valid.
+  if (Date.now() < expiresAt) {
     return null;
   }
 
@@ -299,4 +303,26 @@ export function isTenantPlaceholderPositionValid(url: string): boolean {
     LEADING_TENANT_PLACEHOLDER_REGEX.test(url) &&
     !TENANT_PLACEHOLDER_REGEX.test(url.replace(`${TENANT_NAME_PLACEHOLDER}.`, ''))
   );
+}
+
+/**
+ * Returns the tenant name if it is a valid DNS label, otherwise an empty string. Tenant names become part of
+ * Wristband URL hosts, so anything else (e.g. evil.com#) could redirect users off Wristband.
+ *
+ * @param {string | undefined} value The tenant name to check.
+ * @returns {string} The tenant name when valid, otherwise an empty string.
+ */
+export function toSafeTenantName(value: string | undefined): string {
+  return value && TENANT_NAME_REGEX.test(value) ? value : '';
+}
+
+/**
+ * Returns the domain if it is a valid DNS hostname (two or more labels, no port, path, or credentials),
+ * otherwise an empty string.
+ *
+ * @param {string | undefined} value The domain to check.
+ * @returns {string} The domain when valid, otherwise an empty string.
+ */
+export function toSafeDomainName(value: string | undefined): string {
+  return value && DOMAIN_NAME_REGEX.test(value) ? value : '';
 }

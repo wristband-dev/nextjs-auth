@@ -8,6 +8,7 @@ import {
   isValidCsrf,
   copyResponseHeaders,
   resolveOnPageUnauthenticated,
+  setSessionCookieOnRequest,
 } from '../../src/utils/middleware';
 import { AuthMiddlewareConfig } from '../../src/types';
 
@@ -535,41 +536,90 @@ describe('middleware-utils', () => {
       mockRequest = new NextRequest('https://example.com/api/test');
     });
 
-    it('should return false when csrfToken is undefined', () => {
-      expect(isValidCsrf(mockRequest, undefined, 'X-CSRF-TOKEN')).toBe(false);
+    afterEach(() => {
+      jest.restoreAllMocks();
     });
 
-    it('should return false when csrfToken is empty string', () => {
-      expect(isValidCsrf(mockRequest, '', 'X-CSRF-TOKEN')).toBe(false);
+    it('should return false when csrfToken is undefined', async () => {
+      expect(await isValidCsrf(mockRequest, undefined, 'X-CSRF-TOKEN')).toBe(false);
     });
 
-    it('should return false when header is missing', () => {
-      expect(isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(false);
+    it('should return false when csrfToken is empty string', async () => {
+      expect(await isValidCsrf(mockRequest, '', 'X-CSRF-TOKEN')).toBe(false);
     });
 
-    it('should return false when tokens do not match', () => {
+    it('should return false when header is missing', async () => {
+      expect(await isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(false);
+    });
+
+    it('should return false when tokens do not match', async () => {
       mockRequest.headers.set('X-CSRF-TOKEN', 'wrong-token');
 
-      expect(isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(false);
+      expect(await isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(false);
     });
 
-    it('should return true when tokens match', () => {
+    it('should return true when tokens match', async () => {
       mockRequest.headers.set('X-CSRF-TOKEN', 'test-token');
 
-      expect(isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(true);
+      expect(await isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(true);
     });
 
-    it('should work with custom header name', () => {
+    it('should work with custom header name', async () => {
       mockRequest.headers.set('CUSTOM-CSRF', 'test-token');
 
-      expect(isValidCsrf(mockRequest, 'test-token', 'CUSTOM-CSRF')).toBe(true);
+      expect(await isValidCsrf(mockRequest, 'test-token', 'CUSTOM-CSRF')).toBe(true);
     });
 
-    it('should be case-sensitive for token comparison', () => {
+    it('should be case-sensitive for token comparison', async () => {
       mockRequest.headers.set('X-CSRF-TOKEN', 'Test-Token');
 
-      expect(isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(false);
-      expect(isValidCsrf(mockRequest, 'Test-Token', 'X-CSRF-TOKEN')).toBe(true);
+      expect(await isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(false);
+      expect(await isValidCsrf(mockRequest, 'Test-Token', 'X-CSRF-TOKEN')).toBe(true);
+    });
+
+    it('should return false when the header is a prefix of the token', async () => {
+      mockRequest.headers.set('X-CSRF-TOKEN', 'test');
+
+      expect(await isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(false);
+    });
+
+    it('should return false when the header is longer than the token', async () => {
+      mockRequest.headers.set('X-CSRF-TOKEN', 'test-token-extra');
+
+      expect(await isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(false);
+    });
+
+    it('should compare HMACs of both values instead of the raw tokens', async () => {
+      const signSpy = jest.spyOn(globalThis.crypto.subtle, 'sign');
+      mockRequest.headers.set('X-CSRF-TOKEN', 'test-token');
+
+      expect(await isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(true);
+      expect(signSpy).toHaveBeenCalledTimes(2);
+      expect(signSpy).toHaveBeenNthCalledWith(1, 'HMAC', expect.anything(), expect.anything());
+      expect(signSpy).toHaveBeenNthCalledWith(2, 'HMAC', expect.anything(), expect.anything());
+    });
+
+    it('should not run any HMAC when the header is missing', async () => {
+      const signSpy = jest.spyOn(globalThis.crypto.subtle, 'sign');
+
+      expect(await isValidCsrf(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(false);
+      expect(signSpy).not.toHaveBeenCalled();
+    });
+
+    it('should create the HMAC key once and reuse it across calls', async () => {
+      // Load a fresh copy of the module, so the key hasn't been created by an earlier test.
+      let freshIsValidCsrf: typeof isValidCsrf | undefined;
+      await jest.isolateModulesAsync(async () => {
+        freshIsValidCsrf = (await import('../../src/utils/middleware')).isValidCsrf;
+      });
+      const generateKeySpy = jest.spyOn(globalThis.crypto.subtle, 'generateKey');
+      mockRequest.headers.set('X-CSRF-TOKEN', 'test-token');
+
+      expect(await freshIsValidCsrf!(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(true);
+      expect(await freshIsValidCsrf!(mockRequest, 'test-token', 'X-CSRF-TOKEN')).toBe(true);
+      expect(await freshIsValidCsrf!(mockRequest, 'wrong-token', 'X-CSRF-TOKEN')).toBe(false);
+      expect(generateKeySpy).toHaveBeenCalledTimes(1);
+      expect(generateKeySpy).toHaveBeenCalledWith({ name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     });
   });
 
@@ -612,6 +662,22 @@ describe('middleware-utils', () => {
       const location = response.headers.get('location');
       expect(location).toContain('/api/auth/login');
       expect(location).toContain('return_url=https%3A%2F%2Fexample.com%2Fdashboard%2Fprofile');
+    });
+
+    it('should set no-cache headers on the default redirect', async () => {
+      const config = normalizeMiddlewareConfig({
+        authStrategies: ['SESSION'],
+        sessionConfig: {
+          sessionOptions: { secrets: 'test-secret-must-be-at-least-32-characters-long' },
+        },
+      });
+
+      const onPageUnauthenticated = resolveOnPageUnauthenticated(config, 'https://example.com/api/auth/login');
+      const response = await onPageUnauthenticated(mockRequest, 'not_authenticated');
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(response.headers.get('Pragma')).toBe('no-cache');
     });
 
     it('should handle tenant subdomain placeholders in loginUrl', async () => {
@@ -874,6 +940,102 @@ describe('middleware-utils', () => {
       expect(result.headers.get('x-middleware-next')).toBe(initialMiddlewareNext);
       // Other headers should still be copied
       expect(result.headers.get('x-custom')).toBe('value');
+    });
+  });
+
+  describe('setSessionCookieOnRequest', () => {
+    function createSessionResponse(setCookies: string[]) {
+      const response = new Response(null);
+      setCookies.forEach((setCookie) => {
+        response.headers.append('set-cookie', setCookie);
+      });
+      return response;
+    }
+
+    it('should replace the session cookie on the request with the saved value', () => {
+      const request = new NextRequest('https://example.com/api/test', { headers: { cookie: 'session=old' } });
+      const source = createSessionResponse(['session=new; Path=/; HttpOnly; Secure; SameSite=Lax']);
+
+      setSessionCookieOnRequest(request, source, 'session');
+
+      expect(request.cookies.get('session')?.value).toBe('new');
+      expect(request.headers.get('cookie')).toBe('session=new');
+    });
+
+    it('should add the session cookie when the request has none', () => {
+      const request = new NextRequest('https://example.com/api/test');
+      const source = createSessionResponse(['session=new; Path=/; HttpOnly']);
+
+      setSessionCookieOnRequest(request, source, 'session');
+
+      expect(request.cookies.get('session')?.value).toBe('new');
+    });
+
+    it('should keep the other cookies on the request', () => {
+      const request = new NextRequest('https://example.com/api/test', {
+        headers: { cookie: 'theme=dark; session=old; lang=en' },
+      });
+      const source = createSessionResponse(['session=new; Path=/; HttpOnly']);
+
+      setSessionCookieOnRequest(request, source, 'session');
+
+      expect(request.cookies.get('theme')?.value).toBe('dark');
+      expect(request.cookies.get('lang')?.value).toBe('en');
+      expect(request.cookies.get('session')?.value).toBe('new');
+    });
+
+    it('should skip the CSRF cookie and any other cookies', () => {
+      const request = new NextRequest('https://example.com/api/test', { headers: { cookie: 'session=old' } });
+      const source = createSessionResponse([
+        'session=new; Path=/; HttpOnly',
+        'CSRF-TOKEN=csrf-value; Path=/',
+        'other=value; Path=/',
+      ]);
+
+      setSessionCookieOnRequest(request, source, 'session');
+
+      expect(request.cookies.get('session')?.value).toBe('new');
+      expect(request.cookies.has('CSRF-TOKEN')).toBe(false);
+      expect(request.cookies.has('other')).toBe(false);
+    });
+
+    it('should not encode the cookie value twice', () => {
+      const request = new NextRequest('https://example.com/api/test', { headers: { cookie: 'session=old' } });
+      const source = createSessionResponse(['session=new%2Bvalue%3D%3D; Path=/; HttpOnly']);
+
+      setSessionCookieOnRequest(request, source, 'session');
+
+      expect(request.cookies.get('session')?.value).toBe('new+value==');
+      expect(request.headers.get('cookie')).toBe('session=new%2Bvalue%3D%3D');
+    });
+
+    it('should use a custom session cookie name', () => {
+      const request = new NextRequest('https://example.com/api/test', {
+        headers: { cookie: 'my-session=old; session=untouched' },
+      });
+      const source = createSessionResponse(['my-session=new; Path=/; HttpOnly', 'session=ignored; Path=/']);
+
+      setSessionCookieOnRequest(request, source, 'my-session');
+
+      expect(request.cookies.get('my-session')?.value).toBe('new');
+      expect(request.cookies.get('session')?.value).toBe('untouched');
+    });
+
+    it('should ignore malformed Set-Cookie headers', () => {
+      const request = new NextRequest('https://example.com/api/test', { headers: { cookie: 'session=old' } });
+      const source = createSessionResponse(['session; Path=/', '=new; Path=/']);
+
+      setSessionCookieOnRequest(request, source, 'session');
+
+      expect(request.headers.get('cookie')).toBe('session=old');
+    });
+
+    it('should leave the request unchanged when there are no Set-Cookie headers', () => {
+      const request = new NextRequest('https://example.com/api/test', { headers: { cookie: 'session=old' } });
+
+      setSessionCookieOnRequest(request, new Response(null), 'session');
+
+      expect(request.headers.get('cookie')).toBe('session=old');
     });
   });
 

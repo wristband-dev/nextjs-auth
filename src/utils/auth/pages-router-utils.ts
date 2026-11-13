@@ -4,7 +4,7 @@ import type { TLSSocket } from 'node:tls';
 import { LOGIN_STATE_COOKIE_PREFIX, LOGIN_STATE_COOKIE_SEPARATOR } from '../constants';
 import { Base64 } from '../base64';
 import { LoginConfig } from '../../types';
-import { generateRandomString } from './common-utils';
+import { generateRandomString, toSafeTenantName } from './common-utils';
 import { WristbandError } from '../../error';
 
 /**
@@ -58,8 +58,9 @@ export function resolveTenantName(
   parseTenantFromRootDomain: string,
   trustProxyHeaders: boolean
 ): string {
+  // Tenant names that aren't a single DNS label are ignored, as if no tenant name was given.
   if (parseTenantFromRootDomain) {
-    return parseTenantSubdomain(request, parseTenantFromRootDomain, trustProxyHeaders) || '';
+    return toSafeTenantName(parseTenantSubdomain(request, parseTenantFromRootDomain, trustProxyHeaders));
   }
 
   const { tenant_name: tenantNameParam } = request.query;
@@ -68,7 +69,7 @@ export function resolveTenantName(
     throw new TypeError('More than one [tenant_name] query parameter was encountered');
   }
 
-  return tenantNameParam || '';
+  return toSafeTenantName(tenantNameParam);
 }
 
 export function resolveTenantCustomDomainParam(request: NextApiRequest): string {

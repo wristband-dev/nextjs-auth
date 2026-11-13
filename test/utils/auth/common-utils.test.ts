@@ -15,6 +15,8 @@ import {
   isTenantPlaceholderPositionValid,
   refreshExpiredToken,
   resolveValidTenantCustomDomain,
+  toSafeDomainName,
+  toSafeTenantName,
 } from '../../../src/utils/auth/common-utils';
 import { CookieCrypto } from '../../../src/utils/crypto';
 import { STATE_PARAM_MAX_CHAR_LENGTH } from '../../../src/utils/constants';
@@ -62,6 +64,16 @@ describe('resolveValidTenantCustomDomain()', () => {
     expect(result).toBe('');
     expect(mockWristbandService.validateTenantCustomDomain).toHaveBeenCalledWith('tenant.custom.com');
   });
+
+  test.each(['evil.com#', 'evil.com/path', 'evil.com:443', 'user@evil.com', 'localhost', 'https://evil.com'])(
+    'should return empty string without calling the API when the domain is malformed: %s',
+    async (tenantCustomDomain) => {
+      const result = await resolveValidTenantCustomDomain(tenantCustomDomain, mockWristbandService);
+
+      expect(result).toBe('');
+      expect(mockWristbandService.validateTenantCustomDomain).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe('createLoginState', () => {
@@ -353,23 +365,23 @@ describe('refreshExpiredToken()', () => {
       );
     });
 
-    test('should throw TypeError when expiresAt is 0', async () => {
-      await expect(refreshExpiredToken('valid-token', 0, mockWristbandService)).rejects.toThrow(TypeError);
-      await expect(refreshExpiredToken('valid-token', 0, mockWristbandService)).rejects.toThrow(
-        'The expiresAt field must be an integer greater than 0'
-      );
-    });
-
     test('should throw TypeError when expiresAt is negative', async () => {
       await expect(refreshExpiredToken('valid-token', -1000, mockWristbandService)).rejects.toThrow(TypeError);
       await expect(refreshExpiredToken('valid-token', -1000, mockWristbandService)).rejects.toThrow(
-        'The expiresAt field must be an integer greater than 0'
+        'The expiresAt field must be an integer greater than or equal to 0'
       );
     });
 
     test('should throw TypeError when expiresAt is undefined', async () => {
       await expect(refreshExpiredToken('valid-token', undefined as any, mockWristbandService)).rejects.toThrow(
         TypeError
+      );
+    });
+
+    test('should throw TypeError when expiresAt is null', async () => {
+      await expect(refreshExpiredToken('valid-token', null as any, mockWristbandService)).rejects.toThrow(TypeError);
+      await expect(refreshExpiredToken('valid-token', null as any, mockWristbandService)).rejects.toThrow(
+        'The expiresAt field must be an integer greater than or equal to 0'
       );
     });
   });
@@ -745,6 +757,48 @@ describe('refreshExpiredToken()', () => {
       expect(mockWristbandService.refreshToken).toHaveBeenCalled();
     });
 
+    test('should refresh when token expires exactly at current time', async () => {
+      const currentTime = Date.now();
+      const mockTokenResponse = {
+        access_token: 'new-access-token',
+        id_token: 'new-id-token',
+        expires_in: 3600,
+        refresh_token: 'new-refresh-token',
+        token_type: 'Bearer',
+      };
+
+      mockWristbandService.refreshToken.mockResolvedValue(mockTokenResponse);
+      const mockDateNow = jest.spyOn(Date, 'now').mockReturnValue(currentTime);
+
+      try {
+        const result = await refreshExpiredToken('token', currentTime, mockWristbandService);
+
+        expect(result).not.toBeNull();
+        expect(result!.accessToken).toBe('new-access-token');
+        expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(1);
+      } finally {
+        mockDateNow.mockRestore();
+      }
+    });
+
+    test('should treat expiresAt of 0 as expired and refresh', async () => {
+      const mockTokenResponse = {
+        access_token: 'new-access-token',
+        id_token: 'new-id-token',
+        expires_in: 3600,
+        refresh_token: 'new-refresh-token',
+        token_type: 'Bearer',
+      };
+
+      mockWristbandService.refreshToken.mockResolvedValue(mockTokenResponse);
+
+      const result = await refreshExpiredToken('token', 0, mockWristbandService);
+
+      expect(result).not.toBeNull();
+      expect(result!.accessToken).toBe('new-access-token');
+      expect(mockWristbandService.refreshToken).toHaveBeenCalledTimes(1);
+    });
+
     test('should handle very large expiration buffer', async () => {
       const expiredTime = Date.now() - 1000;
       const largeBuffer = 7200; // 2 hours
@@ -1106,5 +1160,68 @@ describe('isTenantPlaceholderPositionValid', () => {
 
   test('Returns false when the placeholder appears more than once', () => {
     expect(isTenantPlaceholderPositionValid('https://{tenant_name}.myapp.com/{tenant_name}/login')).toBe(false);
+  });
+});
+
+describe('toSafeTenantName', () => {
+  test.each(['devs4you', 'a', 'Tenant-1', 'a1-b2-c3', 'a'.repeat(63)])(
+    'Returns the tenant name when valid: %s',
+    (value) => {
+      expect(toSafeTenantName(value)).toBe(value);
+    }
+  );
+
+  test.each([
+    '',
+    'evil.com',
+    'evil.com#',
+    'evil.com/path',
+    'evil.com?x=',
+    'user@evil',
+    '-tenant',
+    'tenant-',
+    'ten_ant',
+    'ten ant',
+    'tenant%2e',
+    'a'.repeat(64),
+  ])('Returns an empty string when invalid: %s', (value) => {
+    expect(toSafeTenantName(value)).toBe('');
+  });
+
+  test('Returns an empty string when undefined', () => {
+    expect(toSafeTenantName(undefined)).toBe('');
+  });
+});
+
+describe('toSafeDomainName', () => {
+  test.each(['tenant.custom.com', 'a.b', 'Login.Example.COM', 'my-tenant.business.example.co.uk'])(
+    'Returns the domain when valid: %s',
+    (value) => {
+      expect(toSafeDomainName(value)).toBe(value);
+    }
+  );
+
+  test.each([
+    '',
+    'localhost',
+    'evil.com#',
+    'evil.com/path',
+    'evil.com:443',
+    'evil.com?x=1',
+    'user@evil.com',
+    'https://evil.com',
+    'evil.com.',
+    '.evil.com',
+    'evil..com',
+    '-evil.com',
+    'evil-.com',
+    'ev il.com',
+    `${'a'.repeat(64)}.com`,
+  ])('Returns an empty string when invalid: %s', (value) => {
+    expect(toSafeDomainName(value)).toBe('');
+  });
+
+  test('Returns an empty string when undefined', () => {
+    expect(toSafeDomainName(undefined)).toBe('');
   });
 });

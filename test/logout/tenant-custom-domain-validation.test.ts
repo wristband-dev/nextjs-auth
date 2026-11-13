@@ -170,6 +170,23 @@ describe('Logout - Tenant Custom Domain Validation', () => {
         expect(new URL(location).origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
       });
     });
+
+    describe('Malformed tenant_custom_domain query param', () => {
+      test.each(['evil.com#', 'evil.com/path', 'evil.com:443', 'user@evil.com', 'localhost'])(
+        'Skips it without calling the validation endpoint: %s',
+        async (tenantCustomDomain) => {
+          mockWristbandFetch({ tenantCustomDomainValid: true });
+
+          const request = createRequest(`tenant_custom_domain=${encodeURIComponent(tenantCustomDomain)}`);
+          const response = await wristbandAuth.appRouter.logout(request);
+
+          expectValidateNotCalled();
+          expect(response.headers.get('location')).toEqual(
+            `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`
+          );
+        }
+      );
+    });
   });
 
   describe('Pages Router', () => {
@@ -306,6 +323,21 @@ describe('Logout - Tenant Custom Domain Validation', () => {
         expectValidateNotCalled();
         expect(new URL(location).origin).toEqual(`https://devs4you-${wristbandApplicationVanityDomain}`);
       });
+    });
+
+    describe('Malformed tenant_custom_domain query param', () => {
+      test.each(['evil.com#', 'evil.com/path', 'evil.com:443', 'user@evil.com', 'localhost'])(
+        'Skips it without calling the validation endpoint: %s',
+        async (tenantCustomDomain) => {
+          mockWristbandFetch({ tenantCustomDomainValid: true });
+
+          const { mockReq, mockRes } = createReqRes({ tenant_custom_domain: tenantCustomDomain });
+          const location = await wristbandAuth.pagesRouter.logout(mockReq, mockRes);
+
+          expectValidateNotCalled();
+          expect(location).toEqual(`https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`);
+        }
+      );
     });
   });
 });

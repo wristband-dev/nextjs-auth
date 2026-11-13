@@ -24,6 +24,7 @@ jest.mock('../../src/utils/middleware', () => {
     copyResponseHeaders: jest.fn((source, target) => {
       return target;
     }),
+    setSessionCookieOnRequest: jest.fn(),
   };
 });
 jest.mock('@wristband/typescript-jwt');
@@ -41,6 +42,14 @@ const mockCreateWristbandJwtValidator = createWristbandJwtValidator as jest.Mock
 
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
+
+// The middleware skips a strategy when the request doesn't carry its credential. The session cookie name
+// matches the cookieName used in every middleware config in this file.
+const SESSION_COOKIE = 'test-session=encrypted-session-value';
+
+function createRequestWithSession(url: string, headers: Record<string, string> = {}): NextRequest {
+  return new NextRequest(url, { headers: { cookie: SESSION_COOKIE, ...headers } });
+}
 
 describe('WristbandAuth Middleware - Multi-Strategy', () => {
   let wristbandAuth: WristbandAuthImpl;
@@ -78,7 +87,7 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
 
     mockIsProtectedApi.mockReturnValue(false);
     mockIsProtectedPage.mockReturnValue(false);
-    mockIsValidCsrf.mockReturnValue(true);
+    mockIsValidCsrf.mockResolvedValue(true);
 
     mockCopyResponseHeaders.mockImplementation((source, target) => {
       return target;
@@ -243,7 +252,7 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
     });
 
     it('should try SESSION first, succeed, and not try JWT', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSession = {
@@ -263,17 +272,11 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       expect(result.status).not.toBe(401);
     });
 
-    it('should try SESSION first, fail, then fallback to JWT and succeed', async () => {
+    it('should skip SESSION when there is no session cookie, then use JWT', async () => {
       mockRequest = new NextRequest('https://test.com/api/v1/users', {
         headers: { Authorization: 'Bearer valid-jwt-token' },
       });
       mockIsProtectedApi.mockReturnValue(true);
-
-      // SESSION fails (not authenticated)
-      const mockSession = {
-        isAuthenticated: false,
-      };
-      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
 
       // JWT succeeds
       mockJwtValidator.extractBearerToken.mockReturnValue('valid-jwt-token');
@@ -282,22 +285,21 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
 
-      expect(mockGetSessionFromRequest).toHaveBeenCalled();
-      expect(mockJwtValidator.extractBearerToken).toHaveBeenCalled();
+      expect(mockGetSessionFromRequest).not.toHaveBeenCalled();
       expect(mockJwtValidator.validate).toHaveBeenCalledWith('valid-jwt-token');
       expect(result.status).not.toBe(401);
     });
 
-    it('should try SESSION (error), then fallback to JWT and succeed', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users', {
-        headers: { Authorization: 'Bearer valid-jwt-token' },
+    it('should return 500 when SESSION throws, without trying JWT', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
       // SESSION throws error
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session read failed'));
 
-      // JWT succeeds
+      // JWT would succeed, but it isn't tried
       mockJwtValidator.extractBearerToken.mockReturnValue('valid-jwt-token');
       mockJwtValidator.validate.mockResolvedValue({ isValid: true });
 
@@ -305,13 +307,13 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       const result = await middleware(mockRequest);
 
       expect(mockGetSessionFromRequest).toHaveBeenCalled();
-      expect(mockJwtValidator.extractBearerToken).toHaveBeenCalled();
-      expect(result.status).not.toBe(401);
+      expect(mockJwtValidator.extractBearerToken).not.toHaveBeenCalled();
+      expect(result.status).toBe(500);
     });
 
-    it('should try both SESSION and JWT, both fail, return 401', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users', {
-        headers: { Authorization: 'Bearer invalid-jwt-token' },
+    it('should return 401 when the session cookie is present but SESSION fails, without trying JWT', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -321,27 +323,27 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
 
-      // JWT fails
-      mockJwtValidator.extractBearerToken.mockReturnValue('invalid-jwt-token');
-      mockJwtValidator.validate.mockResolvedValue({ isValid: false, errorMessage: 'Invalid token' });
+      // JWT would succeed, but it isn't tried
+      mockJwtValidator.extractBearerToken.mockReturnValue('valid-jwt-token');
+      mockJwtValidator.validate.mockResolvedValue({ isValid: true });
 
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
 
       expect(mockGetSessionFromRequest).toHaveBeenCalled();
-      expect(mockJwtValidator.validate).toHaveBeenCalled();
+      expect(mockJwtValidator.extractBearerToken).not.toHaveBeenCalled();
+      expect(mockJwtValidator.validate).not.toHaveBeenCalled();
       expect(result.status).toBe(401);
     });
 
-    it('should not save session when JWT succeeds after SESSION fails', async () => {
+    it('should not read or save the session when JWT is used because there is no session cookie', async () => {
       mockRequest = new NextRequest('https://test.com/api/v1/users', {
         headers: { Authorization: 'Bearer valid-jwt-token' },
       });
       mockIsProtectedApi.mockReturnValue(true);
 
-      // SESSION fails
       const mockSession = {
-        isAuthenticated: false,
+        isAuthenticated: true,
         saveToResponse: jest.fn().mockResolvedValue(new Response()),
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
@@ -353,7 +355,8 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       await middleware(mockRequest);
 
-      // Session should NOT be saved since JWT was used
+      // Session should NOT be read or saved since JWT was used
+      expect(mockGetSessionFromRequest).not.toHaveBeenCalled();
       expect(mockSession.saveToResponse).not.toHaveBeenCalled();
     });
   });
@@ -412,12 +415,9 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       expect(result.status).not.toBe(401);
     });
 
-    it('should try JWT first (no token), then fallback to SESSION and succeed', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+    it('should skip JWT when there is no Authorization header, then use SESSION', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
-
-      // JWT fails (no authorization header)
-      // When there's no auth header, extractBearerToken is never called in the implementation
 
       // SESSION succeeds
       const mockSession = {
@@ -432,15 +432,15 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
 
-      // JWT should fail because no auth header
+      // JWT is skipped because there's no Authorization header
       expect(mockJwtValidator.extractBearerToken).not.toHaveBeenCalled();
       expect(mockGetSessionFromRequest).toHaveBeenCalled();
       expect(result.status).not.toBe(401);
     });
 
-    it('should try JWT first (invalid), then fallback to SESSION and succeed', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users', {
-        headers: { Authorization: 'Bearer invalid-jwt-token' },
+    it('should return 401 when the Bearer token is invalid, without trying SESSION', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users', {
+        Authorization: 'Bearer invalid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -448,7 +448,7 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       mockJwtValidator.extractBearerToken.mockReturnValue('invalid-jwt-token');
       mockJwtValidator.validate.mockResolvedValue({ isValid: false, errorMessage: 'Invalid token' });
 
-      // SESSION succeeds
+      // SESSION would succeed, but it isn't tried
       const mockSession = {
         isAuthenticated: true,
         csrfToken: 'test-csrf-token',
@@ -462,15 +462,13 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       const result = await middleware(mockRequest);
 
       expect(mockJwtValidator.validate).toHaveBeenCalled();
-      expect(mockGetSessionFromRequest).toHaveBeenCalled();
-      expect(result.status).not.toBe(401);
+      expect(mockGetSessionFromRequest).not.toHaveBeenCalled();
+      expect(result.status).toBe(401);
     });
 
-    it('should save session when SESSION succeeds after JWT fails', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+    it('should save session when SESSION is used because there is no Authorization header', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
-
-      // JWT fails (no auth header)
 
       // SESSION succeeds
       const mockSessionResponse = new Response();
@@ -526,8 +524,8 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       };
       mockNormalizeMiddlewareConfig.mockReturnValue(defaultNormalizedConfig);
 
-      mockRequest = new NextRequest('https://test.com/api/v1/users', {
-        headers: { Authorization: 'Bearer valid-jwt-token' },
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -590,9 +588,9 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       mockNormalizeMiddlewareConfig.mockReturnValue(defaultNormalizedConfig);
     });
 
-    it('should fail SESSION due to CSRF, then fallback to JWT and succeed', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users', {
-        headers: { Authorization: 'Bearer valid-jwt-token' },
+    it('should return 403 when SESSION fails CSRF, without trying JWT', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -605,9 +603,9 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
         saveToResponse: jest.fn().mockResolvedValue(new Response()),
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
-      mockIsValidCsrf.mockReturnValue(false); // ← CSRF validation fails
+      mockIsValidCsrf.mockResolvedValue(false); // ← CSRF validation fails
 
-      // JWT succeeds
+      // JWT would succeed, but it isn't tried
       mockJwtValidator.extractBearerToken.mockReturnValue('valid-jwt-token');
       mockJwtValidator.validate.mockResolvedValue({ isValid: true });
 
@@ -615,10 +613,9 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       const result = await middleware(mockRequest);
 
       expect(mockIsValidCsrf).toHaveBeenCalled();
-      expect(mockJwtValidator.validate).toHaveBeenCalled();
-      expect(result.status).not.toBe(401);
-      expect(result.status).not.toBe(403);
-      // Session should NOT be saved since JWT was used
+      expect(mockJwtValidator.validate).not.toHaveBeenCalled();
+      expect(result.status).toBe(403);
+      // Session should NOT be saved since CSRF failed
       expect(mockSession.saveToResponse).not.toHaveBeenCalled();
     });
 
@@ -627,7 +624,7 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       mockMiddlewareConfig.authStrategies = ['SESSION'];
       defaultNormalizedConfig.authStrategies = ['SESSION'];
 
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       // SESSION is authenticated but CSRF fails
@@ -639,7 +636,7 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
         saveToResponse: jest.fn().mockResolvedValue(new Response()),
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
-      mockIsValidCsrf.mockReturnValue(false); // ← CSRF validation fails
+      mockIsValidCsrf.mockResolvedValue(false); // ← CSRF validation fails
 
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
@@ -686,16 +683,16 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       mockNormalizeMiddlewareConfig.mockReturnValue(defaultNormalizedConfig);
     });
 
-    it('should return 500 when both SESSION and JWT strategies throw exceptions', async () => {
-      mockRequest = new NextRequest('https://test.com/api/v1/users', {
-        headers: { Authorization: 'Bearer malformed-jwt' },
+    it('should return 500 when SESSION throws, even when the JWT would also throw', async () => {
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users', {
+        Authorization: 'Bearer malformed-jwt',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
       // SESSION throws exception
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session store unavailable'));
 
-      // JWT throws exception
+      // JWT would also throw, but it isn't tried
       mockJwtValidator.extractBearerToken.mockReturnValue('malformed-jwt');
       mockJwtValidator.validate.mockRejectedValue(new Error('JWT validation crashed'));
 
@@ -703,34 +700,36 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       const result = await middleware(mockRequest);
 
       expect(mockGetSessionFromRequest).toHaveBeenCalled();
-      expect(mockJwtValidator.validate).toHaveBeenCalled();
-      expect(result.status).toBe(500); // ← Changed from 401 to 500
+      expect(mockJwtValidator.validate).not.toHaveBeenCalled();
+      expect(result.status).toBe(500);
       const body = await result.json();
       expect(body.error).toBe('Internal Server Error');
     });
 
-    it('should return 401 when SESSION throws and JWT has no token', async () => {
+    it('should return 401 without trying either strategy when the request has no credentials', async () => {
       mockRequest = new NextRequest('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
-      // SESSION throws exception
+      // Neither strategy is tried, so this is never reached
       mockGetSessionFromRequest.mockRejectedValue(new Error('Cookie parsing failed'));
-
-      // JWT has no token (no auth header means extractBearerToken won't be called)
 
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
 
+      expect(mockGetSessionFromRequest).not.toHaveBeenCalled();
+      expect(mockJwtValidator.extractBearerToken).not.toHaveBeenCalled();
       expect(result.status).toBe(401);
+      const body = await result.json();
+      expect(body.error).toBe('Unauthorized');
     });
 
-    it('should continue to JWT when SESSION throws exception', async () => {
+    it('should use JWT without reading the session when there is no session cookie', async () => {
       mockRequest = new NextRequest('https://test.com/api/v1/users', {
         headers: { Authorization: 'Bearer valid-jwt-token' },
       });
       mockIsProtectedApi.mockReturnValue(true);
 
-      // SESSION throws exception
+      // Reading a session would throw, but SESSION is skipped
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session error'));
 
       // JWT succeeds
@@ -740,18 +739,18 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
 
-      expect(mockGetSessionFromRequest).toHaveBeenCalled();
+      expect(mockGetSessionFromRequest).not.toHaveBeenCalled();
       expect(mockJwtValidator.validate).toHaveBeenCalled();
       expect(result.status).not.toBe(401);
     });
 
-    it('should handle unexpected JWT validator creation failure', async () => {
+    it('should return 500 when the JWT validator cannot be created and there is no session cookie', async () => {
       mockRequest = new NextRequest('https://test.com/api/v1/users', {
         headers: { Authorization: 'Bearer valid-jwt-token' },
       });
       mockIsProtectedApi.mockReturnValue(true);
 
-      // SESSION fails
+      // SESSION is skipped because there's no session cookie, so this session is never read
       const mockSession = {
         isAuthenticated: false,
       };
@@ -770,13 +769,13 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       expect(body.error).toBe('Internal Server Error');
     });
 
-    it('should call onPageUnauthenticated when both strategies fail on a page route', async () => {
+    it('should call onPageUnauthenticated when JWT fails on a page route with no session cookie', async () => {
       mockRequest = new NextRequest('https://test.com/dashboard', {
         headers: { Authorization: 'Bearer invalid-jwt' },
       });
       mockIsProtectedPage.mockReturnValue(true);
 
-      // SESSION throws
+      // SESSION is skipped because there's no session cookie, so this is never reached
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session error'));
 
       // JWT fails
@@ -786,7 +785,8 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
 
-      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated'); // ← Added reason parameter
+      // JWT was the only strategy tried, so its reason is used
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated');
       expect(result).toEqual(NextResponse.redirect('https://test.com/login'));
     });
   });
@@ -821,8 +821,8 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
     });
 
     it('should force SESSION strategy for /api/auth/session endpoint even with JWT first', async () => {
-      mockRequest = new NextRequest('https://test.com/api/auth/session', {
-        headers: { Authorization: 'Bearer valid-jwt-token' },
+      mockRequest = createRequestWithSession('https://test.com/api/auth/session', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -849,8 +849,8 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
     });
 
     it('should force SESSION strategy for /api/auth/token endpoint even with JWT first', async () => {
-      mockRequest = new NextRequest('https://test.com/api/auth/token', {
-        headers: { Authorization: 'Bearer valid-jwt-token' },
+      mockRequest = createRequestWithSession('https://test.com/api/auth/token', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -881,8 +881,8 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       mockMiddlewareConfig.authStrategies = ['SESSION', 'JWT'];
       defaultNormalizedConfig.authStrategies = ['SESSION', 'JWT'];
 
-      mockRequest = new NextRequest('https://test.com/api/auth/session', {
-        headers: { Authorization: 'Bearer valid-jwt-token' },
+      mockRequest = createRequestWithSession('https://test.com/api/auth/session', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -909,8 +909,8 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
     });
 
     it('should return 401 when session endpoint has no valid session (JWT ignored)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/auth/session', {
-        headers: { Authorization: 'Bearer valid-jwt-token' },
+      mockRequest = createRequestWithSession('https://test.com/api/auth/session', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -932,8 +932,8 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
     });
 
     it('should return 401 when token endpoint has no valid session (JWT ignored)', async () => {
-      mockRequest = new NextRequest('https://test.com/api/auth/token', {
-        headers: { Authorization: 'Bearer valid-jwt-token' },
+      mockRequest = createRequestWithSession('https://test.com/api/auth/token', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -1003,8 +1003,8 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       mockMiddlewareConfig.sessionConfig!.sessionEndpoint = '/api/custom/session';
       defaultNormalizedConfig.sessionConfig.sessionEndpoint = '/api/custom/session';
 
-      mockRequest = new NextRequest('https://test.com/api/custom/session', {
-        headers: { Authorization: 'Bearer valid-jwt-token' },
+      mockRequest = createRequestWithSession('https://test.com/api/custom/session', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -1031,8 +1031,8 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       mockMiddlewareConfig.sessionConfig!.tokenEndpoint = '/api/custom/token';
       defaultNormalizedConfig.sessionConfig.tokenEndpoint = '/api/custom/token';
 
-      mockRequest = new NextRequest('https://test.com/api/custom/token', {
-        headers: { Authorization: 'Bearer valid-jwt-token' },
+      mockRequest = createRequestWithSession('https://test.com/api/custom/token', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -1154,20 +1154,19 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       expect(result.status).not.toBe(500);
     });
 
-    it('should pass unexpected_error reason when SESSION throws on page route', async () => {
+    it('should pass not_authenticated to onPageUnauthenticated when a page request has no credentials', async () => {
       mockRequest = new NextRequest('https://test.com/dashboard');
       mockIsProtectedPage.mockReturnValue(true);
 
-      // SESSION throws
+      // SESSION is skipped because there's no session cookie, so this is never reached
       mockGetSessionFromRequest.mockRejectedValue(new Error('Session error'));
 
-      // JWT has no auth header
-      // (JWT will fail with not_authenticated, but SESSION's unexpected_error comes first)
+      // JWT is skipped because there's no Authorization header
 
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       await middleware(mockRequest);
 
-      // Last failed strategy's reason is used (JWT's not_authenticated, since SESSION threw but JWT was tried)
+      // Every strategy was skipped, so the request is not authenticated
       expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'not_authenticated');
     });
 
@@ -1177,7 +1176,7 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       defaultNormalizedConfig.authStrategies = ['SESSION'];
       defaultNormalizedConfig.sessionConfig.sessionOptions.enableCsrfProtection = true;
 
-      mockRequest = new NextRequest('https://test.com/api/v1/users');
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users');
       mockIsProtectedApi.mockReturnValue(true);
 
       const mockSession = {
@@ -1185,7 +1184,7 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
         csrfToken: 'test-csrf',
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
-      mockIsValidCsrf.mockReturnValue(false);
+      mockIsValidCsrf.mockResolvedValue(false);
 
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
@@ -1195,7 +1194,7 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
       expect(body.error).toBe('Forbidden');
     });
 
-    it('should fallback to JWT when CSRF fails on SESSION in multi-strategy config', async () => {
+    it('should return 403 when CSRF fails on SESSION in multi-strategy config, without trying JWT', async () => {
       mockMiddlewareConfig.authStrategies = ['SESSION', 'JWT'];
       mockMiddlewareConfig.sessionConfig!.sessionOptions!.enableCsrfProtection = true;
       defaultNormalizedConfig.authStrategies = ['SESSION', 'JWT'];
@@ -1204,8 +1203,8 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
         enableCsrfProtection: true,
       };
 
-      mockRequest = new NextRequest('https://test.com/api/v1/users', {
-        headers: { Authorization: 'Bearer valid-jwt-token' },
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users', {
+        Authorization: 'Bearer valid-jwt-token',
       });
       mockIsProtectedApi.mockReturnValue(true);
 
@@ -1215,20 +1214,92 @@ describe('WristbandAuth Middleware - Multi-Strategy', () => {
         csrfToken: 'test-csrf',
       };
       mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
-      mockIsValidCsrf.mockReturnValue(false); // CSRF fails
+      mockIsValidCsrf.mockResolvedValue(false); // CSRF fails
 
-      // JWT succeeds
+      // JWT would succeed, but it isn't tried
       mockJwtValidator.extractBearerToken.mockReturnValue('valid-jwt-token');
       mockJwtValidator.validate.mockResolvedValue({ isValid: true });
 
       const middleware = wristbandAuth.createMiddlewareAuth(mockMiddlewareConfig);
       const result = await middleware(mockRequest);
 
-      // Should succeed via JWT fallback (not return 403)
-      expect(result.status).not.toBe(403);
-      expect(result.status).not.toBe(401);
+      expect(result.status).toBe(403);
+      const body = await result.json();
+      expect(body.error).toBe('Forbidden');
       expect(mockIsValidCsrf).toHaveBeenCalled();
-      expect(mockJwtValidator.validate).toHaveBeenCalled();
+      expect(mockJwtValidator.validate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Credential Detection', () => {
+    const multiStrategyNormalizedConfig = (authStrategies: string[]) => {
+      return {
+        authStrategies,
+        sessionConfig: {
+          sessionOptions: { secrets: ['test-secret'], cookieName: 'test-session' },
+          sessionEndpoint: '/api/auth/session',
+          tokenEndpoint: '/api/auth/token',
+          csrfTokenHeaderName: 'X-CSRF-TOKEN',
+        },
+        jwtConfig: { jwksCacheMaxSize: 20, jwksCacheTtl: 3600000 },
+        protectedPages: ['/dashboard(.*)'],
+        protectedApis: ['/api/v1/.*'],
+        onPageUnauthenticated: mockOnPageUnauthenticated,
+      };
+    };
+
+    it('should use JWT and not read the session when JWT is first and both credentials are present', async () => {
+      mockNormalizeMiddlewareConfig.mockReturnValue(multiStrategyNormalizedConfig(['JWT', 'SESSION']));
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users', {
+        Authorization: 'Bearer valid-jwt-token',
+      });
+      mockIsProtectedApi.mockReturnValue(true);
+
+      mockJwtValidator.extractBearerToken.mockReturnValue('valid-jwt-token');
+      mockJwtValidator.validate.mockResolvedValue({ isValid: true });
+
+      const middleware = wristbandAuth.createMiddlewareAuth({ authStrategies: ['JWT', 'SESSION'] });
+      const result = await middleware(mockRequest);
+
+      expect(mockJwtValidator.validate).toHaveBeenCalledWith('valid-jwt-token');
+      expect(mockGetSessionFromRequest).not.toHaveBeenCalled();
+      expect(result.status).not.toBe(401);
+    });
+
+    it('should pass the failing strategy reason to onPageUnauthenticated without trying later strategies', async () => {
+      mockNormalizeMiddlewareConfig.mockReturnValue(multiStrategyNormalizedConfig(['SESSION', 'JWT']));
+      mockRequest = createRequestWithSession('https://test.com/dashboard', {
+        Authorization: 'Bearer valid-jwt-token',
+      });
+      mockIsProtectedPage.mockReturnValue(true);
+
+      // SESSION has an expired token, and the refresh fails
+      const mockSession = {
+        isAuthenticated: true,
+        refreshToken: 'test-refresh-token',
+        expiresAt: Date.now() - 1000,
+      };
+      mockGetSessionFromRequest.mockResolvedValue(mockSession as any);
+      jest.spyOn(wristbandAuth, 'refreshTokenIfExpired').mockRejectedValue(new Error('Refresh failed'));
+
+      // JWT would succeed, but it isn't tried
+      mockJwtValidator.extractBearerToken.mockReturnValue('valid-jwt-token');
+      mockJwtValidator.validate.mockResolvedValue({ isValid: true });
+
+      const middleware = wristbandAuth.createMiddlewareAuth({ authStrategies: ['SESSION', 'JWT'] });
+      await middleware(mockRequest);
+
+      expect(mockOnPageUnauthenticated).toHaveBeenCalledWith(mockRequest, 'token_refresh_failed');
+      expect(mockJwtValidator.validate).not.toHaveBeenCalled();
+    });
+
+    it('should report no credential for an unknown strategy', () => {
+      const config = multiStrategyNormalizedConfig(['SESSION', 'JWT']);
+      mockRequest = createRequestWithSession('https://test.com/api/v1/users', {
+        Authorization: 'Bearer valid-jwt-token',
+      });
+
+      expect((wristbandAuth as any).hasCredential(mockRequest, 'INVALID', config)).toBe(false);
     });
   });
 });

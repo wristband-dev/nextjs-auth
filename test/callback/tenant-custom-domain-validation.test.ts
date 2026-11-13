@@ -164,6 +164,25 @@ describe('Callback - Tenant Custom Domain Validation', () => {
 
       await expect(wristbandAuth.appRouter.callback(request, resolveRedirectUrl)).rejects.toThrow(FetchError);
     });
+
+    test.each(['evil.com#', 'evil.com/path', 'evil.com:443', 'user@evil.com', 'localhost'])(
+      'Skips a malformed tenant_custom_domain query param without calling the validation endpoint: %s',
+      async (tenantCustomDomain) => {
+        mockWristbandFetch({ tenantCustomDomainValid: true, tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
+
+        const request = await createRequest(
+          `state=state&code=code&tenant_name=devs4you&tenant_custom_domain=${encodeURIComponent(tenantCustomDomain)}`
+        );
+        const callbackResult: AppRouterCallbackResult = await wristbandAuth.appRouter.callback(
+          request,
+          resolveRedirectUrl
+        );
+
+        expectValidateNotCalled();
+        expect(callbackResult.type).toBe('completed');
+        expect(callbackResult.callbackData?.tenantCustomDomain).toBeUndefined();
+      }
+    );
   });
 
   describe('Pages Router', () => {
@@ -271,5 +290,24 @@ describe('Callback - Tenant Custom Domain Validation', () => {
 
       await expect(wristbandAuth.pagesRouter.callback(mockReq, mockRes)).rejects.toThrow(FetchError);
     });
+
+    test.each(['evil.com#', 'evil.com/path', 'evil.com:443', 'user@evil.com', 'localhost'])(
+      'Skips a malformed tenant_custom_domain query param without calling the validation endpoint: %s',
+      async (tenantCustomDomain) => {
+        mockWristbandFetch({ tenantCustomDomainValid: true, tokens: MOCK_TOKENS, userinfo: MOCK_USERINFO });
+
+        const { mockReq, mockRes } = await createReqRes({
+          state: 'state',
+          code: 'code',
+          tenant_name: 'devs4you',
+          tenant_custom_domain: tenantCustomDomain,
+        });
+        const callbackResult: PagesRouterCallbackResult = await wristbandAuth.pagesRouter.callback(mockReq, mockRes);
+
+        expectValidateNotCalled();
+        expect(callbackResult.type).toBe('completed');
+        expect(callbackResult.callbackData?.tenantCustomDomain).toBeUndefined();
+      }
+    );
   });
 });

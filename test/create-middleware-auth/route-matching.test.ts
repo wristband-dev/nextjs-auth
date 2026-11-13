@@ -22,6 +22,7 @@ jest.mock('../../src/utils/middleware', () => {
     copyResponseHeaders: jest.fn((source, target) => {
       return target;
     }),
+    setSessionCookieOnRequest: jest.fn(),
   };
 });
 
@@ -35,6 +36,14 @@ const mockCopyResponseHeaders = copyResponseHeaders as jest.MockedFunction<typeo
 
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
+
+// The middleware skips the SESSION strategy when the request has no session cookie, so requests that should
+// reach the session read carry one. The name matches the cookieName in mockMiddlewareConfig.
+const SESSION_COOKIE = 'test-session=encrypted-session-value';
+
+function createRequestWithSession(url: string, headers: Record<string, string> = {}, method = 'GET'): NextRequest {
+  return new NextRequest(url, { method, headers: { cookie: SESSION_COOKIE, ...headers } });
+}
 
 describe('WristbandAuth Middleware - Route Matching', () => {
   let wristbandAuth: WristbandAuthImpl;
@@ -104,7 +113,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
 
     mockIsProtectedApi.mockReturnValue(false);
     mockIsProtectedPage.mockReturnValue(false);
-    mockIsValidCsrf.mockReturnValue(true);
+    mockIsValidCsrf.mockResolvedValue(true);
 
     mockCopyResponseHeaders.mockImplementation((source, target) => {
       return target;
@@ -224,10 +233,8 @@ describe('WristbandAuth Middleware - Route Matching', () => {
     });
 
     it('should protect regular POST to protected pages without next-action header', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard', {
-        method: 'POST',
-        // No next-action header
-      });
+      // No next-action header
+      mockRequest = createRequestWithSession('https://test.com/dashboard', {}, 'POST');
       mockIsProtectedApi.mockReturnValue(false);
       mockIsProtectedPage.mockReturnValue(true); // SHOULD be protected (regular POST)
 
@@ -250,10 +257,8 @@ describe('WristbandAuth Middleware - Route Matching', () => {
     });
 
     it('should protect GET requests to protected pages (Server Actions are POST-only)', async () => {
-      mockRequest = new NextRequest('https://test.com/dashboard', {
-        method: 'GET',
-        headers: { 'next-action': 'abc123' }, // next-action header should be ignored for GET
-      });
+      // next-action header should be ignored for GET
+      mockRequest = createRequestWithSession('https://test.com/dashboard', { 'next-action': 'abc123' }, 'GET');
       mockIsProtectedApi.mockReturnValue(false);
       mockIsProtectedPage.mockReturnValue(true); // SHOULD be protected (GET request)
 
@@ -277,9 +282,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
 
     it('should require BOTH POST method AND next-action header for Server Action bypass', async () => {
       // Test 1: POST without next-action header
-      mockRequest = new NextRequest('https://test.com/dashboard', {
-        method: 'POST',
-      });
+      mockRequest = createRequestWithSession('https://test.com/dashboard', {}, 'POST');
       mockIsProtectedApi.mockReturnValue(false);
       mockIsProtectedPage.mockReturnValue(true); // Should be protected
 
@@ -319,7 +322,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
 
   describe('Session/Token Endpoint Auto-Protection', () => {
     it('should protect session endpoint when using SESSION strategy', async () => {
-      mockRequest = new NextRequest('https://test.com/api/auth/session');
+      mockRequest = createRequestWithSession('https://test.com/api/auth/session');
       mockIsProtectedApi.mockReturnValue(true);
       mockIsProtectedPage.mockReturnValue(false);
 
@@ -342,7 +345,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
     });
 
     it('should protect token endpoint when using SESSION strategy', async () => {
-      mockRequest = new NextRequest('https://test.com/api/auth/token');
+      mockRequest = createRequestWithSession('https://test.com/api/auth/token');
       mockIsProtectedApi.mockReturnValue(true);
       mockIsProtectedPage.mockReturnValue(false);
 
@@ -455,7 +458,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
     });
 
     it('should protect custom session endpoint path when configured', async () => {
-      mockRequest = new NextRequest('https://test.com/api/custom/session');
+      mockRequest = createRequestWithSession('https://test.com/api/custom/session');
       mockIsProtectedApi.mockReturnValue(true);
       mockIsProtectedPage.mockReturnValue(false);
 
@@ -505,7 +508,7 @@ describe('WristbandAuth Middleware - Route Matching', () => {
     });
 
     it('should protect custom token endpoint path when configured', async () => {
-      mockRequest = new NextRequest('https://test.com/api/custom/token');
+      mockRequest = createRequestWithSession('https://test.com/api/custom/token');
       mockIsProtectedApi.mockReturnValue(true);
       mockIsProtectedPage.mockReturnValue(false);
 

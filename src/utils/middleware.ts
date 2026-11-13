@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { AuthMiddlewareConfig, AuthStrategy, NormalizedMiddlewareConfig, UnauthenticatedPageHandler } from '../types';
+import { REDIRECT_RESPONSE_INIT } from './constants';
 
 const DEFAULT_CSRF_HEADER_NAME: string = 'X-CSRF-TOKEN';
 const DEFAULT_PROTECTED_APIS: string[] = [];
@@ -185,7 +186,7 @@ export function resolveOnPageUnauthenticated(
   return (request: NextRequest) => {
     const redirectUrl = new URL(loginPath, request.url);
     redirectUrl.searchParams.set('return_url', request.url);
-    return NextResponse.redirect(redirectUrl, { status: 302 });
+    return NextResponse.redirect(redirectUrl, REDIRECT_RESPONSE_INIT);
   };
 }
 
@@ -316,35 +317,65 @@ export function isProtectedPage(request: NextRequest, config: NormalizedMiddlewa
   return true;
 }
 
+const CSRF_TEXT_ENCODER = new TextEncoder();
+
+// Random HMAC key used only to compare CSRF tokens. Created on first use and kept in memory for the life of the
+// process. It's never stored or sent anywhere, and it doesn't need to match across processes or restarts, because
+// both values in a comparison are always HMAC'd with the same key.
+let csrfCompareKey: Promise<CryptoKey> | undefined;
+function getCsrfCompareKey(): Promise<CryptoKey> {
+  csrfCompareKey ??= globalThis.crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return csrfCompareKey;
+}
+
 /**
  * Validates the CSRF token for API requests to prevent cross-site request forgery attacks.
  *
  * Compares the CSRF token stored in the session against the token provided in the
  * request header. Both must exist and match exactly for validation to pass.
  *
+ * The tokens are compared with the Double HMAC pattern: both values are HMAC'd with a random key, and the
+ * results are compared. Response timing then reveals nothing about the session's CSRF token. Node's
+ * crypto.timingSafeEqual() isn't used because it isn't available in the Edge runtime.
+ *
  * This should only be used for API routes, as page navigations don't include CSRF headers.
  *
  * @param req - The NextRequest object containing headers
  * @param csrfToken - The CSRF token stored in the session (from session.csrfToken)
  * @param csrfHeaderName - The header name to check for the token (default: 'X-CSRF-TOKEN')
- * @returns True if the CSRF token is valid, false otherwise
+ * @returns A promise that resolves to true if the CSRF token is valid, false otherwise
  *
  * @example
  * ```typescript
  * // In middleware for protected API routes
- * const isValid = isValidCsrf(req, session.csrfToken, 'X-CSRF-TOKEN');
+ * const isValid = await isValidCsrf(req, session.csrfToken, 'X-CSRF-TOKEN');
  * if (!isValid) {
  *   return new NextResponse(null, { status: 403 });
  * }
  * ```
  */
-export function isValidCsrf(req: NextRequest, csrfToken: string | undefined, csrfHeaderName: string): boolean {
-  if (!csrfToken) {
+export async function isValidCsrf(
+  req: NextRequest,
+  csrfToken: string | undefined,
+  csrfHeaderName: string
+): Promise<boolean> {
+  const headerValue = req.headers.get(csrfHeaderName);
+  if (!csrfToken || !headerValue) {
     return false;
   }
 
-  const headerValue = req.headers.get(csrfHeaderName);
-  return csrfToken === headerValue;
+  const key = await getCsrfCompareKey();
+  const [expected, received] = await Promise.all([
+    globalThis.crypto.subtle.sign('HMAC', key, CSRF_TEXT_ENCODER.encode(csrfToken)),
+    globalThis.crypto.subtle.sign('HMAC', key, CSRF_TEXT_ENCODER.encode(headerValue)),
+  ]);
+
+  // Comparing the HMACs can't reveal the tokens, because the key is secret.
+  const expectedBytes = new Uint8Array(expected);
+  const receivedBytes = new Uint8Array(received);
+  return expectedBytes.every((byte, i) => {
+    return byte === receivedBytes[i];
+  });
 }
 
 /**
@@ -369,4 +400,27 @@ export function copyResponseHeaders(source: Response, target: NextResponse): Nex
   });
 
   return target;
+}
+
+/**
+ * Copies the session cookie from a response's Set-Cookie headers onto the request, so the route handler
+ * that runs on this same request reads the saved session instead of the one the browser sent.
+ *
+ * @param request - The incoming Next.js request to update.
+ * @param source - The response whose Set-Cookie headers hold the saved session cookie.
+ * @param sessionCookieName - The name of the session cookie.
+ */
+export function setSessionCookieOnRequest(request: NextRequest, source: Response, sessionCookieName: string): void {
+  source.headers.getSetCookie().forEach((setCookie) => {
+    const nameValue = setCookie.split(';')[0];
+    const separatorIndex = nameValue.indexOf('=');
+    const name = nameValue.slice(0, separatorIndex).trim();
+    // Only the session cookie matters to the route handler. Other cookies, like the CSRF cookie, are skipped.
+    if (name !== sessionCookieName) {
+      return;
+    }
+    // request.cookies.set() encodes the value, so decode it first to avoid encoding it twice.
+    const value = decodeURIComponent(nameValue.slice(separatorIndex + 1));
+    request.cookies.set(name, value);
+  });
 }

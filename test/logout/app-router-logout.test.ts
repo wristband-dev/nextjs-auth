@@ -1080,6 +1080,34 @@ describe('App Router Multi Tenant Logout', () => {
       );
     });
 
+    test('should not revoke the refresh token when state exceeds 512 characters', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      await expect(
+        wristbandAuth.appRouter.logout(mockNextRequest, {
+          refreshToken: 'refreshToken',
+          tenantName: 'devs4you',
+          state: 'a'.repeat(513),
+        })
+      ).rejects.toThrow('The [state] logout config cannot exceed 512 characters.');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
     test('should accept state with exactly 512 characters', async () => {
       wristbandAuth = createWristbandAuth({
         clientId: CLIENT_ID,
@@ -1138,6 +1166,44 @@ describe('App Router Multi Tenant Logout', () => {
       const locationUrl = new URL(response.headers.get('location')!);
       expect(locationUrl.searchParams.get('state')).toBe(stateWithSpecialChars);
       validateRedirectResponse(response, `https://test-tenant-${wristbandApplicationVanityDomain}`, null);
+    });
+
+    test('should URL-encode state and redirectUrl parameters', async () => {
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+      });
+
+      const { req } = createMocks({
+        method: 'GET',
+        url: `https://${parseTenantFromRootDomain}/api/auth/logout`,
+        headers: { host: `${parseTenantFromRootDomain}` },
+      });
+      const mockNextRequest = createMockNextRequest(req);
+
+      const redirectUrl = 'https://example.com/logged-out?lang=en&theme=dark';
+      const state = 'step=2&from=settings #top';
+
+      const response = await wristbandAuth.appRouter.logout(mockNextRequest, {
+        tenantName: 'devs4you',
+        state,
+        redirectUrl,
+      });
+
+      const locationUrl = new URL(response.headers.get('location')!);
+      const { searchParams } = locationUrl;
+
+      expect(searchParams.get('redirect_url')).toEqual(redirectUrl);
+      expect(searchParams.get('state')).toEqual(state);
+      expect(searchParams.get('client_id')).toEqual(CLIENT_ID);
+      expect(searchParams.has('theme')).toBe(false);
+      expect(searchParams.has('from')).toBe(false);
+      expect(locationUrl.hash).toBe('');
     });
 
     test('should handle empty string state', async () => {
@@ -1289,6 +1355,87 @@ describe('App Router Multi Tenant Logout', () => {
         `https://test-tenant-${wristbandApplicationVanityDomain}`,
         'https://example.com/after-logout'
       );
+    });
+  });
+
+  describe('Invalid Tenant Values', () => {
+    const appLoginUrl = () => {
+      return `https://${wristbandApplicationVanityDomain}/login?client_id=${CLIENT_ID}`;
+    };
+
+    function createAuth(config: { tenantSubdomains?: boolean } = {}) {
+      if (config.tenantSubdomains) {
+        parseTenantFromRootDomain = 'business.invotastic.com';
+        loginUrl = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/login`;
+        redirectUri = `https://{tenant_name}.${parseTenantFromRootDomain}/api/auth/callback`;
+      }
+      wristbandAuth = createWristbandAuth({
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+        loginStateSecret: LOGIN_STATE_COOKIE_SECRET,
+        loginUrl,
+        redirectUri,
+        wristbandApplicationVanityDomain,
+        autoConfigureEnabled: false,
+        applicationAuthorizationRequestsEnabled: false,
+      });
+    }
+
+    function createLogoutRequest(query: string = '', host: string = parseTenantFromRootDomain) {
+      const { req } = createMocks({
+        method: 'GET',
+        url: `https://${host}/api/auth/logout${query}`,
+        headers: { host },
+      });
+      return createMockNextRequest(req);
+    }
+
+    test.each(['evil.com#', 'evil.com/path', 'evil.com:443', 'user@evil.com', 'localhost'])(
+      'Invalid tenantCustomDomain logout config falls through to the tenantName logout config: %s',
+      async (tenantCustomDomain) => {
+        createAuth();
+
+        const response = await wristbandAuth.appRouter.logout(createLogoutRequest(), {
+          tenantCustomDomain,
+          tenantName: 'devs4you',
+        });
+
+        validateRedirectResponse(response, `https://devs4you-${wristbandApplicationVanityDomain}`, null);
+      }
+    );
+
+    test.each(['evil.com#', 'evil.com/path', 'evil.com?x=', 'user@evil', 'ten_ant'])(
+      'Invalid tenantName logout config falls back to application-level login: %s',
+      async (tenantName) => {
+        createAuth();
+
+        const response = await wristbandAuth.appRouter.logout(createLogoutRequest(), { tenantName });
+
+        validateAppLoginRedirect(response, appLoginUrl());
+      }
+    );
+
+    test.each(['evil.com#', 'evil.com/path', 'evil.com?x=', 'user@evil', 'ten_ant'])(
+      'Invalid tenant_name query param falls back to application-level login: %s',
+      async (tenantName) => {
+        createAuth();
+
+        const response = await wristbandAuth.appRouter.logout(
+          createLogoutRequest(`?tenant_name=${encodeURIComponent(tenantName)}`)
+        );
+
+        validateAppLoginRedirect(response, appLoginUrl());
+      }
+    );
+
+    test('Invalid tenant subdomain falls back to application-level login', async () => {
+      createAuth({ tenantSubdomains: true });
+
+      const response = await wristbandAuth.appRouter.logout(
+        createLogoutRequest('', `ten_ant.${parseTenantFromRootDomain}`)
+      );
+
+      validateAppLoginRedirect(response, appLoginUrl());
     });
   });
 });
